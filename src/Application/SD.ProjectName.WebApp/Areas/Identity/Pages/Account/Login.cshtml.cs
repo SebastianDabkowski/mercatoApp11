@@ -176,6 +176,11 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 return Url?.Content("~/Seller/Kyc") ?? "~/Seller/Kyc";
             }
 
+            if (user.AccountType != null && user.AccountType.Equals(AccountTypes.Admin, StringComparison.OrdinalIgnoreCase))
+            {
+                return Url?.Content("~/Admin/Dashboard") ?? "~/Admin/Dashboard";
+            }
+
             if (user.AccountType != null && user.AccountType.Equals(AccountTypes.Seller, StringComparison.OrdinalIgnoreCase))
             {
                 return Url?.Content("~/Seller/Dashboard") ?? "~/Seller/Dashboard";

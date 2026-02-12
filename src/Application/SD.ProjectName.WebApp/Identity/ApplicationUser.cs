@@ -6,8 +6,9 @@ namespace SD.ProjectName.WebApp.Identity
     {
         public const string Buyer = "Buyer";
         public const string Seller = "Seller";
+        public const string Admin = "Admin";
 
-        public static readonly string[] Allowed = [Buyer, Seller];
+        public static readonly string[] Allowed = [Buyer, Seller, Admin];
 
         public static bool IsValid(string? accountType) =>
             !string.IsNullOrWhiteSpace(accountType) &&

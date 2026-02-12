@@ -99,7 +99,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             {
                 if (!AccountTypes.IsValid(AccountType))
                 {
-                    yield return new ValidationResult("Choose buyer or seller.", new[] { nameof(AccountType) });
+                    yield return new ValidationResult("Choose a valid account type.", new[] { nameof(AccountType) });
                 }
 
                 if (AccountType.Equals(AccountTypes.Seller, StringComparison.OrdinalIgnoreCase))

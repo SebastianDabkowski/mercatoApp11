@@ -49,6 +49,33 @@ namespace SD.ProjectName.Tests.Identity
         }
 
         [Fact]
+        public async Task VerifiedAdmin_ShouldRedirectToAdminDashboard()
+        {
+            var userManager = CreateUserManager();
+            var user = new ApplicationUser
+            {
+                Email = "admin@example.com",
+                UserName = "admin@example.com",
+                AccountType = AccountTypes.Admin,
+                AccountStatus = AccountStatuses.Verified
+            };
+            userManager.Setup(m => m.FindByEmailAsync(user.Email)).ReturnsAsync(user);
+            userManager.Setup(m => m.IsEmailConfirmedAsync(user)).ReturnsAsync(true);
+
+            var signInManager = CreateSignInManager(userManager.Object);
+            signInManager.Setup(s => s.PasswordSignInAsync(user.UserName, "Pass123!abcd", true, true))
+                .ReturnsAsync(IdentitySignInResult.Success);
+
+            var model = CreateLoginModel(userManager, signInManager);
+            model.Input = new LoginModel.InputModel { Email = user.Email, Password = "Pass123!abcd", RememberMe = true };
+
+            var result = await model.OnPostAsync();
+
+            var redirect = Assert.IsType<LocalRedirectResult>(result);
+            Assert.Equal("~/Admin/Dashboard", redirect.Url);
+        }
+
+        [Fact]
         public async Task UnverifiedSeller_ShouldBlockAndSendVerificationLink()
         {
             var userManager = CreateUserManager();
