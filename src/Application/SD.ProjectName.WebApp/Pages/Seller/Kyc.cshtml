@@ -1,0 +1,58 @@
+@page
+@using SD.ProjectName.WebApp.Identity
+@model SD.ProjectName.WebApp.Pages.Seller.KycModel
+@{
+    ViewData["Title"] = "Seller KYC";
+    var isApproved = string.Equals(Model.CurrentStatus, KycStatuses.Approved, StringComparison.OrdinalIgnoreCase);
+    var isPending = string.Equals(Model.CurrentStatus, KycStatuses.Pending, StringComparison.OrdinalIgnoreCase);
+    var disableSubmission = isPending && Model.SubmittedOn.HasValue;
+    var submitLabel = disableSubmission ? "Submitted for review" : "Submit KYC";
+}
+
+<h1 class="display-6">Know Your Customer</h1>
+<p class="lead">We verify seller identities to keep buyers safe.</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-info" role="alert">@Model.StatusMessage</div>
+}
+
+@if (isApproved)
+{
+    <div class="alert alert-success" role="alert">
+        Your KYC is approved @if (Model.ApprovedOn.HasValue) { <text>as of @Model.ApprovedOn.Value.UtcDateTime.ToString("u") UTC.</text> }
+    </div>
+}
+else
+{
+    <div class="alert alert-warning" role="alert">
+        @if (Model.RequireSellerKyc)
+        {
+            <span>KYC is required for seller accounts. Access to publishing tools is limited until approval.</span>
+        }
+        else
+        {
+            <span>You can complete KYC to unlock full seller capabilities.</span>
+        }
+
+        @if (Model.SubmittedOn.HasValue)
+        {
+            <div class="mt-2">Submitted on @Model.SubmittedOn.Value.UtcDateTime.ToString("u") UTC. We will notify you when review is complete.</div>
+        }
+    </div>
+
+    <form method="post" class="mb-4">
+        <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+        <div class="form-check mb-3">
+            <input asp-for="Input.ConfirmAccuracy" class="form-check-input" />
+            <label asp-for="Input.ConfirmAccuracy" class="form-check-label"></label>
+            <span asp-validation-for="Input.ConfirmAccuracy" class="text-danger"></span>
+        </div>
+
+        <button type="submit" class="btn btn-primary" @(disableSubmission ? "disabled" : string.Empty)>@submitLabel</button>
+    </form>
+}
+
+<p><a class="btn btn-link" href="~/Seller/Dashboard">Back to dashboard</a></p>
+
+<partial name="_ValidationScriptsPartial" />

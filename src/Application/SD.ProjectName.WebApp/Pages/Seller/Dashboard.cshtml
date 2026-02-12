@@ -10,6 +10,22 @@
 <h1 class="display-6">Seller dashboard</h1>
 <p class="lead">Manage your listings and track buyer activity.</p>
 
-<div class="alert alert-warning">
-    Verified sellers gain access to publishing tools. If you still need verification, resend the confirmation email from the login page.
-</div>
+@if (!string.Equals(Model.AccountStatus, AccountStatuses.Verified, StringComparison.OrdinalIgnoreCase))
+{
+    <div class="alert alert-warning">
+        Your email is not verified yet. Please confirm your address from the verification email to unlock seller tools.
+    </div>
+}
+
+@if (Model.NeedsKyc)
+{
+    <div class="alert alert-warning">
+        Complete KYC to publish products and access payouts. <a class="alert-link" href="~/Seller/Kyc">Start KYC</a>.
+    </div>
+}
+else
+{
+    <div class="alert alert-success">
+        KYC is up to date. You have full access to seller capabilities.
+    </div>
+}

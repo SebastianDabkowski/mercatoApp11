@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.Options;
 using SD.ProjectName.WebApp.Identity;
 
 namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
@@ -19,17 +20,20 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly ILogger<LoginModel> _logger;
         private readonly IEmailSender _emailSender;
+        private readonly IOptions<KycOptions> _kycOptions;
 
         public LoginModel(
             SignInManager<ApplicationUser> signInManager,
             UserManager<ApplicationUser> userManager,
             ILogger<LoginModel> logger,
-            IEmailSender emailSender)
+            IEmailSender emailSender,
+            IOptions<KycOptions> kycOptions)
         {
             _signInManager = signInManager;
             _userManager = userManager;
             _logger = logger;
             _emailSender = emailSender;
+            _kycOptions = kycOptions;
         }
 
         [BindProperty]
@@ -113,7 +117,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 if (result.Succeeded)
                 {
                     _logger.LogInformation("User logged in.");
-                    var redirectUrl = ResolveRedirectUrl(returnUrl, user.AccountType);
+                    var redirectUrl = ResolveRedirectUrl(returnUrl, user);
                     return LocalRedirect(redirectUrl);
                 }
 
@@ -156,7 +160,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 : "Please verify your email before logging in. We sent you a new verification link.";
         }
 
-        private string ResolveRedirectUrl(string? returnUrl, string? accountType)
+        private string ResolveRedirectUrl(string? returnUrl, ApplicationUser user)
         {
             var homeUrl = Url?.Content("~/") ?? "/";
 
@@ -167,12 +171,38 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 return returnUrl;
             }
 
-            if (accountType != null && accountType.Equals(AccountTypes.Seller, StringComparison.OrdinalIgnoreCase))
+            if (ShouldRedirectToKyc(user))
+            {
+                return Url?.Content("~/Seller/Kyc") ?? "~/Seller/Kyc";
+            }
+
+            if (user.AccountType != null && user.AccountType.Equals(AccountTypes.Seller, StringComparison.OrdinalIgnoreCase))
             {
                 return Url?.Content("~/Seller/Dashboard") ?? "~/Seller/Dashboard";
             }
 
             return Url?.Content("~/Buyer/Dashboard") ?? "~/Buyer/Dashboard";
+        }
+
+        private bool ShouldRedirectToKyc(ApplicationUser user)
+        {
+            if (user.AccountType == null || !user.AccountType.Equals(AccountTypes.Seller, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!_kycOptions.Value.RequireSellerKyc)
+            {
+                return false;
+            }
+
+            if (string.Equals(user.KycStatus, KycStatuses.Approved, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(user.KycStatus, KycStatuses.NotRequired, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return user.KycSubmittedOn == null;
         }
     }
 }

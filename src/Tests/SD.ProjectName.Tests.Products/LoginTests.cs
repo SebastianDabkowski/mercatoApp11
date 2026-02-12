@@ -118,7 +118,8 @@ namespace SD.ProjectName.Tests.Identity
                 Email = "seller@example.com",
                 UserName = "seller@example.com",
                 AccountType = AccountTypes.Seller,
-                AccountStatus = AccountStatuses.Verified
+                AccountStatus = AccountStatuses.Verified,
+                KycStatus = KycStatuses.Approved
             };
             userManager.Setup(m => m.FindByEmailAsync(user.Email)).ReturnsAsync(user);
             userManager.Setup(m => m.IsEmailConfirmedAsync(user)).ReturnsAsync(true);
@@ -134,6 +135,34 @@ namespace SD.ProjectName.Tests.Identity
 
             var redirect = Assert.IsType<LocalRedirectResult>(result);
             Assert.Equal("/custom-path", redirect.Url);
+        }
+
+        [Fact]
+        public async Task SellerWithoutKyc_ShouldBeSentToKycPage_WhenRequired()
+        {
+            var userManager = CreateUserManager();
+            var user = new ApplicationUser
+            {
+                Email = "seller@example.com",
+                UserName = "seller@example.com",
+                AccountType = AccountTypes.Seller,
+                AccountStatus = AccountStatuses.Verified,
+                KycStatus = KycStatuses.Pending
+            };
+            userManager.Setup(m => m.FindByEmailAsync(user.Email)).ReturnsAsync(user);
+            userManager.Setup(m => m.IsEmailConfirmedAsync(user)).ReturnsAsync(true);
+
+            var signInManager = CreateSignInManager(userManager.Object);
+            signInManager.Setup(s => s.PasswordSignInAsync(user.UserName, "Pass123!abcd", true, true))
+                .ReturnsAsync(IdentitySignInResult.Success);
+
+            var model = CreateLoginModel(userManager, signInManager, null, new KycOptions { RequireSellerKyc = true });
+            model.Input = new LoginModel.InputModel { Email = user.Email, Password = "Pass123!abcd", RememberMe = true };
+
+            var result = await model.OnPostAsync();
+
+            var redirect = Assert.IsType<LocalRedirectResult>(result);
+            Assert.Equal("~/Seller/Kyc", redirect.Url);
         }
 
         private static Mock<UserManager<ApplicationUser>> CreateUserManager()
@@ -174,7 +203,8 @@ namespace SD.ProjectName.Tests.Identity
         private static LoginModel CreateLoginModel(
             Mock<UserManager<ApplicationUser>> userManager,
             Mock<SignInManager<ApplicationUser>> signInManager,
-            Mock<IEmailSender>? emailSender = null)
+            Mock<IEmailSender>? emailSender = null,
+            KycOptions? kycOptions = null)
         {
             var httpContext = new DefaultHttpContext();
             httpContext.Request.Scheme = "https";
@@ -186,7 +216,7 @@ namespace SD.ProjectName.Tests.Identity
                 ViewData = new ViewDataDictionary(new EmptyModelMetadataProvider(), modelState)
             };
 
-            var model = new LoginModel(signInManager.Object, userManager.Object, Mock.Of<ILogger<LoginModel>>(), (emailSender ?? new Mock<IEmailSender>()).Object)
+            var model = new LoginModel(signInManager.Object, userManager.Object, Mock.Of<ILogger<LoginModel>>(), (emailSender ?? new Mock<IEmailSender>()).Object, Options.Create(kycOptions ?? new KycOptions()))
             {
                 PageContext = pageContext,
                 Url = new TestUrlHelper(actionContext),

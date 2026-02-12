@@ -34,6 +34,8 @@ builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
     .AddPasswordValidator<CommonPasswordValidator>()
     .AddEntityFrameworkStores<ApplicationDbContext>();
 builder.Services.AddSingleton<IEmailSender, ConsoleEmailSender>();
+builder.Services.Configure<DataProtectionTokenProviderOptions>(o => o.TokenLifespan = TimeSpan.FromHours(24));
+builder.Services.Configure<KycOptions>(builder.Configuration.GetSection("Kyc"));
 
 builder.Services.ConfigureApplicationCookie(options =>
 {

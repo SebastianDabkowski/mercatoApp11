@@ -19,6 +19,10 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
         [TempData]
         public string StatusMessage { get; set; } = string.Empty;
 
+        public bool Success { get; private set; }
+
+        public string? ResendConfirmationUrl { get; private set; }
+
         public async Task<IActionResult> OnGetAsync(string? userId, string? code, string? returnUrl = null)
         {
             if (userId == null || code == null)
@@ -35,17 +39,32 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             code = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(code));
             var result = await _userManager.ConfirmEmailAsync(user, code);
 
-            if (result.Succeeded && user.AccountStatus == AccountStatuses.Unverified)
+            if (result.Succeeded)
             {
-                user.AccountStatus = AccountStatuses.Verified;
+                if (user.AccountStatus == AccountStatuses.Unverified)
+                {
+                    user.AccountStatus = AccountStatuses.Verified;
+                }
+
+                user.EmailVerifiedOn ??= DateTimeOffset.UtcNow;
                 await _userManager.UpdateAsync(user);
+                Success = true;
             }
 
             StatusMessage = result.Succeeded
                 ? "Thank you for confirming your email. Your account is now verified."
-                : "Error confirming your email.";
+                : "Your verification link is invalid or has expired. Request a new verification email to finish setting up your account.";
 
-            if (!string.IsNullOrEmpty(returnUrl))
+            if (!result.Succeeded)
+            {
+                ResendConfirmationUrl = Url.Page(
+                    "/Account/ResendEmailConfirmation",
+                    pageHandler: null,
+                    values: new { area = "Identity", email = user.Email, returnUrl },
+                    protocol: Request.Scheme);
+            }
+
+            if (Success && !string.IsNullOrEmpty(returnUrl))
             {
                 return LocalRedirect(returnUrl);
             }
