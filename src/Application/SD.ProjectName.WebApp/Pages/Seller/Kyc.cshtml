@@ -5,8 +5,9 @@
     ViewData["Title"] = "Seller KYC";
     var isApproved = string.Equals(Model.CurrentStatus, KycStatuses.Approved, StringComparison.OrdinalIgnoreCase);
     var isPending = string.Equals(Model.CurrentStatus, KycStatuses.Pending, StringComparison.OrdinalIgnoreCase);
-    var disableSubmission = isPending && Model.SubmittedOn.HasValue;
-    var submitLabel = disableSubmission ? "Submitted for review" : "Submit KYC";
+    var disableSubmission = isPending;
+    var submitLabel = disableSubmission ? "Submitted for review" : "Submit for verification";
+    var disabledAttr = disableSubmission ? "disabled" : null;
 }
 
 <h1 class="display-6">Know Your Customer</h1>
@@ -43,16 +44,103 @@ else
 
     <form method="post" class="mb-4">
         <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+        <div class="mb-3">
+            <label class="form-label">Seller type</label>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" asp-for="Input.SellerType" value="@SellerTypes.Company" id="sellerTypeCompany" disabled="@disabledAttr" />
+                <label class="form-check-label" for="sellerTypeCompany">Company</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" asp-for="Input.SellerType" value="@SellerTypes.Individual" id="sellerTypeIndividual" disabled="@disabledAttr" />
+                <label class="form-check-label" for="sellerTypeIndividual">Individual</label>
+            </div>
+            <span asp-validation-for="Input.SellerType" class="text-danger"></span>
+        </div>
+
+        <div class="border rounded p-3 mb-3 @(Model.Input.SellerType == SellerTypes.Company ? string.Empty : "d-none")" data-seller-section="@SellerTypes.Company">
+            <h5 class="mb-3">Company details</h5>
+            <div class="mb-3">
+                <label asp-for="Input.CompanyName" class="form-label"></label>
+                <input asp-for="Input.CompanyName" class="form-control" autocomplete="organization" disabled="@disabledAttr" />
+                <span asp-validation-for="Input.CompanyName" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.RegistrationNumber" class="form-label"></label>
+                <input asp-for="Input.RegistrationNumber" class="form-control" autocomplete="off" disabled="@disabledAttr" />
+                <span asp-validation-for="Input.RegistrationNumber" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.TaxId" class="form-label"></label>
+                <input asp-for="Input.TaxId" class="form-control" autocomplete="off" disabled="@disabledAttr" />
+                <span asp-validation-for="Input.TaxId" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.RegisteredAddress" class="form-label"></label>
+                <textarea asp-for="Input.RegisteredAddress" class="form-control" rows="2" autocomplete="street-address" disabled="@disabledAttr"></textarea>
+                <span asp-validation-for="Input.RegisteredAddress" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.ContactPerson" class="form-label"></label>
+                <input asp-for="Input.ContactPerson" class="form-control" autocomplete="name" disabled="@disabledAttr" />
+                <span asp-validation-for="Input.ContactPerson" class="text-danger"></span>
+            </div>
+        </div>
+
+        <div class="border rounded p-3 mb-3 @(Model.Input.SellerType == SellerTypes.Individual ? string.Empty : "d-none")" data-seller-section="@SellerTypes.Individual">
+            <h5 class="mb-3">Individual details</h5>
+            <div class="mb-3">
+                <label asp-for="Input.FullName" class="form-label"></label>
+                <input asp-for="Input.FullName" class="form-control" autocomplete="name" disabled="@disabledAttr" />
+                <span asp-validation-for="Input.FullName" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.PersonalIdNumber" class="form-label"></label>
+                <input asp-for="Input.PersonalIdNumber" class="form-control" autocomplete="off" disabled="@disabledAttr" />
+                <span asp-validation-for="Input.PersonalIdNumber" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.Address" class="form-label"></label>
+                <textarea asp-for="Input.Address" class="form-control" rows="2" autocomplete="street-address" disabled="@disabledAttr"></textarea>
+                <span asp-validation-for="Input.Address" class="text-danger"></span>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="Input.ContactEmail" class="form-label"></label>
+            <input asp-for="Input.ContactEmail" class="form-control" autocomplete="email" disabled="@disabledAttr" />
+            <span asp-validation-for="Input.ContactEmail" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="Input.ContactPhone" class="form-label"></label>
+            <input asp-for="Input.ContactPhone" class="form-control" autocomplete="tel" disabled="@disabledAttr" />
+            <small class="form-text text-muted">Optional. Add a phone number we can use during review.</small>
+            <span asp-validation-for="Input.ContactPhone" class="text-danger"></span>
+        </div>
+
         <div class="form-check mb-3">
-            <input asp-for="Input.ConfirmAccuracy" class="form-check-input" />
+            <input asp-for="Input.ConfirmAccuracy" class="form-check-input" disabled="@disabledAttr" />
             <label asp-for="Input.ConfirmAccuracy" class="form-check-label"></label>
             <span asp-validation-for="Input.ConfirmAccuracy" class="text-danger"></span>
         </div>
 
-        <button type="submit" class="btn btn-primary" @(disableSubmission ? "disabled" : string.Empty)>@submitLabel</button>
+        <button type="submit" class="btn btn-primary" disabled="@disabledAttr">@submitLabel</button>
     </form>
 }
 
 <p><a class="btn btn-link" href="~/Seller/Dashboard">Back to dashboard</a></p>
 
 <partial name="_ValidationScriptsPartial" />
+<script>
+    (() => {
+        const radios = document.querySelectorAll('input[name="Input.SellerType"]');
+        const toggle = () => {
+            const current = document.querySelector('input[name="Input.SellerType"]:checked')?.value;
+            document.querySelectorAll('[data-seller-section]').forEach(section => {
+                section.classList.toggle('d-none', section.getAttribute('data-seller-section') !== current);
+            });
+        };
+        radios.forEach(r => r.addEventListener('change', toggle));
+        toggle();
+    })();
+</script>

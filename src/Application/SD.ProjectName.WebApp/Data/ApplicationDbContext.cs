@@ -28,6 +28,10 @@ namespace SD.ProjectName.WebApp.Data
                     .HasMaxLength(32)
                     .IsRequired();
 
+                entity.Property(u => u.SellerType)
+                    .HasMaxLength(32)
+                    .HasDefaultValue(SellerTypes.Individual);
+
                 entity.Property(u => u.KycStatus)
                     .HasMaxLength(32)
                     .HasDefaultValue(KycStatuses.NotRequired);
@@ -53,6 +57,15 @@ namespace SD.ProjectName.WebApp.Data
 
                 entity.Property(u => u.TaxId)
                     .HasMaxLength(128);
+
+                entity.Property(u => u.CompanyRegistrationNumber)
+                    .HasMaxLength(128);
+
+                entity.Property(u => u.PersonalIdNumber)
+                    .HasMaxLength(128);
+
+                entity.Property(u => u.VerificationContactName)
+                    .HasMaxLength(256);
 
                 entity.Property(u => u.EmailVerifiedOn);
 
