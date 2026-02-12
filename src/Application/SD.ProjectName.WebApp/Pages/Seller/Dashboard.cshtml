@@ -1,0 +1,15 @@
+@page
+@using Microsoft.AspNetCore.Authorization
+@using SD.ProjectName.WebApp.Identity
+@attribute [Authorize(Roles = AccountTypes.Seller)]
+@model SD.ProjectName.WebApp.Pages.Seller.DashboardModel
+@{
+    ViewData["Title"] = "Seller dashboard";
+}
+
+<h1 class="display-6">Seller dashboard</h1>
+<p class="lead">Manage your listings and track buyer activity.</p>
+
+<div class="alert alert-warning">
+    Verified sellers gain access to publishing tools. If you still need verification, resend the confirmation email from the login page.
+</div>

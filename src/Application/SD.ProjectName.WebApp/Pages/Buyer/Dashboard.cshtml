@@ -1,0 +1,16 @@
+@page
+@using Microsoft.AspNetCore.Authorization
+@using SD.ProjectName.WebApp.Identity
+@attribute [Authorize(Roles = AccountTypes.Buyer)]
+@model SD.ProjectName.WebApp.Pages.Buyer.DashboardModel
+@{
+    ViewData["Title"] = "Buyer dashboard";
+}
+
+<h1 class="display-6">Buyer dashboard</h1>
+<p class="lead">Browse and manage your marketplace activity.</p>
+
+<div class="alert alert-info">
+    You are signed in as a buyer. Your session will stay active during the configured session lifetime unless you sign out.
+    Visit the products list to explore current offerings.
+</div>
