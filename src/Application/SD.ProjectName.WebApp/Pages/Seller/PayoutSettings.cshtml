@@ -1,0 +1,85 @@
+@page
+@using Microsoft.AspNetCore.Authorization
+@using SD.ProjectName.WebApp.Identity
+@attribute [Authorize(Roles = AccountTypes.Seller)]
+@model SD.ProjectName.WebApp.Pages.Seller.PayoutSettingsModel
+@{
+    ViewData["Title"] = "Payout settings";
+}
+
+<h1 class="display-6">Payout settings</h1>
+<p class="lead">Update the bank or provider account we should use for your payouts.</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success" role="alert">@Model.StatusMessage</div>
+}
+
+@if (!Model.HasValidPayout)
+{
+    <div class="alert alert-warning" role="alert">
+        Your payout configuration is incomplete. Add required bank or provider details so we can process transfers.
+    </div>
+}
+else
+{
+    <div class="alert alert-info" role="alert">
+        Default payout method: <strong>@Model.DefaultMethod</strong>.
+        @if (!string.IsNullOrEmpty(Model.MaskedBankAccount))
+        {
+            <span class="d-block">Bank account: @Model.MaskedBankAccount</span>
+        }
+        @if (!string.IsNullOrEmpty(Model.MaskedRouting))
+        {
+            <span class="d-block">Routing/sort code: @Model.MaskedRouting</span>
+        }
+        @if (!string.IsNullOrEmpty(Model.MaskedPayoutAccount))
+        {
+            <span class="d-block">Payout account: @Model.MaskedPayoutAccount</span>
+        }
+    </div>
+}
+
+<form method="post" class="card p-4 shadow-sm">
+    <h2 class="h5 mb-3">Payout preferences</h2>
+    <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+
+    <div class="mb-3">
+        <label asp-for="Input.PayoutMethod" class="form-label"></label>
+        <select asp-for="Input.PayoutMethod" class="form-select">
+            <option value="BankTransfer">Bank transfer</option>
+            <option value="Paypal">PayPal</option>
+            <option value="ManualReview">Manual review</option>
+        </select>
+        <span asp-validation-for="Input.PayoutMethod" class="text-danger"></span>
+    </div>
+
+    <div class="mb-3">
+        <label asp-for="Input.BankAccountNumber" class="form-label"></label>
+        <input asp-for="Input.BankAccountNumber" class="form-control" placeholder="IBAN or account number" />
+        <div class="form-text">Required for bank transfer payouts.</div>
+        <span asp-validation-for="Input.BankAccountNumber" class="text-danger"></span>
+    </div>
+
+    <div class="mb-3">
+        <label asp-for="Input.BankRoutingNumber" class="form-label"></label>
+        <input asp-for="Input.BankRoutingNumber" class="form-control" placeholder="Routing number or sort code" />
+        <div class="form-text">Needed to route bank transfer payouts correctly.</div>
+        <span asp-validation-for="Input.BankRoutingNumber" class="text-danger"></span>
+    </div>
+
+    <div class="mb-3">
+        <label asp-for="Input.PayoutAccount" class="form-label"></label>
+        <input asp-for="Input.PayoutAccount" class="form-control" placeholder="Payout email (for PayPal) or account id" />
+        <div class="form-text">Required for PayPal or other provider account payouts.</div>
+        <span asp-validation-for="Input.PayoutAccount" class="text-danger"></span>
+    </div>
+
+    <div class="d-flex justify-content-end">
+        <button type="submit" class="btn btn-primary">Save payout settings</button>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

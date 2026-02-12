@@ -43,6 +43,19 @@ else
     </div>
 }
 
+@if (!Model.HasValidPayoutSettings)
+{
+    <div class="alert alert-warning">
+        Set up payout details so we can transfer your earnings. <a class="alert-link" href="~/Seller/PayoutSettings">Configure payout settings</a>.
+    </div>
+}
+else
+{
+    <div class="alert alert-info">
+        Payouts will use @Model.PayoutMethod. <a class="alert-link" href="~/Seller/PayoutSettings">Update payout preferences</a>.
+    </div>
+}
+
 <div class="card shadow-sm mt-3">
     <div class="card-body">
         <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
@@ -97,6 +110,36 @@ else
         else
         {
             <p class="mb-0 text-muted">Complete your store profile so buyers can reach you.</p>
+        }
+    </div>
+</div>
+
+<div class="card shadow-sm mt-3">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+            <div>
+                <h2 class="h5 mb-1">Payout preferences</h2>
+                <p class="text-muted mb-2">Default method and destination for your future payouts.</p>
+            </div>
+            <a class="btn btn-primary btn-sm" href="~/Seller/PayoutSettings">Manage payout settings</a>
+        </div>
+        <dl class="row mb-0 mt-2">
+            <dt class="col-sm-4">Default method</dt>
+            <dd class="col-sm-8">@Model.PayoutMethod</dd>
+            @if (!string.IsNullOrEmpty(Model.MaskedBankAccount))
+            {
+                <dt class="col-sm-4">Bank account</dt>
+                <dd class="col-sm-8">@Model.MaskedBankAccount</dd>
+            }
+            @if (!string.IsNullOrEmpty(Model.MaskedPayoutAccount))
+            {
+                <dt class="col-sm-4">Payout account</dt>
+                <dd class="col-sm-8">@Model.MaskedPayoutAccount</dd>
+            }
+        </dl>
+        @if (!Model.HasValidPayoutSettings)
+        {
+            <p class="text-danger mb-0">Payouts are blocked until required details are completed.</p>
         }
     </div>
 </div>

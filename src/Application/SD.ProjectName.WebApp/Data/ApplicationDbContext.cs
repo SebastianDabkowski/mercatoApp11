@@ -107,6 +107,14 @@ namespace SD.ProjectName.WebApp.Data
                 entity.Property(u => u.PayoutAccount)
                     .HasMaxLength(256);
 
+                entity.Property(u => u.PayoutBankAccount)
+                    .HasMaxLength(256);
+
+                entity.Property(u => u.PayoutBankRouting)
+                    .HasMaxLength(128);
+
+                entity.Property(u => u.PayoutUpdatedOn);
+
                 entity.Property(u => u.OnboardingStatus)
                     .HasMaxLength(64)
                     .HasDefaultValue(OnboardingStatuses.NotStarted);

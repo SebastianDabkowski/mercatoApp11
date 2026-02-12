@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -11,6 +12,7 @@ using Microsoft.Extensions.Options;
 using Moq;
 using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Pages.Seller;
+using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.Tests.Identity
 {
@@ -26,7 +28,8 @@ namespace SD.ProjectName.Tests.Identity
                 OnboardingStep = 0
             };
             var userManager = CreateUserManager(user);
-            var model = CreateModel(userManager.Object);
+            var payoutEncryption = new PayoutEncryptionService(DataProtectionProvider.Create("tests"));
+            var model = CreateModel(userManager.Object, payoutEncryption);
             model.StoreProfile = new OnboardingModel.StoreProfileInput
             {
                 StoreName = "New Store",
@@ -54,8 +57,9 @@ namespace SD.ProjectName.Tests.Identity
                 OnboardingStep = 2
             };
             var userManager = CreateUserManager(user);
-            var model = CreateModel(userManager.Object);
-            model.Payout = new OnboardingModel.PayoutInput
+            var payoutEncryption = new PayoutEncryptionService(DataProtectionProvider.Create("tests"));
+            var model = CreateModel(userManager.Object, payoutEncryption);
+            model.Payout = new PayoutPreferencesInput
             {
                 PayoutMethod = "Paypal",
                 PayoutAccount = "seller@pay.test"
@@ -68,7 +72,7 @@ namespace SD.ProjectName.Tests.Identity
             Assert.Equal(OnboardingStatuses.PendingVerification, user.OnboardingStatus);
             Assert.Equal(3, user.OnboardingStep);
             Assert.Equal("Paypal", user.PayoutMethod);
-            Assert.Equal("seller@pay.test", user.PayoutAccount);
+            Assert.Equal("seller@pay.test", payoutEncryption.Reveal(user.PayoutAccount));
             Assert.NotNull(user.OnboardingCompletedOn);
             userManager.Verify(m => m.UpdateAsync(user), Times.Once);
             Assert.Equal("Store profile submitted and pending verification.", model.StatusMessage);
@@ -93,7 +97,7 @@ namespace SD.ProjectName.Tests.Identity
             return userManager;
         }
 
-        private static OnboardingModel CreateModel(UserManager<ApplicationUser> userManager)
+        private static OnboardingModel CreateModel(UserManager<ApplicationUser> userManager, IPayoutEncryptionService payoutEncryption)
         {
             var httpContext = new DefaultHttpContext();
             var modelState = new ModelStateDictionary();
@@ -103,7 +107,7 @@ namespace SD.ProjectName.Tests.Identity
                 ViewData = new ViewDataDictionary(new EmptyModelMetadataProvider(), modelState)
             };
 
-            var model = new OnboardingModel(userManager)
+            var model = new OnboardingModel(userManager, payoutEncryption)
             {
                 PageContext = pageContext,
                 TempData = new TempDataDictionary(httpContext, Mock.Of<ITempDataProvider>())

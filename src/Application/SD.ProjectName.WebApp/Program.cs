@@ -52,6 +52,7 @@ builder.Services.AddScoped<ISessionTokenService, DistributedSessionTokenService>
 builder.Services.AddScoped<ILoginAuditService, LoginAuditService>();
 builder.Services.AddScoped<SessionCookieEvents>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, LoggingAuthorizationMiddlewareResultHandler>();
+builder.Services.AddSingleton<IPayoutEncryptionService, PayoutEncryptionService>();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {

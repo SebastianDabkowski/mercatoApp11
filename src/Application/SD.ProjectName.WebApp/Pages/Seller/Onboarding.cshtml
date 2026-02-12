@@ -116,8 +116,23 @@ else
                 </div>
 
                 <div class="mb-3">
+                    <label asp-for="Payout.BankAccountNumber" class="form-label"></label>
+                    <input asp-for="Payout.BankAccountNumber" class="form-control" placeholder="IBAN or account number" />
+                    <div class="form-text">Required for bank transfer payouts.</div>
+                    <span asp-validation-for="Payout.BankAccountNumber" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Payout.BankRoutingNumber" class="form-label"></label>
+                    <input asp-for="Payout.BankRoutingNumber" class="form-control" placeholder="Routing number or sort code" />
+                    <div class="form-text">Needed to route bank transfer payouts correctly.</div>
+                    <span asp-validation-for="Payout.BankRoutingNumber" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
                     <label asp-for="Payout.PayoutAccount" class="form-label"></label>
-                    <input asp-for="Payout.PayoutAccount" class="form-control" placeholder="IBAN, account number or payout email" />
+                    <input asp-for="Payout.PayoutAccount" class="form-control" placeholder="Payout email (for PayPal) or account id" />
+                    <div class="form-text">Required when using PayPal or another provider account payout.</div>
                     <span asp-validation-for="Payout.PayoutAccount" class="text-danger"></span>
                 </div>
 
