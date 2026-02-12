@@ -21,6 +21,18 @@ namespace SD.ProjectName.WebApp.Identity
         public const string Verified = "Verified";
     }
 
+    public static class SellerTypes
+    {
+        public const string Company = "Company";
+        public const string Individual = "Individual";
+
+        public static readonly string[] Allowed = [Company, Individual];
+
+        public static bool IsValid(string? sellerType) =>
+            !string.IsNullOrWhiteSpace(sellerType) &&
+            Allowed.Contains(sellerType, StringComparer.OrdinalIgnoreCase);
+    }
+
     public static class KycStatuses
     {
         public const string NotRequired = "NotRequired";
@@ -46,6 +58,8 @@ namespace SD.ProjectName.WebApp.Identity
 
         public string KycStatus { get; set; } = KycStatuses.NotRequired;
 
+        public string SellerType { get; set; } = SellerTypes.Individual;
+
         public string FullName { get; set; } = string.Empty;
 
         public string Address { get; set; } = string.Empty;
@@ -55,6 +69,12 @@ namespace SD.ProjectName.WebApp.Identity
         public string? BusinessName { get; set; }
 
         public string? TaxId { get; set; }
+
+        public string? CompanyRegistrationNumber { get; set; }
+
+        public string? PersonalIdNumber { get; set; }
+
+        public string? VerificationContactName { get; set; }
 
         public bool TermsAccepted { get; set; }
 
