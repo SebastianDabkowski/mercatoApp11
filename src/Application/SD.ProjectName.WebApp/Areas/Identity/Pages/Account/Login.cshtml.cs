@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 using SD.ProjectName.WebApp.Identity;
+using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
 {
@@ -21,19 +22,22 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
         private readonly ILogger<LoginModel> _logger;
         private readonly IEmailSender _emailSender;
         private readonly IOptions<KycOptions> _kycOptions;
+        private readonly ILoginAuditService _loginAuditService;
 
         public LoginModel(
             SignInManager<ApplicationUser> signInManager,
             UserManager<ApplicationUser> userManager,
             ILogger<LoginModel> logger,
             IEmailSender emailSender,
-            IOptions<KycOptions> kycOptions)
+            IOptions<KycOptions> kycOptions,
+            ILoginAuditService loginAuditService)
         {
             _signInManager = signInManager;
             _userManager = userManager;
             _logger = logger;
             _emailSender = emailSender;
             _kycOptions = kycOptions;
+            _loginAuditService = loginAuditService;
         }
 
         [BindProperty]
@@ -105,6 +109,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                         protocol: Request.Scheme);
                     ModelState.AddModelError(string.Empty, GetVerificationMessage(user.AccountType));
                     _logger.LogInformation("Blocked login for unverified {Role} user {Email}.", user.AccountType, Input.Email);
+                    await LogAuditAsync(user.Id, user.Email, LoginEventTypes.BlockedUnverified, false);
                     return Page();
                 }
 
@@ -117,20 +122,29 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 if (result.Succeeded)
                 {
                     _logger.LogInformation("User logged in.");
+                    await LogAuditAsync(user.Id, user.Email, LoginEventTypes.PasswordSuccess, true);
                     var redirectUrl = ResolveRedirectUrl(returnUrl, user);
                     return LocalRedirect(redirectUrl);
                 }
 
                 if (result.RequiresTwoFactor)
                 {
+                    await LogAuditAsync(user.Id, user.Email, LoginEventTypes.RequiresTwoFactor, false);
                     return RedirectToPage("./LoginWith2fa", new { ReturnUrl = returnUrl, RememberMe = Input.RememberMe });
                 }
 
                 if (result.IsLockedOut)
                 {
                     _logger.LogWarning("User account locked out.");
+                    await LogAuditAsync(user.Id, user.Email, LoginEventTypes.LockedOut, false);
                     return RedirectToPage("./Lockout");
                 }
+
+                await LogAuditAsync(user.Id, user.Email, LoginEventTypes.PasswordFailed, false);
+            }
+            else
+            {
+                await LogAuditAsync(null, Input.Email, LoginEventTypes.UnknownUser, false);
             }
 
             ModelState.AddModelError(string.Empty, "Invalid login attempt.");
@@ -209,5 +223,22 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
 
             return user.KycSubmittedOn == null;
         }
+
+        private Task LogAuditAsync(string? userId, string? email, string eventType, bool isSuccess)
+        {
+            return _loginAuditService.RecordAsync(new LoginAuditEntry
+            {
+                UserId = userId,
+                Email = email,
+                EventType = eventType,
+                IsSuccess = isSuccess,
+                IpAddress = GetClientIp(),
+                UserAgent = GetUserAgent()
+            });
+        }
+
+        private string? GetClientIp() => HttpContext.Connection.RemoteIpAddress?.ToString();
+
+        private string? GetUserAgent() => Request.Headers.UserAgent.ToString();
     }
 }

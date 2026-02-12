@@ -14,6 +14,7 @@ using Microsoft.Extensions.Options;
 using Moq;
 using SD.ProjectName.WebApp.Areas.Identity.Pages.Account;
 using SD.ProjectName.WebApp.Identity;
+using SD.ProjectName.WebApp.Services;
 using IdentitySignInResult = Microsoft.AspNetCore.Identity.SignInResult;
 
 namespace SD.ProjectName.Tests.Identity
@@ -231,7 +232,8 @@ namespace SD.ProjectName.Tests.Identity
             Mock<UserManager<ApplicationUser>> userManager,
             Mock<SignInManager<ApplicationUser>> signInManager,
             Mock<IEmailSender>? emailSender = null,
-            KycOptions? kycOptions = null)
+            KycOptions? kycOptions = null,
+            ILoginAuditService? loginAuditService = null)
         {
             var httpContext = new DefaultHttpContext();
             httpContext.Request.Scheme = "https";
@@ -243,7 +245,7 @@ namespace SD.ProjectName.Tests.Identity
                 ViewData = new ViewDataDictionary(new EmptyModelMetadataProvider(), modelState)
             };
 
-            var model = new LoginModel(signInManager.Object, userManager.Object, Mock.Of<ILogger<LoginModel>>(), (emailSender ?? new Mock<IEmailSender>()).Object, Options.Create(kycOptions ?? new KycOptions()))
+            var model = new LoginModel(signInManager.Object, userManager.Object, Mock.Of<ILogger<LoginModel>>(), (emailSender ?? new Mock<IEmailSender>()).Object, Options.Create(kycOptions ?? new KycOptions()), loginAuditService ?? Mock.Of<ILoginAuditService>())
             {
                 PageContext = pageContext,
                 Url = new TestUrlHelper(actionContext),

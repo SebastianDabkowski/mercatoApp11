@@ -57,5 +57,13 @@ namespace SD.ProjectName.WebApp.Identity
         public DateTimeOffset? KycSubmittedOn { get; set; }
 
         public DateTimeOffset? KycApprovedOn { get; set; }
+
+        public string TwoFactorMethod { get; set; } = TokenOptions.DefaultEmailProvider;
+
+        public DateTimeOffset? TwoFactorEnabledOn { get; set; }
+
+        public string? LastLoginIp { get; set; }
+
+        public DateTimeOffset? LastLoginOn { get; set; }
     }
 }
