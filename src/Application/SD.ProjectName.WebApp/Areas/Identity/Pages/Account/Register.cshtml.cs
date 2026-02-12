@@ -136,6 +136,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 user.Country = Input.Country;
                 user.BusinessName = Input.BusinessName;
                 user.TaxId = Input.TaxId;
+                user.ContactEmail = Input.Email;
                 var normalizedAccountType = AccountTypes.Allowed.FirstOrDefault(a => a.Equals(Input.AccountType, StringComparison.OrdinalIgnoreCase))
                                            ?? AccountTypes.Buyer;
                 user.AccountType = normalizedAccountType;

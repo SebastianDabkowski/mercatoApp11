@@ -76,6 +76,14 @@ namespace SD.ProjectName.WebApp.Identity
 
         public string StoreDescription { get; set; } = string.Empty;
 
+        public string ContactEmail { get; set; } = string.Empty;
+
+        public string? ContactPhone { get; set; }
+
+        public string? ContactWebsite { get; set; }
+
+        public string? StoreLogoPath { get; set; }
+
         public string PayoutMethod { get; set; } = "BankTransfer";
 
         public string PayoutAccount { get; set; } = string.Empty;

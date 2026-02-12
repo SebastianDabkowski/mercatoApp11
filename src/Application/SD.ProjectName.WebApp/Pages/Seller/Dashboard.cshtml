@@ -42,3 +42,61 @@ else
         KYC is up to date. You have full access to seller capabilities.
     </div>
 }
+
+<div class="card shadow-sm mt-3">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+            <div>
+                <h2 class="h5 mb-1">Store profile</h2>
+                <p class="text-muted mb-2">Buyers will see these details on your public page.</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a class="btn btn-primary btn-sm" href="~/Seller/StoreSettings">Manage store profile</a>
+                @if (Model.HasStoreProfile)
+                {
+                    <a class="btn btn-outline-secondary btn-sm" asp-page="/Store/Details" asp-route-storeName="@Model.StoreName">View public store</a>
+                }
+            </div>
+        </div>
+
+        @if (Model.HasStoreProfile)
+        {
+            <div class="row align-items-center mt-3">
+                <div class="col-md-3">
+                    @if (!string.IsNullOrEmpty(Model.StoreLogoPath))
+                    {
+                        <img src="@Model.StoreLogoPath" alt="Store logo" class="img-fluid rounded border" />
+                    }
+                    else
+                    {
+                        <div class="text-muted small">No logo uploaded</div>
+                    }
+                </div>
+                <div class="col-md-9">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-4">Name</dt>
+                        <dd class="col-sm-8">@Model.StoreName</dd>
+                        <dt class="col-sm-4">Description</dt>
+                        <dd class="col-sm-8">@Model.StoreDescription</dd>
+                        <dt class="col-sm-4">Contact email</dt>
+                        <dd class="col-sm-8">@Model.ContactEmail</dd>
+                        @if (!string.IsNullOrEmpty(Model.ContactPhone))
+                        {
+                            <dt class="col-sm-4">Phone</dt>
+                            <dd class="col-sm-8">@Model.ContactPhone</dd>
+                        }
+                        @if (!string.IsNullOrEmpty(Model.ContactWebsite))
+                        {
+                            <dt class="col-sm-4">Website</dt>
+                            <dd class="col-sm-8"><a href="@Model.ContactWebsite" target="_blank" rel="noopener">@Model.ContactWebsite</a></dd>
+                        }
+                    </dl>
+                </div>
+            </div>
+        }
+        else
+        {
+            <p class="mb-0 text-muted">Complete your store profile so buyers can reach you.</p>
+        }
+    </div>
+</div>

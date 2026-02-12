@@ -1,0 +1,93 @@
+@page
+@model SD.ProjectName.WebApp.Pages.Seller.StoreSettingsModel
+@{
+    ViewData["Title"] = "Store settings";
+}
+
+<h1 class="display-6">Store settings</h1>
+<p class="lead">Keep your store details accurate so buyers know how to reach you.</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success" role="alert">@Model.StatusMessage</div>
+}
+
+<div class="row">
+    <div class="col-lg-8">
+        <form method="post" enctype="multipart/form-data" class="card p-4 shadow-sm mb-3">
+            <h2 class="h5 mb-3">Store profile</h2>
+            <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+
+            <div class="mb-3">
+                <label asp-for="Input.StoreName" class="form-label"></label>
+                <input asp-for="Input.StoreName" class="form-control" />
+                <span asp-validation-for="Input.StoreName" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Input.StoreDescription" class="form-label"></label>
+                <textarea asp-for="Input.StoreDescription" class="form-control" rows="4"></textarea>
+                <span asp-validation-for="Input.StoreDescription" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Input.ContactEmail" class="form-label"></label>
+                <input asp-for="Input.ContactEmail" class="form-control" />
+                <span asp-validation-for="Input.ContactEmail" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Input.ContactPhone" class="form-label"></label>
+                <input asp-for="Input.ContactPhone" class="form-control" />
+                <span asp-validation-for="Input.ContactPhone" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Input.ContactWebsite" class="form-label"></label>
+                <input asp-for="Input.ContactWebsite" class="form-control" placeholder="https://example.com" />
+                <span asp-validation-for="Input.ContactWebsite" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Input.LogoFile" class="form-label"></label>
+                <input asp-for="Input.LogoFile" class="form-control" type="file" accept=".png,.jpg,.jpeg" />
+                <span asp-validation-for="Input.LogoFile" class="text-danger"></span>
+            </div>
+
+            <div class="d-flex justify-content-end">
+                <button type="submit" class="btn btn-primary">Save changes</button>
+            </div>
+        </form>
+    </div>
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-3">
+            <div class="card-body">
+                <h2 class="h6">Logo preview</h2>
+                @if (!string.IsNullOrEmpty(Model.CurrentLogoPath))
+                {
+                    <img src="@Model.CurrentLogoPath" alt="Store logo" class="img-fluid rounded border" />
+                }
+                else
+                {
+                    <p class="text-muted mb-0">No logo uploaded yet.</p>
+                }
+            </div>
+        </div>
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h2 class="h6">Logo requirements</h2>
+                <ul class="mb-0">
+                    <li>PNG or JPEG</li>
+                    <li>Maximum 2 MB</li>
+                    <li>Use a square image for best results</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<p class="text-muted mt-3">Changes save immediately and update your public store page.</p>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
