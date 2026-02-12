@@ -1,0 +1,15 @@
+@page
+@using Microsoft.AspNetCore.Authorization
+@using SD.ProjectName.WebApp.Identity
+@attribute [Authorize(Roles = AccountTypes.Admin)]
+@model SD.ProjectName.WebApp.Pages.Admin.DashboardModel
+@{
+    ViewData["Title"] = "Admin dashboard";
+}
+
+<h1 class="display-6">Admin dashboard</h1>
+<p class="lead">Manage the marketplace configuration and monitor platform activity.</p>
+
+<div class="alert alert-warning">
+    You are signed in with administrator privileges. Changes here affect all buyers and sellers.
+</div>

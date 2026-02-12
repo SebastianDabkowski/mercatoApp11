@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
@@ -47,6 +49,7 @@ builder.Services.AddSingleton<SessionTokenOptions>(sp => sp.GetRequiredService<I
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<ISessionTokenService, DistributedSessionTokenService>();
 builder.Services.AddScoped<SessionCookieEvents>();
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, LoggingAuthorizationMiddlewareResultHandler>();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {
@@ -88,13 +91,25 @@ if (!string.IsNullOrWhiteSpace(facebookAppId) && !string.IsNullOrWhiteSpace(face
     });
 }
 
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(AccountTypes.Buyer, policy => policy.RequireRole(AccountTypes.Buyer));
+    options.AddPolicy(AccountTypes.Seller, policy => policy.RequireRole(AccountTypes.Seller));
+    options.AddPolicy(AccountTypes.Admin, policy => policy.RequireRole(AccountTypes.Admin));
+});
+
 // init module Products
 builder.Services.AddDbContext<ProductDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<GetProducts>();
 
-builder.Services.AddRazorPages();
+builder.Services.AddRazorPages(options =>
+{
+    options.Conventions.AuthorizeFolder("/Buyer", AccountTypes.Buyer);
+    options.Conventions.AuthorizeFolder("/Seller", AccountTypes.Seller);
+    options.Conventions.AuthorizeFolder("/Admin", AccountTypes.Admin);
+});
 
 var app = builder.Build();
 
