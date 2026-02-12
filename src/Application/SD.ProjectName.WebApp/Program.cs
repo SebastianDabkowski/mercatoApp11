@@ -43,6 +43,34 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.SlidingExpiration = true;
 });
 
+var authenticationBuilder = builder.Services.AddAuthentication();
+
+var googleClientId = builder.Configuration["Authentication:Google:ClientId"];
+var googleClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
+if (!string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(googleClientSecret))
+{
+    authenticationBuilder.AddGoogle(options =>
+    {
+        options.ClientId = googleClientId;
+        options.ClientSecret = googleClientSecret;
+        options.SaveTokens = true;
+    });
+}
+
+var facebookAppId = builder.Configuration["Authentication:Facebook:AppId"];
+var facebookAppSecret = builder.Configuration["Authentication:Facebook:AppSecret"];
+if (!string.IsNullOrWhiteSpace(facebookAppId) && !string.IsNullOrWhiteSpace(facebookAppSecret))
+{
+    authenticationBuilder.AddFacebook(options =>
+    {
+        options.AppId = facebookAppId;
+        options.AppSecret = facebookAppSecret;
+        options.SaveTokens = true;
+        options.Fields.Add("email");
+        options.Fields.Add("name");
+    });
+}
+
 // init module Products
 builder.Services.AddDbContext<ProductDbContext>(options =>
     options.UseSqlServer(connectionString));
