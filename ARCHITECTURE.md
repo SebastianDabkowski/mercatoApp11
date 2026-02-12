@@ -21,6 +21,14 @@ This solution uses a modular, layered architecture with a Razor Pages Web App an
 - Web App has `ApplicationDbContext` for Identity.
 - Products module has its own `ProductDbContext` with separate migrations.
 
+## ADR Traceability
+- ADR-001 (Modular Monolith, Accepted): Single deployable WebApp plus feature modules; each module owns its schema and DI registration.
+- ADR-002 (Przelewy24 escrow-like flow, Accepted): Payments and Settlements modules will own payment callbacks, commission, and payouts; the boundary is reserved for those flows.
+- ADR-003 (Database-first search, Accepted): Product search stays in the relational database with indexed columns until a dedicated engine is justified.
+- ADR-004 (Multi-language with PLN-only currency, Accepted): Razor Pages UI uses .NET localization; currency remains PLN minor units for all transactions.
+
+Keep this list updated whenever ADRs are added or changed so this document mirrors accepted architectural decisions.
+
 ## Dependency Flow
 - WebApp -> Application (use cases) -> Domain (interfaces)
 - Infrastructure implements Domain interfaces and is registered in DI at startup.
@@ -88,7 +96,7 @@ This solution uses a modular, layered architecture with a Razor Pages Web App an
 
 # Conventions
 - Application services: simple classes with clear method names (`GetList`, `Create`, `Update`).
-- Avoid coupling Application to EF Core—use interfaces.
+- Avoid coupling Application to EF Core - use interfaces.
 - Keep Razor Pages lean; delegate work to Application.
 - One DbContext per bounded context (Identity vs Products).
 
@@ -103,6 +111,11 @@ This solution uses a modular, layered architecture with a Razor Pages Web App an
 - Update DI registrations in `Program.cs`.
 - Add/adjust Razor Pages if the UI changes.
 - Ensure unit tests cover new paths.
+
+## Documentation Sync Rules
+- Update this file in the same PR when module boundaries, data flows, or infrastructure change; add relevant ADR ids to the ADR Traceability section.
+- When an ADR is added or its status changes, add it to ADR Traceability and ensure the record exists in `docs/adr`.
+- If agent ownership or responsibilities shift, update `AGENT.md` alongside architecture updates.
 
 # Useful Paths
 - WebApp: `Application/SD.ProjectName.WebApp`.
