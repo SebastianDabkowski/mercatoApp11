@@ -17,6 +17,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
     [AllowAnonymous]
     public class LoginModel : PageModel
     {
+        private const int OnboardingSteps = 3;
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly ILogger<LoginModel> _logger;
@@ -185,6 +186,11 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 return returnUrl;
             }
 
+            if (ShouldRedirectToOnboarding(user, out var onboardingUrl))
+            {
+                return onboardingUrl;
+            }
+
             if (ShouldRedirectToKyc(user))
             {
                 return Url?.Content("~/Seller/Kyc") ?? "~/Seller/Kyc";
@@ -222,6 +228,41 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             }
 
             return user.KycSubmittedOn == null;
+        }
+
+        private bool ShouldRedirectToOnboarding(ApplicationUser user, out string redirectUrl)
+        {
+            redirectUrl = string.Empty;
+
+            if (user.AccountType == null || !user.AccountType.Equals(AccountTypes.Seller, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (string.Equals(user.OnboardingStatus, OnboardingStatuses.PendingVerification, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(user.OnboardingStatus, OnboardingStatuses.Completed, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var lastCompleted = user.OnboardingStep;
+            if (lastCompleted < 0)
+            {
+                lastCompleted = 0;
+            }
+            else if (lastCompleted > OnboardingSteps)
+            {
+                lastCompleted = OnboardingSteps;
+            }
+
+            var nextStep = lastCompleted + 1;
+            if (nextStep > OnboardingSteps)
+            {
+                nextStep = OnboardingSteps;
+            }
+
+            redirectUrl = Url?.Content($"~/Seller/Onboarding?step={nextStep}") ?? $"~/Seller/Onboarding?step={nextStep}";
+            return true;
         }
 
         private Task LogAuditAsync(string? userId, string? email, string eventType, bool isSuccess)

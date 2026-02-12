@@ -66,6 +66,27 @@ namespace SD.ProjectName.WebApp.Data
                     .HasMaxLength(128);
 
                 entity.Property(u => u.LastLoginOn);
+
+                entity.Property(u => u.StoreDescription)
+                    .HasMaxLength(2048);
+
+                entity.Property(u => u.PayoutMethod)
+                    .HasMaxLength(64)
+                    .HasDefaultValue("BankTransfer");
+
+                entity.Property(u => u.PayoutAccount)
+                    .HasMaxLength(256);
+
+                entity.Property(u => u.OnboardingStatus)
+                    .HasMaxLength(64)
+                    .HasDefaultValue(OnboardingStatuses.NotStarted);
+
+                entity.Property(u => u.OnboardingStep)
+                    .HasDefaultValue(0);
+
+                entity.Property(u => u.OnboardingStartedOn);
+
+                entity.Property(u => u.OnboardingCompletedOn);
             });
 
             builder.Entity<LoginAudit>(entity =>

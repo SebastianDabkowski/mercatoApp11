@@ -143,6 +143,16 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 user.KycStatus = normalizedAccountType == AccountTypes.Seller && _kycOptions.Value.RequireSellerKyc
                     ? KycStatuses.Pending
                     : KycStatuses.NotRequired;
+                if (normalizedAccountType == AccountTypes.Seller)
+                {
+                    user.OnboardingStatus = OnboardingStatuses.InProgress;
+                    user.OnboardingStartedOn = DateTimeOffset.UtcNow;
+                    user.OnboardingStep = 0;
+                }
+                else
+                {
+                    user.OnboardingStatus = OnboardingStatuses.Completed;
+                }
                 user.TermsAccepted = Input.AcceptTerms;
                 user.TermsAcceptedOn = DateTimeOffset.UtcNow;
 

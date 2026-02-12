@@ -1,0 +1,137 @@
+﻿@page
+@model SD.ProjectName.WebApp.Pages.Seller.OnboardingModel
+@{
+    ViewData["Title"] = "Seller onboarding";
+    var steps = new[] { "Store profile", "Verification data", "Payout basics" };
+}
+
+<h1 class="display-6">Seller onboarding</h1>
+<p class="lead">We guide you through the minimum details needed to activate your store. Your progress saves after each step.</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-info" role="alert">@Model.StatusMessage</div>
+}
+
+@if (Model.IsSubmitted)
+{
+    <div class="alert alert-success" role="alert">
+        Store profile submitted and pending verification.
+        @if (Model.CompletedOn.HasValue)
+        {
+            <span class="d-block">Submitted on @Model.CompletedOn.Value.UtcDateTime.ToString("u") UTC.</span>
+        }
+    </div>
+    <a class="btn btn-primary" href="~/Seller/Dashboard">Go to seller dashboard</a>
+}
+else
+{
+    <ul class="nav nav-pills mb-4">
+        @for (var i = 0; i < steps.Length; i++)
+        {
+            var stepNumber = i + 1;
+            var isActive = stepNumber == Model.Step;
+            var isDone = stepNumber <= Model.LastCompletedStep;
+            var linkClass = $"nav-link{(isActive ? " active" : string.Empty)}";
+            <li class="nav-item me-2">
+                <span class="@linkClass">
+                    Step @stepNumber: @steps[i]
+                    @if (isDone)
+                    {
+                        <span class="badge bg-success ms-2">Saved</span>
+                    }
+                </span>
+            </li>
+        }
+    </ul>
+
+    @switch (Model.Step)
+    {
+        case 1:
+            <form method="post" asp-page-handler="Store" class="card p-4 shadow-sm mb-3">
+                <h2 class="h5 mb-3">Store profile basics</h2>
+                <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+
+                <div class="mb-3">
+                    <label asp-for="StoreProfile.StoreName" class="form-label"></label>
+                    <input asp-for="StoreProfile.StoreName" class="form-control" />
+                    <span asp-validation-for="StoreProfile.StoreName" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="StoreProfile.StoreDescription" class="form-label"></label>
+                    <textarea asp-for="StoreProfile.StoreDescription" class="form-control" rows="3"></textarea>
+                    <span asp-validation-for="StoreProfile.StoreDescription" class="text-danger"></span>
+                </div>
+
+                <div class="d-flex justify-content-end">
+                    <button type="submit" class="btn btn-primary">Save and continue</button>
+                </div>
+            </form>
+            break;
+        case 2:
+            <form method="post" asp-page-handler="Verification" class="card p-4 shadow-sm mb-3">
+                <h2 class="h5 mb-3">Verification data</h2>
+                <p class="text-muted">We use these details to validate your business identity.</p>
+                <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+
+                <div class="mb-3">
+                    <label asp-for="Verification.TaxId" class="form-label"></label>
+                    <input asp-for="Verification.TaxId" class="form-control" />
+                    <span asp-validation-for="Verification.TaxId" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Verification.Address" class="form-label"></label>
+                    <textarea asp-for="Verification.Address" class="form-control" rows="3"></textarea>
+                    <span asp-validation-for="Verification.Address" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Verification.Country" class="form-label"></label>
+                    <input asp-for="Verification.Country" class="form-control" />
+                    <span asp-validation-for="Verification.Country" class="text-danger"></span>
+                </div>
+
+                <div class="d-flex justify-content-between">
+                    <a class="btn btn-link" href="~/Seller/Onboarding?step=1">Back</a>
+                    <button type="submit" class="btn btn-primary">Save and continue</button>
+                </div>
+            </form>
+            break;
+        default:
+            <form method="post" asp-page-handler="Payout" class="card p-4 shadow-sm mb-3">
+                <h2 class="h5 mb-3">Payout basics</h2>
+                <p class="text-muted">Tell us how to route your payouts. You can update this later from your profile.</p>
+                <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+
+                <div class="mb-3">
+                    <label asp-for="Payout.PayoutMethod" class="form-label"></label>
+                    <select asp-for="Payout.PayoutMethod" class="form-select">
+                        <option value="BankTransfer">Bank transfer</option>
+                        <option value="Paypal">PayPal</option>
+                        <option value="ManualReview">Manual review</option>
+                    </select>
+                    <span asp-validation-for="Payout.PayoutMethod" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Payout.PayoutAccount" class="form-label"></label>
+                    <input asp-for="Payout.PayoutAccount" class="form-control" placeholder="IBAN, account number or payout email" />
+                    <span asp-validation-for="Payout.PayoutAccount" class="text-danger"></span>
+                </div>
+
+                <div class="d-flex justify-content-between">
+                    <a class="btn btn-link" href="~/Seller/Onboarding?step=2">Back</a>
+                    <button type="submit" class="btn btn-success">Submit onboarding</button>
+                </div>
+            </form>
+            break;
+    }
+}
+
+<p class="text-muted mt-3">Need help? Contact support and reference your account email.</p>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

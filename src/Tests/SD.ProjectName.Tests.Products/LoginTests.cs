@@ -85,7 +85,9 @@ namespace SD.ProjectName.Tests.Identity
                 Email = "seller@example.com",
                 UserName = "seller@example.com",
                 AccountType = AccountTypes.Seller,
-                AccountStatus = AccountStatuses.Unverified
+                AccountStatus = AccountStatuses.Unverified,
+                OnboardingStatus = OnboardingStatuses.InProgress,
+                OnboardingStep = 0
             };
             userManager.Setup(m => m.FindByEmailAsync(user.Email)).ReturnsAsync(user);
             userManager.Setup(m => m.IsEmailConfirmedAsync(user)).ReturnsAsync(false);
@@ -147,7 +149,9 @@ namespace SD.ProjectName.Tests.Identity
                 UserName = "seller@example.com",
                 AccountType = AccountTypes.Seller,
                 AccountStatus = AccountStatuses.Verified,
-                KycStatus = KycStatuses.Approved
+                KycStatus = KycStatuses.Approved,
+                OnboardingStatus = OnboardingStatuses.PendingVerification,
+                OnboardingStep = 3
             };
             userManager.Setup(m => m.FindByEmailAsync(user.Email)).ReturnsAsync(user);
             userManager.Setup(m => m.IsEmailConfirmedAsync(user)).ReturnsAsync(true);
@@ -166,6 +170,36 @@ namespace SD.ProjectName.Tests.Identity
         }
 
         [Fact]
+        public async Task SellerWithoutOnboarding_ShouldBeSentToWizardBeforeKyc()
+        {
+            var userManager = CreateUserManager();
+            var user = new ApplicationUser
+            {
+                Email = "seller@example.com",
+                UserName = "seller@example.com",
+                AccountType = AccountTypes.Seller,
+                AccountStatus = AccountStatuses.Verified,
+                KycStatus = KycStatuses.Pending,
+                OnboardingStatus = OnboardingStatuses.NotStarted,
+                OnboardingStep = 0
+            };
+            userManager.Setup(m => m.FindByEmailAsync(user.Email)).ReturnsAsync(user);
+            userManager.Setup(m => m.IsEmailConfirmedAsync(user)).ReturnsAsync(true);
+
+            var signInManager = CreateSignInManager(userManager.Object);
+            signInManager.Setup(s => s.PasswordSignInAsync(user.UserName, "Pass123!abcd", true, true))
+                .ReturnsAsync(IdentitySignInResult.Success);
+
+            var model = CreateLoginModel(userManager, signInManager, null, new KycOptions { RequireSellerKyc = true });
+            model.Input = new LoginModel.InputModel { Email = user.Email, Password = "Pass123!abcd", RememberMe = true };
+
+            var result = await model.OnPostAsync();
+
+            var redirect = Assert.IsType<LocalRedirectResult>(result);
+            Assert.Equal("~/Seller/Onboarding?step=1", redirect.Url);
+        }
+
+        [Fact]
         public async Task SellerWithoutKyc_ShouldBeSentToKycPage_WhenRequired()
         {
             var userManager = CreateUserManager();
@@ -175,7 +209,9 @@ namespace SD.ProjectName.Tests.Identity
                 UserName = "seller@example.com",
                 AccountType = AccountTypes.Seller,
                 AccountStatus = AccountStatuses.Verified,
-                KycStatus = KycStatuses.Pending
+                KycStatus = KycStatuses.Pending,
+                OnboardingStatus = OnboardingStatuses.PendingVerification,
+                OnboardingStep = 3
             };
             userManager.Setup(m => m.FindByEmailAsync(user.Email)).ReturnsAsync(user);
             userManager.Setup(m => m.IsEmailConfirmedAsync(user)).ReturnsAsync(true);
