@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.Modules.Products.Domain.Interfaces;
@@ -17,6 +19,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
+builder.Services.AddDistributedMemoryCache();
 builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
     {
         options.SignIn.RequireConfirmedAccount = true;
@@ -36,6 +39,14 @@ builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
 builder.Services.AddSingleton<IEmailSender, ConsoleEmailSender>();
 builder.Services.Configure<DataProtectionTokenProviderOptions>(o => o.TokenLifespan = TimeSpan.FromHours(24));
 builder.Services.Configure<KycOptions>(builder.Configuration.GetSection("Kyc"));
+builder.Services.AddOptions<SessionTokenOptions>()
+    .Bind(builder.Configuration.GetSection("Session"))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<SessionTokenOptions>(sp => sp.GetRequiredService<IOptions<SessionTokenOptions>>().Value);
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<ISessionTokenService, DistributedSessionTokenService>();
+builder.Services.AddScoped<SessionCookieEvents>();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {
@@ -43,6 +54,10 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.AccessDeniedPath = "/Identity/Account/AccessDenied";
     options.ExpireTimeSpan = TimeSpan.FromHours(12);
     options.SlidingExpiration = true;
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.EventsType = typeof(SessionCookieEvents);
 });
 
 var authenticationBuilder = builder.Services.AddAuthentication();
