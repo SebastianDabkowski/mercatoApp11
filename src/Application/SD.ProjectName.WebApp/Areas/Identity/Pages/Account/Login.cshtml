@@ -1,0 +1,56 @@
+@page
+@model SD.ProjectName.WebApp.Areas.Identity.Pages.Account.LoginModel
+@{
+    ViewData["Title"] = "Login";
+}
+
+<h1>@ViewData["Title"]</h1>
+
+<div class="row">
+    <div class="col-md-6">
+        <section>
+            <form id="account" method="post" asp-route-returnUrl="@Model.ReturnUrl">
+                <h2>Access your account</h2>
+                <p class="text-muted">Use your email and password to sign in as a buyer or seller.</p>
+                <hr />
+                <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
+
+                @if (Model.ShowVerificationReminder && !string.IsNullOrEmpty(Model.ResendConfirmationUrl))
+                {
+                    <div class="alert alert-warning">
+                        <p class="mb-1">Please verify your email before signing in.</p>
+                        <a class="alert-link" href="@Model.ResendConfirmationUrl">Resend verification email</a>
+                    </div>
+                }
+
+                <div class="mb-3">
+                    <label asp-for="Input.Email" class="form-label"></label>
+                    <input asp-for="Input.Email" class="form-control" autocomplete="username" />
+                    <span asp-validation-for="Input.Email" class="text-danger"></span>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.Password" class="form-label"></label>
+                    <input asp-for="Input.Password" class="form-control" autocomplete="current-password" />
+                    <span asp-validation-for="Input.Password" class="text-danger"></span>
+                </div>
+                <div class="form-check mb-3">
+                    <input asp-for="Input.RememberMe" class="form-check-input" />
+                    <label asp-for="Input.RememberMe" class="form-check-label"></label>
+                </div>
+                <button id="login-submit" type="submit" class="w-100 btn btn-lg btn-primary">Log in</button>
+            </form>
+        </section>
+    </div>
+    <div class="col-md-6">
+        <section>
+            <h3>Having trouble?</h3>
+            <p>If you are a seller with an unverified email, request a new verification link above.</p>
+            <p>For security, repeated failed attempts may temporarily lock your account.</p>
+            <p>Need an account? <a asp-page="./Register">Create one</a>.</p>
+        </section>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
