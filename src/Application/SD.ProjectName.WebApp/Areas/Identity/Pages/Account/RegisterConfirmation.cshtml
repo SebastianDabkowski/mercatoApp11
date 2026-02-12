@@ -1,0 +1,16 @@
+@page
+@model SD.ProjectName.WebApp.Areas.Identity.Pages.Account.RegisterConfirmationModel
+@{
+    ViewData["Title"] = "Confirm your email";
+}
+
+<h1>@ViewData["Title"]</h1>
+<p class="lead">We have sent a verification email to <strong>@Model.Email</strong>.</p>
+<p>Your account is in <strong>Unverified</strong> status until you confirm your email. Check your inbox (and spam folder) and click the verification link to unlock full access.</p>
+
+@if (Model.DisplayConfirmAccountLink)
+{
+    <p>
+        <a id="confirm-link" href="@Model.EmailConfirmationUrl">Confirm email</a>
+    </p>
+}

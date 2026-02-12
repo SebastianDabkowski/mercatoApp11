@@ -1,0 +1,102 @@
+@page
+@using SD.ProjectName.WebApp.Identity
+@model SD.ProjectName.WebApp.Areas.Identity.Pages.Account.RegisterModel
+@{
+    ViewData["Title"] = "Register";
+}
+
+<h1>@ViewData["Title"]</h1>
+
+<div class="row">
+    <div class="col-md-7">
+        <form id="registerForm" asp-route-returnUrl="@Model.ReturnUrl" method="post">
+            <h2>Create a new account</h2>
+            <p class="text-muted">Choose your role and provide the details we need for verification and invoicing.</p>
+            <hr />
+            <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
+
+            <div class="mb-3">
+                <label asp-for="Input.AccountType" class="form-label"></label>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" asp-for="Input.AccountType" value="@AccountTypes.Buyer" id="accountTypeBuyer" />
+                    <label class="form-check-label" for="accountTypeBuyer">Buyer</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" asp-for="Input.AccountType" value="@AccountTypes.Seller" id="accountTypeSeller" />
+                    <label class="form-check-label" for="accountTypeSeller">Seller</label>
+                </div>
+                <span asp-validation-for="Input.AccountType" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Input.FullName" class="form-label"></label>
+                <input asp-for="Input.FullName" class="form-control" autocomplete="name" />
+                <span asp-validation-for="Input.FullName" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Input.BusinessName" class="form-label"></label>
+                <input asp-for="Input.BusinessName" class="form-control" autocomplete="organization" />
+                <small class="form-text text-muted">Required for sellers; optional for buyers.</small>
+                <span asp-validation-for="Input.BusinessName" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Input.TaxId" class="form-label"></label>
+                <input asp-for="Input.TaxId" class="form-control" autocomplete="off" />
+                <small class="form-text text-muted">Required for sellers so we can issue invoices.</small>
+                <span asp-validation-for="Input.TaxId" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Input.Address" class="form-label"></label>
+                <textarea asp-for="Input.Address" class="form-control" rows="2" autocomplete="street-address"></textarea>
+                <span asp-validation-for="Input.Address" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Input.Country" class="form-label"></label>
+                <input asp-for="Input.Country" class="form-control" autocomplete="country-name" />
+                <span asp-validation-for="Input.Country" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Input.Email" class="form-label"></label>
+                <input asp-for="Input.Email" class="form-control" autocomplete="email" />
+                <span asp-validation-for="Input.Email" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Input.Password" class="form-label"></label>
+                <input asp-for="Input.Password" class="form-control" autocomplete="new-password" />
+                <span asp-validation-for="Input.Password" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Input.ConfirmPassword" class="form-label"></label>
+                <input asp-for="Input.ConfirmPassword" class="form-control" autocomplete="new-password" />
+                <span asp-validation-for="Input.ConfirmPassword" class="text-danger"></span>
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" asp-for="Input.AcceptTerms" />
+                <label class="form-check-label" asp-for="Input.AcceptTerms"></label>
+                <span asp-validation-for="Input.AcceptTerms" class="text-danger"></span>
+            </div>
+
+            <button id="registerSubmit" type="submit" class="w-100 btn btn-lg btn-primary">Register</button>
+        </form>
+    </div>
+    <div class="col-md-5">
+        <section>
+            <h3>Why verify?</h3>
+            <p>Your account starts in <strong>Unverified</strong> status. Verify your email to unlock full marketplace access.</p>
+            <h3>Need help?</h3>
+            <p>Email support if you run into any issues during registration.</p>
+        </section>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
