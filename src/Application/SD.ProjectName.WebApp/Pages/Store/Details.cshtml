@@ -1,34 +1,76 @@
-@page "/Store/{storeName}"
+@page "/store/{storeSlug}"
 @model SD.ProjectName.WebApp.Pages.Store.DetailsModel
 @{
     ViewData["Title"] = Model.Store?.Name ?? "Store";
 }
 
-<div class="row">
-    <div class="col-md-8">
-        <h1 class="display-6">@Model.Store?.Name</h1>
-        @if (!string.IsNullOrEmpty(Model.Store?.LogoPath))
-        {
-            <img src="@Model.Store!.LogoPath" alt="@Model.Store.Name logo" class="img-fluid rounded border mb-3" />
-        }
-        <p class="lead">@Model.Store?.Description</p>
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-warning" role="alert">
+        @Model.StatusMessage
     </div>
-    <div class="col-md-4">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h2 class="h6">Contact</h2>
-                <ul class="list-unstyled mb-0">
-                    <li><strong>Email:</strong> <a href="mailto:@Model.Store?.ContactEmail">@Model.Store?.ContactEmail</a></li>
-                    @if (!string.IsNullOrEmpty(Model.Store?.ContactPhone))
-                    {
-                        <li><strong>Phone:</strong> @Model.Store!.ContactPhone</li>
-                    }
-                    @if (!string.IsNullOrEmpty(Model.Store?.ContactWebsite))
-                    {
-                        <li><strong>Website:</strong> <a href="@Model.Store!.ContactWebsite" target="_blank" rel="noopener">@Model.Store.ContactWebsite</a></li>
-                    }
-                </ul>
+}
+
+@if (Model.Store != null && Model.IsPubliclyVisible)
+{
+    <div class="row">
+        <div class="col-md-8">
+            <h1 class="display-6">@Model.Store?.Name</h1>
+            @if (!string.IsNullOrEmpty(Model.Store?.LogoPath))
+            {
+                <img src="@Model.Store!.LogoPath" alt="@Model.Store.Name logo" class="img-fluid rounded border mb-3" />
+            }
+            <p class="lead">@Model.Store?.Description</p>
+        </div>
+        <div class="col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h2 class="h6">Contact</h2>
+                    <ul class="list-unstyled mb-0">
+                        <li><strong>Email:</strong> <a href="mailto:@Model.Store?.ContactEmail">@Model.Store?.ContactEmail</a></li>
+                        @if (!string.IsNullOrEmpty(Model.Store?.ContactPhone))
+                        {
+                            <li><strong>Phone:</strong> @Model.Store!.ContactPhone</li>
+                        }
+                        @if (!string.IsNullOrEmpty(Model.Store?.ContactWebsite))
+                        {
+                            <li><strong>Website:</strong> <a href="@Model.Store!.ContactWebsite" target="_blank" rel="noopener">@Model.Store.ContactWebsite</a></li>
+                        }
+                    </ul>
+                </div>
             </div>
         </div>
     </div>
-</div>
+
+    <section class="mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h2 class="h5 mb-0">Products</h2>
+            <a class="btn btn-outline-primary btn-sm" asp-page="/Products/List">View all products</a>
+        </div>
+        @if (Model.ProductPreview.Any())
+        {
+            <div class="row g-3">
+                @foreach (var product in Model.ProductPreview)
+                {
+                    <div class="col-md-6 col-lg-4">
+                        <div class="card h-100 shadow-sm">
+                            <div class="card-body">
+                                <h3 class="h6">@product.Name</h3>
+                                <p class="text-muted small mb-2">@product.Description</p>
+                                <div class="fw-semibold">@product.Price.ToString("C")</div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <p class="text-muted">This store hasn't listed any products yet.</p>
+        }
+    </section>
+}
+else if (Model.Store != null)
+{
+    <p class="text-muted">This store is not available right now.</p>
+}
