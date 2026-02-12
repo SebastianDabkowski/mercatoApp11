@@ -1,0 +1,32 @@
+@page
+@model SD.ProjectName.WebApp.Areas.Identity.Pages.Account.ResendEmailConfirmationModel
+@{
+    ViewData["Title"] = "Resend verification email";
+}
+
+<h1>@ViewData["Title"]</h1>
+
+<p>Enter your email address and we will send you a new verification link.</p>
+
+<form method="post">
+    <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+    <div class="form-floating mb-3">
+        <input asp-for="Input.Email" class="form-control" autocomplete="email" aria-required="true" />
+        <label asp-for="Input.Email"></label>
+        <span asp-validation-for="Input.Email" class="text-danger"></span>
+    </div>
+    <button type="submit" class="btn btn-primary">Send verification link</button>
+    @if (!string.IsNullOrEmpty(Model.ReturnUrl))
+    {
+        <input type="hidden" asp-for="ReturnUrl" />
+    }
+</form>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-info mt-3" role="alert">
+        @Model.StatusMessage
+    </div>
+}
+
+<partial name="_ValidationScriptsPartial" />

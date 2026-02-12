@@ -25,6 +25,10 @@ namespace SD.ProjectName.WebApp.Data
                     .HasMaxLength(32)
                     .IsRequired();
 
+                entity.Property(u => u.KycStatus)
+                    .HasMaxLength(32)
+                    .HasDefaultValue(KycStatuses.NotRequired);
+
                 entity.Property(u => u.FullName)
                     .HasMaxLength(256)
                     .IsRequired();
@@ -42,6 +46,12 @@ namespace SD.ProjectName.WebApp.Data
 
                 entity.Property(u => u.TaxId)
                     .HasMaxLength(128);
+
+                entity.Property(u => u.EmailVerifiedOn);
+
+                entity.Property(u => u.KycSubmittedOn);
+
+                entity.Property(u => u.KycApprovedOn);
             });
         }
     }

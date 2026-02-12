@@ -5,4 +5,19 @@
 }
 
 <h1>@ViewData["Title"]</h1>
-<p class="text-success">@Model.StatusMessage</p>
+
+@if (Model.Success)
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+    <p><a class="btn btn-primary" href="~/Identity/Account/Login">Continue to sign in</a></p>
+}
+else
+{
+    <div class="alert alert-danger">
+        <p>@Model.StatusMessage</p>
+        @if (!string.IsNullOrEmpty(Model.ResendConfirmationUrl))
+        {
+            <p><a class="btn btn-outline-primary" href="@Model.ResendConfirmationUrl">Request a new verification email</a></p>
+        }
+    </div>
+}

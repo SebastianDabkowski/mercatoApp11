@@ -20,11 +20,22 @@ namespace SD.ProjectName.WebApp.Identity
         public const string Verified = "Verified";
     }
 
+    public static class KycStatuses
+    {
+        public const string NotRequired = "NotRequired";
+        public const string Pending = "Pending";
+        public const string Approved = "Approved";
+
+        public static readonly string[] Allowed = [NotRequired, Pending, Approved];
+    }
+
     public class ApplicationUser : IdentityUser
     {
         public string AccountType { get; set; } = AccountTypes.Buyer;
 
         public string AccountStatus { get; set; } = AccountStatuses.Unverified;
+
+        public string KycStatus { get; set; } = KycStatuses.NotRequired;
 
         public string FullName { get; set; } = string.Empty;
 
@@ -39,5 +50,11 @@ namespace SD.ProjectName.WebApp.Identity
         public bool TermsAccepted { get; set; }
 
         public DateTimeOffset? TermsAcceptedOn { get; set; }
+
+        public DateTimeOffset? EmailVerifiedOn { get; set; }
+
+        public DateTimeOffset? KycSubmittedOn { get; set; }
+
+        public DateTimeOffset? KycApprovedOn { get; set; }
     }
 }
