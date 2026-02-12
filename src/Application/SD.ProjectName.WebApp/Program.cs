@@ -1,10 +1,13 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.Modules.Products.Domain.Interfaces;
 using SD.ProjectName.Modules.Products.Infrastructure;
 using SD.ProjectName.WebApp.Data;
+using SD.ProjectName.WebApp.Identity;
+using SD.ProjectName.WebApp.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,8 +17,20 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
-builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = true)
+builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
+    {
+        options.SignIn.RequireConfirmedAccount = true;
+        options.Password.RequiredLength = 12;
+        options.Password.RequireDigit = true;
+        options.Password.RequireLowercase = true;
+        options.Password.RequireUppercase = true;
+        options.Password.RequireNonAlphanumeric = true;
+        options.User.RequireUniqueEmail = true;
+    })
+    .AddRoles<IdentityRole>()
+    .AddPasswordValidator<CommonPasswordValidator>()
     .AddEntityFrameworkStores<ApplicationDbContext>();
+builder.Services.AddSingleton<IEmailSender, ConsoleEmailSender>();
 
 // init module Products
 builder.Services.AddDbContext<ProductDbContext>(options =>
@@ -26,6 +41,11 @@ builder.Services.AddScoped<GetProducts>();
 builder.Services.AddRazorPages();
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    await IdentityDataSeeder.SeedRolesAsync(scope.ServiceProvider);
+}
 
 // Apply migrations on startup for all modules
 //using (var scope = app.Services.CreateScope())

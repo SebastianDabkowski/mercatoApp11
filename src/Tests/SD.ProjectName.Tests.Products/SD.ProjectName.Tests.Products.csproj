@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Modules\SD.ProjectName.Modules.Products\SD.ProjectName.Modules.Products.csproj" />
+    <ProjectReference Include="..\..\Application\SD.ProjectName.WebApp\SD.ProjectName.WebApp.csproj" />
   </ItemGroup>
 
   <ItemGroup>
