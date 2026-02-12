@@ -41,6 +41,7 @@ builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
 builder.Services.AddSingleton<IEmailSender, ConsoleEmailSender>();
 builder.Services.Configure<DataProtectionTokenProviderOptions>(o => o.TokenLifespan = TimeSpan.FromHours(24));
 builder.Services.Configure<KycOptions>(builder.Configuration.GetSection("Kyc"));
+builder.Services.Configure<SecurityOptions>(builder.Configuration.GetSection("Security"));
 builder.Services.AddOptions<SessionTokenOptions>()
     .Bind(builder.Configuration.GetSection("Session"))
     .ValidateDataAnnotations()
@@ -48,6 +49,7 @@ builder.Services.AddOptions<SessionTokenOptions>()
 builder.Services.AddSingleton<SessionTokenOptions>(sp => sp.GetRequiredService<IOptions<SessionTokenOptions>>().Value);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<ISessionTokenService, DistributedSessionTokenService>();
+builder.Services.AddScoped<ILoginAuditService, LoginAuditService>();
 builder.Services.AddScoped<SessionCookieEvents>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, LoggingAuthorizationMiddlewareResultHandler>();
 
