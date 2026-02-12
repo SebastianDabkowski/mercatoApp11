@@ -47,6 +47,10 @@ namespace SD.ProjectName.WebApp.Data
                 entity.Property(u => u.BusinessName)
                     .HasMaxLength(256);
 
+                entity.HasIndex(u => u.BusinessName)
+                    .IsUnique()
+                    .HasFilter("[BusinessName] IS NOT NULL");
+
                 entity.Property(u => u.TaxId)
                     .HasMaxLength(128);
 
@@ -69,6 +73,19 @@ namespace SD.ProjectName.WebApp.Data
 
                 entity.Property(u => u.StoreDescription)
                     .HasMaxLength(2048);
+
+                entity.Property(u => u.ContactEmail)
+                    .HasMaxLength(256)
+                    .HasDefaultValue(string.Empty);
+
+                entity.Property(u => u.ContactPhone)
+                    .HasMaxLength(64);
+
+                entity.Property(u => u.ContactWebsite)
+                    .HasMaxLength(256);
+
+                entity.Property(u => u.StoreLogoPath)
+                    .HasMaxLength(512);
 
                 entity.Property(u => u.PayoutMethod)
                     .HasMaxLength(64)

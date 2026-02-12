@@ -38,6 +38,20 @@ namespace SD.ProjectName.WebApp.Pages.Seller
 
         public bool OnboardingPendingReview => string.Equals(OnboardingStatus, OnboardingStatuses.PendingVerification, StringComparison.OrdinalIgnoreCase);
 
+        public string StoreName { get; private set; } = string.Empty;
+
+        public string StoreDescription { get; private set; } = string.Empty;
+
+        public string ContactEmail { get; private set; } = string.Empty;
+
+        public string? ContactPhone { get; private set; }
+
+        public string? ContactWebsite { get; private set; }
+
+        public string? StoreLogoPath { get; private set; }
+
+        public bool HasStoreProfile => !string.IsNullOrEmpty(StoreName);
+
         public async Task<IActionResult> OnGetAsync()
         {
             var user = await _userManager.GetUserAsync(User);
@@ -50,6 +64,12 @@ namespace SD.ProjectName.WebApp.Pages.Seller
             KycStatus = user.KycStatus;
             OnboardingStatus = user.OnboardingStatus;
             OnboardingStep = user.OnboardingStep;
+            StoreName = user.BusinessName ?? string.Empty;
+            StoreDescription = user.StoreDescription ?? string.Empty;
+            ContactEmail = string.IsNullOrWhiteSpace(user.ContactEmail) ? user.Email ?? string.Empty : user.ContactEmail;
+            ContactPhone = user.ContactPhone;
+            ContactWebsite = user.ContactWebsite;
+            StoreLogoPath = user.StoreLogoPath;
             return Page();
         }
     }

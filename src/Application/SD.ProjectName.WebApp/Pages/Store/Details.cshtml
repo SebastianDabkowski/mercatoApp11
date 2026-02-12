@@ -1,0 +1,34 @@
+@page "/Store/{storeName}"
+@model SD.ProjectName.WebApp.Pages.Store.DetailsModel
+@{
+    ViewData["Title"] = Model.Store?.Name ?? "Store";
+}
+
+<div class="row">
+    <div class="col-md-8">
+        <h1 class="display-6">@Model.Store?.Name</h1>
+        @if (!string.IsNullOrEmpty(Model.Store?.LogoPath))
+        {
+            <img src="@Model.Store!.LogoPath" alt="@Model.Store.Name logo" class="img-fluid rounded border mb-3" />
+        }
+        <p class="lead">@Model.Store?.Description</p>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h2 class="h6">Contact</h2>
+                <ul class="list-unstyled mb-0">
+                    <li><strong>Email:</strong> <a href="mailto:@Model.Store?.ContactEmail">@Model.Store?.ContactEmail</a></li>
+                    @if (!string.IsNullOrEmpty(Model.Store?.ContactPhone))
+                    {
+                        <li><strong>Phone:</strong> @Model.Store!.ContactPhone</li>
+                    }
+                    @if (!string.IsNullOrEmpty(Model.Store?.ContactWebsite))
+                    {
+                        <li><strong>Website:</strong> <a href="@Model.Store!.ContactWebsite" target="_blank" rel="noopener">@Model.Store.ContactWebsite</a></li>
+                    }
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>

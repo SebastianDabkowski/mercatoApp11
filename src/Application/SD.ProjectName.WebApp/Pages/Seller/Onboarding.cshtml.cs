@@ -78,8 +78,23 @@ namespace SD.ProjectName.WebApp.Pages.Seller
                 return Page();
             }
 
+            StoreProfile.StoreName = StoreProfile.StoreName.Trim();
+            StoreProfile.StoreDescription = StoreProfile.StoreDescription?.Trim() ?? string.Empty;
+            var users = _userManager.Users;
+            var duplicateName = users != null && users.Any(u =>
+                u.Id != user.Id &&
+                !string.IsNullOrEmpty(u.BusinessName) &&
+                u.BusinessName.Equals(StoreProfile.StoreName, StringComparison.OrdinalIgnoreCase));
+
+            if (duplicateName)
+            {
+                ModelState.AddModelError($"{nameof(StoreProfile)}.{nameof(StoreProfile.StoreName)}", "Store name is already taken. Choose another.");
+                PopulateInputs(user);
+                return Page();
+            }
+
             user.BusinessName = StoreProfile.StoreName;
-            user.StoreDescription = StoreProfile.StoreDescription?.Trim() ?? string.Empty;
+            user.StoreDescription = StoreProfile.StoreDescription;
             MarkInProgress(user);
             if (user.OnboardingStep < 1)
             {
