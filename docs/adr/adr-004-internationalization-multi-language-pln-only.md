@@ -8,7 +8,7 @@ Mercato MVP requires multi-language support, but currency is limited to PLN. The
 
 ## Decision
 We will implement multi-language (i18n) across the web application:
-1. UI strings localized using a standard Angular i18n approach (or equivalent localization library).
+1. UI strings localized using .NET localization for Razor Pages (resource files and localizers).
 2. Domain-facing text fields (product title/description, store description) remain user-generated and are not auto-translated in MVP.
 3. System-generated content (emails, notifications, legal texts) is template-based and localized.
 4. Currency is fixed to **PLN** for all transactions in MVP; money is stored as integer minor units (grosze) with explicit currency code.
