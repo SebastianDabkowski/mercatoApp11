@@ -108,6 +108,12 @@ namespace SD.ProjectName.WebApp.Identity
 
         public string PayoutAccount { get; set; } = string.Empty;
 
+        public string? PayoutBankAccount { get; set; }
+
+        public string? PayoutBankRouting { get; set; }
+
+        public DateTimeOffset? PayoutUpdatedOn { get; set; }
+
         public string OnboardingStatus { get; set; } = OnboardingStatuses.NotStarted;
 
         public int OnboardingStep { get; set; }

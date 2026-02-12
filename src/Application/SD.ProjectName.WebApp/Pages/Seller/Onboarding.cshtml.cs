@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using SD.ProjectName.WebApp.Identity;
+using SD.ProjectName.WebApp.Services;
 using System.ComponentModel.DataAnnotations;
 
 namespace SD.ProjectName.WebApp.Pages.Seller
@@ -12,10 +13,12 @@ namespace SD.ProjectName.WebApp.Pages.Seller
     {
         private const int TotalSteps = 3;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly IPayoutEncryptionService _payoutEncryption;
 
-        public OnboardingModel(UserManager<ApplicationUser> userManager)
+        public OnboardingModel(UserManager<ApplicationUser> userManager, IPayoutEncryptionService payoutEncryption)
         {
             _userManager = userManager;
+            _payoutEncryption = payoutEncryption;
         }
 
         [BindProperty]
@@ -25,7 +28,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller
         public VerificationInput Verification { get; set; } = new();
 
         [BindProperty]
-        public PayoutInput Payout { get; set; } = new();
+        public PayoutPreferencesInput Payout { get; set; } = new();
 
         [TempData]
         public string? StatusMessage { get; set; }
@@ -156,14 +159,19 @@ namespace SD.ProjectName.WebApp.Pages.Seller
                 return RedirectToPage("Dashboard");
             }
 
+            PayoutValidation.Validate(ModelState, Payout, nameof(Payout));
             if (!ModelState.IsValid)
             {
                 PopulateInputs(user);
                 return Page();
             }
 
+            Payout.TrimAll();
             user.PayoutMethod = Payout.PayoutMethod;
-            user.PayoutAccount = Payout.PayoutAccount;
+            user.PayoutAccount = _payoutEncryption.Protect(Payout.PayoutAccount);
+            user.PayoutBankAccount = _payoutEncryption.Protect(Payout.BankAccountNumber);
+            user.PayoutBankRouting = _payoutEncryption.Protect(Payout.BankRoutingNumber);
+            user.PayoutUpdatedOn = DateTimeOffset.UtcNow;
             MarkInProgress(user);
             user.OnboardingStep = TotalSteps;
             user.OnboardingStatus = OnboardingStatuses.PendingVerification;
@@ -229,9 +237,11 @@ namespace SD.ProjectName.WebApp.Pages.Seller
             Verification.Address = user.Address ?? string.Empty;
             Verification.Country = user.Country ?? string.Empty;
 
-            Payout ??= new PayoutInput();
-            Payout.PayoutMethod = string.IsNullOrWhiteSpace(user.PayoutMethod) ? "BankTransfer" : user.PayoutMethod;
-            Payout.PayoutAccount = user.PayoutAccount ?? string.Empty;
+            Payout ??= new PayoutPreferencesInput();
+            Payout.PayoutMethod = PayoutMethods.IsValid(user.PayoutMethod) ? user.PayoutMethod : PayoutMethods.BankTransfer;
+            Payout.PayoutAccount = _payoutEncryption.Reveal(user.PayoutAccount);
+            Payout.BankAccountNumber = _payoutEncryption.Reveal(user.PayoutBankAccount);
+            Payout.BankRoutingNumber = _payoutEncryption.Reveal(user.PayoutBankRouting);
         }
 
         private static void MarkInProgress(ApplicationUser user)
@@ -272,19 +282,6 @@ namespace SD.ProjectName.WebApp.Pages.Seller
             [Required]
             [StringLength(120)]
             public string Country { get; set; } = string.Empty;
-        }
-
-        public class PayoutInput
-        {
-            [Required]
-            [Display(Name = "Payout method")]
-            [StringLength(64)]
-            public string PayoutMethod { get; set; } = "BankTransfer";
-
-            [Required]
-            [Display(Name = "Payout account or email")]
-            [StringLength(256)]
-            public string PayoutAccount { get; set; } = string.Empty;
         }
     }
 }
