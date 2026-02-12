@@ -30,6 +30,14 @@ namespace SD.ProjectName.WebApp.Identity
         public static readonly string[] Allowed = [NotRequired, Pending, Approved];
     }
 
+    public static class OnboardingStatuses
+    {
+        public const string NotStarted = "NotStarted";
+        public const string InProgress = "InProgress";
+        public const string PendingVerification = "PendingVerification";
+        public const string Completed = "Completed";
+    }
+
     public class ApplicationUser : IdentityUser
     {
         public string AccountType { get; set; } = AccountTypes.Buyer;
@@ -65,5 +73,19 @@ namespace SD.ProjectName.WebApp.Identity
         public string? LastLoginIp { get; set; }
 
         public DateTimeOffset? LastLoginOn { get; set; }
+
+        public string StoreDescription { get; set; } = string.Empty;
+
+        public string PayoutMethod { get; set; } = "BankTransfer";
+
+        public string PayoutAccount { get; set; } = string.Empty;
+
+        public string OnboardingStatus { get; set; } = OnboardingStatuses.NotStarted;
+
+        public int OnboardingStep { get; set; }
+
+        public DateTimeOffset? OnboardingStartedOn { get; set; }
+
+        public DateTimeOffset? OnboardingCompletedOn { get; set; }
     }
 }

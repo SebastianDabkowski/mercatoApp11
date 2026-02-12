@@ -29,6 +29,15 @@ namespace SD.ProjectName.WebApp.Pages.Seller
                                 !string.Equals(KycStatus, KycStatuses.Approved, StringComparison.OrdinalIgnoreCase) &&
                                 !string.Equals(KycStatus, KycStatuses.NotRequired, StringComparison.OrdinalIgnoreCase);
 
+        public string OnboardingStatus { get; private set; } = OnboardingStatuses.NotStarted;
+
+        public int OnboardingStep { get; private set; }
+
+        public bool NeedsOnboarding => string.Equals(OnboardingStatus, OnboardingStatuses.NotStarted, StringComparison.OrdinalIgnoreCase) ||
+                                       string.Equals(OnboardingStatus, OnboardingStatuses.InProgress, StringComparison.OrdinalIgnoreCase);
+
+        public bool OnboardingPendingReview => string.Equals(OnboardingStatus, OnboardingStatuses.PendingVerification, StringComparison.OrdinalIgnoreCase);
+
         public async Task<IActionResult> OnGetAsync()
         {
             var user = await _userManager.GetUserAsync(User);
@@ -39,6 +48,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller
 
             AccountStatus = user.AccountStatus;
             KycStatus = user.KycStatus;
+            OnboardingStatus = user.OnboardingStatus;
+            OnboardingStep = user.OnboardingStep;
             return Page();
         }
     }

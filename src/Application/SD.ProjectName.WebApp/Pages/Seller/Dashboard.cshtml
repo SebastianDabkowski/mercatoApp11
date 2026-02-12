@@ -17,6 +17,19 @@
     </div>
 }
 
+@if (Model.NeedsOnboarding)
+{
+    <div class="alert alert-warning">
+        Finish your onboarding wizard to activate your store profile. <a class="alert-link" href="~/Seller/Onboarding">Resume onboarding</a>.
+    </div>
+}
+else if (Model.OnboardingPendingReview)
+{
+    <div class="alert alert-info">
+        Store profile submitted and pending verification. We will notify you when it's approved.
+    </div>
+}
+
 @if (Model.NeedsKyc)
 {
     <div class="alert alert-warning">
