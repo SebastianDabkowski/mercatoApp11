@@ -109,6 +109,7 @@ builder.Services.AddOptions<EmailOptions>()
     .ValidateOnStart();
 builder.Services.AddSingleton<EmailOptions>(sp => sp.GetRequiredService<IOptions<EmailOptions>>().Value);
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<NotificationService>();
 builder.Services.AddScoped<ISessionTokenService, DistributedSessionTokenService>();
 builder.Services.AddScoped<ILoginAuditService, LoginAuditService>();
 builder.Services.AddScoped<SessionCookieEvents>();

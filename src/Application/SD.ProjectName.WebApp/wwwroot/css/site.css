@@ -81,3 +81,27 @@ body {
   color: #6c757d;
   font-size: 0.9rem;
 }
+
+.notification-bell-icon {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.notification-bell-link {
+  gap: 0.35rem !important;
+}
+
+.notification-card {
+  border-left: 4px solid transparent;
+}
+
+.notification-card.notification-unread {
+  border-color: #0d6efd;
+  background: #f8fbff;
+}
+
+.notification-card .notification-meta {
+  color: #6c757d;
+  font-size: 0.9rem;
+}

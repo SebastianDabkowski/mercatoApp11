@@ -1,0 +1,16 @@
+@model int
+
+<a class="nav-link position-relative d-flex align-items-center gap-2 notification-bell-link"
+   asp-area=""
+   asp-page="/Notifications/Index"
+   title="Notifications">
+    <svg class="notification-bell-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 3a6 6 0 0 0-6 6v3.25L4 14a1 1 0 0 0 .8 1.6h14.4a1 1 0 0 0 .8-1.6l-2-1.75V9a6 6 0 0 0-6-6Zm0 18a3 3 0 0 0 3-3H9a3 3 0 0 0 3 3Z" />
+    </svg>
+    <span class="d-none d-lg-inline">Notifications</span>
+    @if (Model > 0)
+    {
+        <span class="badge bg-danger rounded-pill ms-1">@Model</span>
+        <span class="visually-hidden">@Model unread notifications</span>
+    }
+</a>
