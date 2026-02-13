@@ -24,6 +24,7 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<CommissionRuleAudit> CommissionRuleAudits => Set<CommissionRuleAudit>();
         public DbSet<VatRule> VatRules => Set<VatRule>();
         public DbSet<VatRuleAudit> VatRuleAudits => Set<VatRuleAudit>();
+        public DbSet<CurrencySetting> CurrencySettings => Set<CurrencySetting>();
         public DbSet<AnalyticsEvent> AnalyticsEvents => Set<AnalyticsEvent>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
@@ -622,6 +623,21 @@ namespace SD.ProjectName.WebApp.Data
                     .WithMany()
                     .HasForeignKey(a => a.RuleId)
                     .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            builder.Entity<CurrencySetting>(entity =>
+            {
+                entity.Property(c => c.Code)
+                    .IsRequired()
+                    .HasMaxLength(16);
+                entity.Property(c => c.Name)
+                    .HasMaxLength(128);
+                entity.Property(c => c.RateSource)
+                    .HasMaxLength(128);
+                entity.Property(c => c.LatestRate)
+                    .HasColumnType("decimal(18,6)");
+                entity.HasIndex(c => c.Code)
+                    .IsUnique();
             });
         }
     }

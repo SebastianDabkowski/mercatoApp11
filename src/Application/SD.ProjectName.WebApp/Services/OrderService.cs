@@ -1118,6 +1118,7 @@ namespace SD.ProjectName.WebApp.Services
         private readonly ICommissionRuleResolver? _commissionRuleResolver;
         private readonly IVatRuleResolver? _vatRuleResolver;
         private readonly ShippingProviderService _shippingProviderService;
+        private readonly CurrencyConfigurationService _currencyConfiguration;
         private readonly EmailOptions _emailOptions;
         private readonly NotificationService? _notificationService;
         private readonly IAnalyticsTracker? _analyticsTracker;
@@ -1149,7 +1150,8 @@ namespace SD.ProjectName.WebApp.Services
             NotificationService? notificationService = null,
             IAnalyticsTracker? analyticsTracker = null,
             ICommissionRuleResolver? commissionRuleResolver = null,
-            IVatRuleResolver? vatRuleResolver = null)
+            IVatRuleResolver? vatRuleResolver = null,
+            CurrencyConfigurationService? currencyConfiguration = null)
         {
             _dbContext = dbContext;
             _emailSender = emailSender;
@@ -1164,6 +1166,7 @@ namespace SD.ProjectName.WebApp.Services
             _vatRuleResolver = vatRuleResolver;
             _commissionCalculator = new CommissionCalculator(_cartOptions, commissionRuleResolver);
             _shippingProviderService = shippingProviderService ?? new ShippingProviderService(new ShippingProviderOptions(), TimeProvider.System, NullLogger<ShippingProviderService>.Instance);
+            _currencyConfiguration = currencyConfiguration ?? new CurrencyConfigurationService(_dbContext, _invoiceOptions);
             _emailOptions = emailOptions ?? new EmailOptions();
             _notificationService = notificationService;
             _analyticsTracker = analyticsTracker;
@@ -5099,6 +5102,19 @@ namespace SD.ProjectName.WebApp.Services
             return (from, to);
         }
 
+        private async Task<string> ResolveBaseCurrencyAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                return await _currencyConfiguration.GetBaseCurrencyAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to resolve base currency, using invoice default.");
+                return _invoiceOptions.Currency ?? "USD";
+            }
+        }
+
         private Dictionary<string, CommissionAccumulator> BuildCommissionSummaries(
             List<OrderRecord> orders,
             DateTimeOffset startInclusive,
@@ -5175,6 +5191,7 @@ namespace SD.ProjectName.WebApp.Services
             var anchor = DateTimeOffset.UtcNow;
             var invoices = new List<CommissionInvoiceSummaryView>();
             var seller = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == sellerId, cancellationToken);
+            var baseCurrency = await ResolveBaseCurrencyAsync(cancellationToken);
 
             for (var i = 0; i < months; i++)
             {
@@ -5211,7 +5228,7 @@ namespace SD.ProjectName.WebApp.Services
                     status,
                     summary.AdjustmentCount > 0,
                     net < 0,
-                    _invoiceOptions.Currency,
+                    baseCurrency,
                     vatRate));
             }
 
@@ -5248,6 +5265,7 @@ namespace SD.ProjectName.WebApp.Services
                 ? detail.Summary.SellerName
                 : seller?.BusinessName ?? seller?.FullName ?? sellerId;
 
+            var baseCurrency = await ResolveBaseCurrencyAsync(cancellationToken);
             var vatRate = ResolveVatRate(seller?.Country, null, detail.Summary.PeriodEnd);
             var net = RoundCurrency(detail.Summary.CommissionTotal);
             var tax = RoundCurrency(net * vatRate);
@@ -5267,7 +5285,7 @@ namespace SD.ProjectName.WebApp.Services
                 status,
                 detail.Summary.AdjustmentCount > 0,
                 net < 0,
-                _invoiceOptions.Currency,
+                baseCurrency,
                 vatRate);
 
             var lines = detail.Orders
