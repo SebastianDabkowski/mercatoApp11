@@ -23,5 +23,10 @@ namespace SD.ProjectName.Modules.Products.Application
             return await _repository.GetList(sellerId, includeDrafts);
         }
 
+        public async Task<ProductModel?> GetById(int id, bool includeDrafts = false)
+        {
+            return await _repository.GetById(id, includeDrafts);
+        }
+
     }
 }

@@ -10,6 +10,10 @@ namespace SD.ProjectName.Modules.Products.Domain.Interfaces
     {
         Task<List<ProductModel>> GetList(string? sellerId = null, bool includeDrafts = false);
 
+        Task<ProductModel?> GetById(int id, bool includeDrafts = false);
+
         Task Add(ProductModel product);
+
+        Task Update(ProductModel product);
     }
 }

@@ -25,6 +25,7 @@
                 <th>Stock</th>
                 <th>Category</th>
                 <th>Status</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -36,6 +37,12 @@
                     <td>@product.Stock</td>
                     <td>@product.Category</td>
                     <td class="text-capitalize">@product.WorkflowState</td>
+                    <td>
+                        <a class="btn btn-sm btn-outline-primary" asp-page="Edit" asp-route-id="@product.Id">Edit</a>
+                        <form method="post" asp-page-handler="Delete" asp-route-id="@product.Id" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this product?')">Delete</button>
+                        </form>
+                    </td>
                 </tr>
             }
         </tbody>
