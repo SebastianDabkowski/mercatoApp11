@@ -216,7 +216,23 @@ namespace SD.ProjectName.WebApp.Services
 
     public record ReturnRequestMessage(string Actor, string Message, DateTimeOffset SentOn);
 
-    public record ReturnRequest(string SubOrderNumber, string Status, string Reason, DateTimeOffset RequestedOn, List<ReturnRequestItem> Items, string Type = ReturnRequestTypes.Return, string? Description = null, string? CaseId = null, List<ReturnRequestHistoryEntry>? History = null, List<ReturnRequestMessage>? Messages = null);
+    public record ReturnRequest(
+        string SubOrderNumber,
+        string Status,
+        string Reason,
+        DateTimeOffset RequestedOn,
+        List<ReturnRequestItem> Items,
+        string Type = ReturnRequestTypes.Return,
+        string? Description = null,
+        string? CaseId = null,
+        List<ReturnRequestHistoryEntry>? History = null,
+        List<ReturnRequestMessage>? Messages = null,
+        string? ResolutionOutcome = null,
+        string? ResolutionNote = null,
+        decimal? ResolutionRefundAmount = null,
+        string? ResolutionRefundReference = null,
+        string? ResolutionRefundStatus = null,
+        DateTimeOffset? ResolvedOn = null);
 
     public record OrderStatusChange(string Status, DateTimeOffset ChangedOn, string? TrackingNumber = null, string? TrackingCarrier = null);
 
@@ -432,7 +448,7 @@ namespace SD.ProjectName.WebApp.Services
 
     public record BuyerCaseItemView(string Label, int ProductId, int Quantity);
 
-    public record CaseResolutionView(string Outcome, string Summary, decimal RefundedAmount, decimal SubOrderTotal, string PaymentStatus, string? PaymentReference);
+    public record CaseResolutionView(string Outcome, string Summary, decimal RefundedAmount, decimal SubOrderTotal, string PaymentStatus, string? PaymentReference, string? DecisionNote = null, DateTimeOffset? ResolvedOn = null);
 
     public record BuyerCaseDetailView(
         BuyerCaseSummaryView Summary,
@@ -467,7 +483,8 @@ namespace SD.ProjectName.WebApp.Services
         decimal RefundedAmount,
         List<OrderStatusChange> StatusHistory,
         List<ReturnRequestHistoryEntry> History,
-        List<CaseMessageView> Messages);
+        List<CaseMessageView> Messages,
+        CaseResolutionView Resolution);
 
     public record ReturnCaseFilterOptions
     {
@@ -1298,6 +1315,7 @@ namespace SD.ProjectName.WebApp.Services
             var statusHistory = subOrder.StatusHistory?.OrderByDescending(h => h.ChangedOn).ToList() ?? new List<OrderStatusChange>();
             var paymentStatus = PaymentStatuses.Normalize(details.PaymentStatus);
             var paymentReference = string.IsNullOrWhiteSpace(order.PaymentReference) ? null : order.PaymentReference.Trim();
+            var resolution = BuildCaseResolution(subOrder, normalizedRequest, paymentStatus, paymentReference);
             var history = normalizedRequest.History?.OrderByDescending(h => h.ChangedOn).ToList() ?? new List<ReturnRequestHistoryEntry>();
             var messages = normalizedRequest.Messages?
                 .OrderBy(m => m.SentOn)
@@ -1316,7 +1334,8 @@ namespace SD.ProjectName.WebApp.Services
                 Math.Max(0, subOrder.RefundedAmount),
                 statusHistory,
                 history,
-                messages);
+                messages,
+                resolution);
         }
 
         public async Task<SellerCaseDetailView?> GetReturnCaseForAdminAsync(
@@ -1371,6 +1390,7 @@ namespace SD.ProjectName.WebApp.Services
             var statusHistory = subOrder.StatusHistory?.OrderByDescending(h => h.ChangedOn).ToList() ?? new List<OrderStatusChange>();
             var paymentStatus = PaymentStatuses.Normalize(details.PaymentStatus);
             var paymentReference = string.IsNullOrWhiteSpace(order.PaymentReference) ? null : order.PaymentReference.Trim();
+            var resolution = BuildCaseResolution(subOrder, normalizedRequest, paymentStatus, paymentReference);
             var history = normalizedRequest.History?.OrderByDescending(h => h.ChangedOn).ToList() ?? new List<ReturnRequestHistoryEntry>();
             var messages = normalizedRequest.Messages?
                 .OrderBy(m => m.SentOn)
@@ -1389,7 +1409,8 @@ namespace SD.ProjectName.WebApp.Services
                 Math.Max(0, subOrder.RefundedAmount),
                 statusHistory,
                 history,
-                messages);
+                messages,
+                resolution);
         }
 
         public async Task<ReturnRequestResult> AddReturnCaseMessageForBuyerAsync(
@@ -1614,6 +1635,209 @@ namespace SD.ProjectName.WebApp.Services
             await _dbContext.SaveChangesAsync(cancellationToken);
 
             await SendReturnCaseUpdateEmailAsync(order, updatedSubOrder, updatedRequest, combinedNote);
+
+            return new ReturnRequestResult(true, null, updatedRequest);
+        }
+
+        public async Task<ReturnRequestResult> ResolveReturnCaseForSellerAsync(
+            int orderId,
+            string sellerId,
+            string caseId,
+            string resolution,
+            decimal? refundAmount = null,
+            string? refundReference = null,
+            string? note = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return new ReturnRequestResult(false, "Seller is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(caseId))
+            {
+                return new ReturnRequestResult(false, "Case ID is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(resolution))
+            {
+                return new ReturnRequestResult(false, "Select a resolution.");
+            }
+
+            var normalizedSeller = sellerId.Trim();
+            var normalizedCase = caseId.Trim();
+            var normalizedResolution = resolution.Trim().ToLowerInvariant();
+            var normalizedNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+            var normalizedReference = string.IsNullOrWhiteSpace(refundReference) ? null : refundReference.Trim();
+
+            var order = await _dbContext.Orders.FirstOrDefaultAsync(o => o.Id == orderId && o.DetailsJson.Contains(normalizedCase), cancellationToken);
+            if (order == null)
+            {
+                return new ReturnRequestResult(false, "Order not found.");
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            var subOrderIndex = details.SubOrders.FindIndex(s =>
+                string.Equals(s.SellerId, normalizedSeller, StringComparison.OrdinalIgnoreCase)
+                && s.Return != null
+                && (string.Equals(s.Return.CaseId, normalizedCase, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(s.SubOrderNumber, normalizedCase, StringComparison.OrdinalIgnoreCase)));
+            if (subOrderIndex < 0)
+            {
+                return new ReturnRequestResult(false, "Case not found for this seller.");
+            }
+
+            var subOrder = details.SubOrders[subOrderIndex];
+            var normalizedRequest = NormalizeReturnRequest(subOrder.Return, subOrder.Items);
+            if (normalizedRequest == null)
+            {
+                return new ReturnRequestResult(false, "Case not found for this seller.");
+            }
+
+            if (!ReturnRequestStatuses.IsOpen(normalizedRequest.Status))
+            {
+                return new ReturnRequestResult(false, "Case is already resolved.");
+            }
+
+            var targetStatus = ReturnRequestStatuses.Completed;
+            var requiresRefund = false;
+            var outcome = "Pending review";
+            decimal? requestedRefund = null;
+
+            switch (normalizedResolution)
+            {
+                case "fullrefund":
+                case "refund":
+                case "full_refund":
+                    outcome = "Full refund";
+                    requiresRefund = true;
+                    requestedRefund = subOrder.GrandTotal;
+                    break;
+                case "partialrefund":
+                case "partial_refund":
+                case "partial":
+                    outcome = "Partial refund";
+                    requiresRefund = true;
+                    requestedRefund = refundAmount;
+                    break;
+                case "replacement":
+                    outcome = "Replacement";
+                    targetStatus = ReturnRequestStatuses.Completed;
+                    break;
+                case "repair":
+                    outcome = "Repair";
+                    targetStatus = ReturnRequestStatuses.Completed;
+                    break;
+                case "norefund":
+                case "no_refund":
+                    outcome = "No refund";
+                    targetStatus = ReturnRequestStatuses.Rejected;
+                    break;
+                case "reject":
+                case "rejected":
+                    outcome = "Rejected";
+                    targetStatus = ReturnRequestStatuses.Rejected;
+                    break;
+                default:
+                    return new ReturnRequestResult(false, "Select a valid resolution.");
+            }
+
+            var maxRefund = Math.Max(0, subOrder.GrandTotal);
+            var existingRefund = Math.Max(0, subOrder.RefundedAmount);
+            var resolvedOn = DateTimeOffset.UtcNow;
+            decimal resolvedRefund = existingRefund;
+
+            if (requiresRefund)
+            {
+                var desired = requestedRefund ?? refundAmount ?? 0;
+                if (desired <= 0 && string.Equals(outcome, "Partial refund", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new ReturnRequestResult(false, "Enter a refund amount.");
+                }
+
+                var cappedDesired = Math.Min(maxRefund, Math.Max(0, desired));
+                resolvedRefund = Math.Max(existingRefund, cappedDesired);
+
+                var refundUpdate = await UpdateSubOrderStatusAsync(
+                    orderId,
+                    normalizedSeller,
+                    OrderStatuses.Refunded,
+                    null,
+                    resolvedRefund,
+                    null,
+                    null,
+                    null,
+                    cancellationToken);
+
+                if (!refundUpdate.Success)
+                {
+                    return new ReturnRequestResult(false, refundUpdate.Error ?? "Unable to apply refund.");
+                }
+
+                order = await _dbContext.Orders.FirstOrDefaultAsync(o => o.Id == orderId && o.DetailsJson.Contains(normalizedCase), cancellationToken);
+                if (order == null)
+                {
+                    return new ReturnRequestResult(false, "Order not found after refund update.");
+                }
+
+                details = DeserializeDetails(order.DetailsJson);
+                subOrderIndex = details.SubOrders.FindIndex(s =>
+                    string.Equals(s.SellerId, normalizedSeller, StringComparison.OrdinalIgnoreCase)
+                    && s.Return != null
+                    && (string.Equals(s.Return.CaseId, normalizedCase, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(s.SubOrderNumber, normalizedCase, StringComparison.OrdinalIgnoreCase)));
+                if (subOrderIndex < 0)
+                {
+                    return new ReturnRequestResult(false, "Case not found for this seller.");
+                }
+
+                subOrder = details.SubOrders[subOrderIndex];
+                normalizedRequest = NormalizeReturnRequest(subOrder.Return, subOrder.Items);
+                if (normalizedRequest == null)
+                {
+                    return new ReturnRequestResult(false, "Case not found for this seller.");
+                }
+            }
+
+            var paymentStatus = PaymentStatuses.Normalize(details.PaymentStatus);
+            var resolutionReference = normalizedReference
+                ?? normalizedRequest.ResolutionRefundReference
+                ?? (string.IsNullOrWhiteSpace(order.PaymentReference) ? null : order.PaymentReference.Trim());
+            var historyNote = outcome switch
+            {
+                "Full refund" => $"Resolution: full refund of {resolvedRefund.ToString("C", CultureInfo.InvariantCulture)}",
+                "Partial refund" => $"Resolution: partial refund of {resolvedRefund.ToString("C", CultureInfo.InvariantCulture)}",
+                "Replacement" => "Resolution: replacement will be provided",
+                "Repair" => "Resolution: repair will be arranged",
+                "No refund" => "Resolution: no refund provided",
+                "Rejected" => "Resolution: request rejected",
+                _ => "Resolution recorded"
+            };
+
+            if (!string.IsNullOrWhiteSpace(normalizedNote))
+            {
+                historyNote = $"{historyNote}. {normalizedNote}";
+            }
+
+            var updatedRequest = normalizedRequest with
+            {
+                Status = ReturnRequestStatuses.Normalize(targetStatus),
+                ResolutionOutcome = outcome,
+                ResolutionNote = normalizedNote,
+                ResolutionRefundAmount = resolvedRefund,
+                ResolutionRefundReference = resolutionReference,
+                ResolutionRefundStatus = requiresRefund ? paymentStatus : (normalizedRequest.ResolutionRefundStatus ?? "Not required"),
+                ResolvedOn = resolvedOn
+            };
+
+            updatedRequest = AppendReturnHistory(updatedRequest, updatedRequest.Status, "Seller", historyNote, resolvedOn);
+            var updatedSubOrder = subOrder with { Return = updatedRequest };
+            details.SubOrders[subOrderIndex] = updatedSubOrder;
+
+            order.DetailsJson = JsonSerializer.Serialize(details, _serializerOptions);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            await SendReturnCaseUpdateEmailAsync(order, updatedSubOrder, updatedRequest, historyNote);
 
             return new ReturnRequestResult(true, null, updatedRequest);
         }
@@ -3484,6 +3708,11 @@ namespace SD.ProjectName.WebApp.Services
                 timestamps.AddRange(request.Messages.Select(m => m.SentOn));
             }
 
+            if (request.ResolvedOn.HasValue && request.ResolvedOn != DateTimeOffset.MinValue)
+            {
+                timestamps.Add(request.ResolvedOn.Value);
+            }
+
             var normalized = timestamps
                 .Where(t => t != DateTimeOffset.MinValue)
                 .ToList();
@@ -3534,74 +3763,136 @@ namespace SD.ProjectName.WebApp.Services
         private static CaseResolutionView BuildCaseResolution(OrderSubOrder subOrder, ReturnRequest request, string paymentStatus, string? paymentReference)
         {
             var normalizedStatus = ReturnRequestStatuses.Normalize(request.Status);
-            var refunded = Math.Max(0, subOrder.RefundedAmount);
+            var refunded = Math.Max(0, request.ResolutionRefundAmount ?? subOrder.RefundedAmount);
             var total = Math.Max(0, subOrder.GrandTotal);
             var normalizedPaymentStatus = PaymentStatuses.Normalize(paymentStatus);
-            var normalizedReference = string.IsNullOrWhiteSpace(paymentReference) ? null : paymentReference.Trim();
+            var normalizedReference = string.IsNullOrWhiteSpace(request.ResolutionRefundReference)
+                ? (string.IsNullOrWhiteSpace(paymentReference) ? null : paymentReference.Trim())
+                : request.ResolutionRefundReference.Trim();
+            var resolutionOutcome = string.IsNullOrWhiteSpace(request.ResolutionOutcome) ? null : request.ResolutionOutcome.Trim();
+            var resolutionNote = string.IsNullOrWhiteSpace(request.ResolutionNote) ? null : request.ResolutionNote.Trim();
+            var resolvedOn = request.ResolvedOn == DateTimeOffset.MinValue ? null : request.ResolvedOn;
+            var refundStatus = string.IsNullOrWhiteSpace(request.ResolutionRefundStatus)
+                ? normalizedPaymentStatus
+                : request.ResolutionRefundStatus.Trim();
 
-            var outcome = "Pending review";
-            if (string.Equals(normalizedStatus, ReturnRequestStatuses.Rejected, StringComparison.OrdinalIgnoreCase))
+            if (refunded == 0 && subOrder.RefundedAmount > 0 && !request.ResolutionRefundAmount.HasValue)
             {
-                outcome = "Rejected";
-            }
-            else if (string.Equals(normalizedStatus, ReturnRequestStatuses.PendingBuyerInfo, StringComparison.OrdinalIgnoreCase))
-            {
-                outcome = "Information requested";
-            }
-            else if (string.Equals(normalizedStatus, ReturnRequestStatuses.SellerProposed, StringComparison.OrdinalIgnoreCase))
-            {
-                outcome = "Seller proposed solution";
-            }
-            else if (refunded > 0 && total > 0 && refunded < total)
-            {
-                outcome = "Partially approved";
-            }
-            else if (refunded > 0 || string.Equals(normalizedStatus, ReturnRequestStatuses.Approved, StringComparison.OrdinalIgnoreCase))
-            {
-                outcome = "Approved";
-            }
-            else if (string.Equals(normalizedStatus, ReturnRequestStatuses.Completed, StringComparison.OrdinalIgnoreCase))
-            {
-                outcome = "Completed";
+                refunded = subOrder.RefundedAmount;
             }
 
-            var summary = BuildResolutionSummary(outcome, refunded);
-            return new CaseResolutionView(outcome, summary, refunded, total, normalizedPaymentStatus, normalizedReference);
+            var outcome = resolutionOutcome ?? ResolveOutcomeFromStatus(normalizedStatus, refunded, total);
+            var summary = BuildResolutionSummary(outcome, refunded, resolutionNote, refundStatus);
+
+            return new CaseResolutionView(outcome, summary, refunded, total, refundStatus, normalizedReference, resolutionNote, resolvedOn);
         }
 
-        private static string BuildResolutionSummary(string outcome, decimal refunded)
+        private static string ResolveOutcomeFromStatus(string normalizedStatus, decimal refunded, decimal total)
         {
-            if (string.Equals(outcome, "Rejected", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalizedStatus, ReturnRequestStatuses.Rejected, StringComparison.OrdinalIgnoreCase))
             {
-                return "Seller rejected the request.";
+                return "Rejected";
             }
 
-            if (string.Equals(outcome, "Partially approved", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalizedStatus, ReturnRequestStatuses.PendingBuyerInfo, StringComparison.OrdinalIgnoreCase))
             {
-                return $"Seller approved a partial refund of {refunded.ToString("C", CultureInfo.InvariantCulture)}.";
+                return "Information requested";
             }
 
-            if (string.Equals(outcome, "Approved", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalizedStatus, ReturnRequestStatuses.SellerProposed, StringComparison.OrdinalIgnoreCase))
+            {
+                return "Seller proposed solution";
+            }
+
+            if (refunded > 0 && total > 0 && refunded < total)
+            {
+                return "Partially approved";
+            }
+
+            if (refunded > 0 || string.Equals(normalizedStatus, ReturnRequestStatuses.Approved, StringComparison.OrdinalIgnoreCase))
+            {
+                return "Approved";
+            }
+
+            if (string.Equals(normalizedStatus, ReturnRequestStatuses.Completed, StringComparison.OrdinalIgnoreCase))
+            {
+                return refunded > 0 ? "Completed" : "Resolved";
+            }
+
+            return "Pending review";
+        }
+
+        private static string BuildResolutionSummary(string outcome, decimal refunded, string? note, string refundStatus)
+        {
+            var normalizedOutcome = string.IsNullOrWhiteSpace(outcome) ? "Pending review" : outcome.Trim();
+            var formattedAmount = refunded > 0 ? refunded.ToString("C", CultureInfo.InvariantCulture) : null;
+            var statusSuffix = string.IsNullOrWhiteSpace(refundStatus) ? string.Empty : $" ({refundStatus})";
+
+            if (string.Equals(normalizedOutcome, "Full refund", StringComparison.OrdinalIgnoreCase))
+            {
+                return formattedAmount == null
+                    ? $"Seller approved a full refund{statusSuffix}."
+                    : $"Seller processed a full refund of {formattedAmount}{statusSuffix}.";
+            }
+
+            if (string.Equals(normalizedOutcome, "Partial refund", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedOutcome, "Partially approved", StringComparison.OrdinalIgnoreCase))
+            {
+                return formattedAmount == null
+                    ? $"Seller approved a partial refund{statusSuffix}."
+                    : $"Seller approved a partial refund of {formattedAmount}{statusSuffix}.";
+            }
+
+            if (string.Equals(normalizedOutcome, "Rejected", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.IsNullOrWhiteSpace(note)
+                    ? "Seller rejected the request."
+                    : $"Seller rejected the request. Reason: {note}";
+            }
+
+            if (string.Equals(normalizedOutcome, "No refund", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.IsNullOrWhiteSpace(note)
+                    ? "Seller resolved the case without a refund."
+                    : $"Seller resolved without a refund. Reason: {note}";
+            }
+
+            if (string.Equals(normalizedOutcome, "Approved", StringComparison.OrdinalIgnoreCase))
             {
                 return refunded > 0
-                    ? $"Seller approved a refund of {refunded.ToString("C", CultureInfo.InvariantCulture)}."
+                    ? $"Seller approved a refund of {formattedAmount}{statusSuffix}."
                     : "Seller approved the request.";
             }
 
-            if (string.Equals(outcome, "Information requested", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalizedOutcome, "Replacement", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.IsNullOrWhiteSpace(note)
+                    ? "Seller will provide a replacement."
+                    : $"Seller will provide a replacement. Note: {note}";
+            }
+
+            if (string.Equals(normalizedOutcome, "Repair", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.IsNullOrWhiteSpace(note)
+                    ? "Seller will arrange a repair."
+                    : $"Seller will arrange a repair. Note: {note}";
+            }
+
+            if (string.Equals(normalizedOutcome, "Information requested", StringComparison.OrdinalIgnoreCase))
             {
                 return "Seller requested more information to continue.";
             }
 
-            if (string.Equals(outcome, "Seller proposed solution", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalizedOutcome, "Seller proposed solution", StringComparison.OrdinalIgnoreCase))
             {
                 return "Seller proposed an alternative or partial resolution.";
             }
 
-            if (string.Equals(outcome, "Completed", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalizedOutcome, "Completed", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedOutcome, "Resolved", StringComparison.OrdinalIgnoreCase))
             {
                 return refunded > 0
-                    ? $"Case closed after refund of {refunded.ToString("C", CultureInfo.InvariantCulture)}."
+                    ? $"Case closed after refund of {formattedAmount}{statusSuffix}."
                     : "Case marked as completed.";
             }
 
@@ -4536,6 +4827,12 @@ namespace SD.ProjectName.WebApp.Services
 
             var normalizedHistory = NormalizeReturnHistory(request.History, normalizedStatus, requestedOn);
             var normalizedMessages = NormalizeReturnMessages(request.Messages, requestedOn);
+            var resolutionOutcome = string.IsNullOrWhiteSpace(request.ResolutionOutcome) ? null : request.ResolutionOutcome.Trim();
+            var resolutionNote = string.IsNullOrWhiteSpace(request.ResolutionNote) ? null : request.ResolutionNote.Trim();
+            var resolutionRefundAmount = request.ResolutionRefundAmount.HasValue ? Math.Max(0, request.ResolutionRefundAmount.Value) : (decimal?)null;
+            var resolutionRefundReference = string.IsNullOrWhiteSpace(request.ResolutionRefundReference) ? null : request.ResolutionRefundReference.Trim();
+            var resolutionRefundStatus = string.IsNullOrWhiteSpace(request.ResolutionRefundStatus) ? null : request.ResolutionRefundStatus.Trim();
+            var resolvedOn = request.ResolvedOn == DateTimeOffset.MinValue ? null : request.ResolvedOn;
 
             return request with
             {
@@ -4547,7 +4844,13 @@ namespace SD.ProjectName.WebApp.Services
                 CaseId = string.IsNullOrWhiteSpace(request.CaseId) ? BuildCaseId(request.SubOrderNumber, requestedOn) : request.CaseId.Trim(),
                 RequestedOn = requestedOn,
                 History = normalizedHistory,
-                Messages = normalizedMessages
+                Messages = normalizedMessages,
+                ResolutionOutcome = resolutionOutcome,
+                ResolutionNote = resolutionNote,
+                ResolutionRefundAmount = resolutionRefundAmount,
+                ResolutionRefundReference = resolutionRefundReference,
+                ResolutionRefundStatus = resolutionRefundStatus,
+                ResolvedOn = resolvedOn
             };
         }
 

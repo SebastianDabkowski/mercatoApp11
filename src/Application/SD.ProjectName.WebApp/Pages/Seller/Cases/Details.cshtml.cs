@@ -26,13 +26,19 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Cases
         public string? MessageBody { get; set; }
 
         [BindProperty]
+        public decimal? RefundAmount { get; set; }
+
+        [BindProperty]
+        public string? RefundReference { get; set; }
+
+        [BindProperty]
         public int OrderId { get; set; }
 
         public SellerCaseDetailView? Case { get; private set; }
 
         public bool CanReview =>
             Case != null
-            && string.Equals(ReturnRequestStatuses.PendingSellerReview, ReturnRequestStatuses.Normalize(Case.Summary.Status), StringComparison.OrdinalIgnoreCase);
+            && ReturnRequestStatuses.IsOpen(ReturnRequestStatuses.Normalize(Case.Summary.Status));
 
         public DetailsModel(OrderService orderService, UserManager<ApplicationUser> userManager)
         {
@@ -104,13 +110,41 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Cases
                 return await LoadAsync(CaseId);
             }
 
-            var result = await _orderService.UpdateReturnCaseForSellerAsync(
-                OrderId,
-                sellerId,
-                CaseId,
-                Decision!,
-                Note,
-                HttpContext.RequestAborted);
+            var normalizedDecision = Decision!.Trim().ToLowerInvariant();
+            if (string.Equals(normalizedDecision, "partialrefund", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedDecision, "partial_refund", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedDecision, "partial", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!RefundAmount.HasValue || RefundAmount <= 0)
+                {
+                    ModelState.AddModelError(nameof(RefundAmount), "Enter a refund amount for a partial refund.");
+                    return await LoadAsync(CaseId);
+                }
+            }
+
+            ReturnRequestResult result;
+            if (string.Equals(normalizedDecision, "requestinfo", StringComparison.OrdinalIgnoreCase))
+            {
+                result = await _orderService.UpdateReturnCaseForSellerAsync(
+                    OrderId,
+                    sellerId,
+                    CaseId,
+                    Decision!,
+                    Note,
+                    HttpContext.RequestAborted);
+            }
+            else
+            {
+                result = await _orderService.ResolveReturnCaseForSellerAsync(
+                    OrderId,
+                    sellerId,
+                    CaseId,
+                    Decision!,
+                    RefundAmount,
+                    RefundReference,
+                    Note,
+                    HttpContext.RequestAborted);
+            }
 
             if (!result.Success)
             {

@@ -107,10 +107,18 @@ else
                         <span class="text-muted small">Sub-order total</span>
                         <span class="text-muted small">@Model.Case.Resolution.SubOrderTotal.ToString("C")</span>
                     </div>
-                    <div class="text-muted small mt-2">Payment status: @Model.Case.Resolution.PaymentStatus</div>
+                    <div class="text-muted small mt-2">Refund status: @Model.Case.Resolution.PaymentStatus</div>
                     @if (!string.IsNullOrWhiteSpace(Model.Case.Resolution.PaymentReference))
                     {
                         <div class="text-muted small">Payment/refund ref: @Model.Case.Resolution.PaymentReference</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Model.Case.Resolution.DecisionNote))
+                    {
+                        <div class="small mt-2">Seller note: @Model.Case.Resolution.DecisionNote</div>
+                    }
+                    @if (Model.Case.Resolution.ResolvedOn.HasValue)
+                    {
+                        <div class="text-muted small">Resolved on: @Model.Case.Resolution.ResolvedOn.Value.ToLocalTime().ToString("g")</div>
                     }
                 </div>
             </div>

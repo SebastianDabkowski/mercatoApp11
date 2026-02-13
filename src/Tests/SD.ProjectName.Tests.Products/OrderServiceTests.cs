@@ -1217,6 +1217,98 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task ResolveReturnCaseForSellerAsync_ShouldApplyPartialRefundAndLinkReference()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-resolve-1", "sig-resolve-1");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-resolve", "resolve@example.com", "Resolve Buyer", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-resolve");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+            var request = await service.CreateReturnRequestAsync(
+                result.Order.Id,
+                "buyer-resolve",
+                subOrderNumber,
+                new List<int> { 1 },
+                "Damaged",
+                ReturnRequestTypes.Return,
+                "Broken glass");
+
+            var resolved = await service.ResolveReturnCaseForSellerAsync(
+                result.Order.Id,
+                "seller-1",
+                request.Request!.CaseId!,
+                "partialrefund",
+                5m,
+                "refund-123",
+                "Offering partial refund");
+
+            Assert.True(resolved.Success);
+            Assert.NotNull(resolved.Request);
+            Assert.Equal(ReturnRequestStatuses.Completed, resolved.Request!.Status);
+            Assert.Equal("Partial refund", resolved.Request!.ResolutionOutcome);
+            Assert.Equal(5m, resolved.Request!.ResolutionRefundAmount);
+
+            var sellerDetail = await service.GetReturnCaseForSellerAsync("seller-1", request.Request!.CaseId!);
+            Assert.NotNull(sellerDetail);
+            Assert.Equal("refund-123", sellerDetail!.Resolution.PaymentReference);
+            Assert.Equal(PaymentStatuses.Refunded, sellerDetail.Resolution.PaymentStatus);
+            Assert.Equal(5m, sellerDetail.Resolution.RefundedAmount);
+            Assert.Equal("Partial refund", sellerDetail.Resolution.Outcome);
+        }
+
+        [Fact]
+        public async Task ResolveReturnCaseForSellerAsync_NoRefund_ShouldExposeReasonToBuyer()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-resolve-2", "sig-resolve-2");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-resolve-nr", "resolveno@example.com", "Resolve No Refund", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-resolve-nr");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+            var request = await service.CreateReturnRequestAsync(
+                result.Order.Id,
+                "buyer-resolve-nr",
+                subOrderNumber,
+                new List<int> { 1 },
+                "Not eligible",
+                ReturnRequestTypes.Return,
+                "Used item");
+
+            var resolved = await service.ResolveReturnCaseForSellerAsync(
+                result.Order.Id,
+                "seller-1",
+                request.Request!.CaseId!,
+                "norefund",
+                null,
+                null,
+                "Item shows heavy wear");
+
+            Assert.True(resolved.Success);
+            Assert.NotNull(resolved.Request);
+            Assert.Equal(ReturnRequestStatuses.Rejected, resolved.Request!.Status);
+            Assert.Equal("No refund", resolved.Request!.ResolutionOutcome);
+            Assert.Equal("Item shows heavy wear", resolved.Request!.ResolutionNote);
+
+            var buyerDetail = await service.GetReturnCaseForBuyerAsync("buyer-resolve-nr", request.Request!.CaseId!);
+            Assert.NotNull(buyerDetail);
+            Assert.Equal(ReturnRequestStatuses.Rejected, buyerDetail!.Summary.Status);
+            Assert.Equal("No refund", buyerDetail.Resolution.Outcome);
+            Assert.Equal("Item shows heavy wear", buyerDetail.Resolution.DecisionNote);
+            Assert.Equal("Not required", buyerDetail.Resolution.PaymentStatus);
+        }
+
+        [Fact]
         public async Task AddReturnCaseMessages_ShouldBeSharedBetweenBuyerAndSeller()
         {
             await using var context = CreateContext();
