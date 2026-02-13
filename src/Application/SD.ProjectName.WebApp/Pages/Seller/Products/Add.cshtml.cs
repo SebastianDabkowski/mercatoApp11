@@ -74,6 +74,14 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Page();
             }
 
+            var variants = BuildVariants(Input);
+            if (Input.HasVariants && variants.Count == 0)
+            {
+                ModelState.AddModelError(nameof(Input.VariantJson), "Provide at least one valid variant.");
+                ImagePreviews = BuildImagesFromFields();
+                return Page();
+            }
+
             var existingSku = await _productRepository.GetBySku(user.Id, Input.MerchantSku.Trim(), includeDrafts: true);
             if (existingSku != null)
             {
@@ -99,8 +107,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             {
                 Title = Input.Title.Trim(),
                 MerchantSku = Input.MerchantSku.Trim(),
-                Price = Input.Price,
-                Stock = Input.Stock,
+                Price = Input.HasVariants && variants.Any() ? variants.First().Price : Input.Price,
+                Stock = Input.HasVariants ? variants.Sum(v => v.Stock) : Input.Stock,
                 Category = category.FullPath,
                 CategoryId = category.Id,
                 Description = string.IsNullOrWhiteSpace(Input.Description) ? null : Input.Description.Trim(),
@@ -111,6 +119,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 WidthCm = Input.WidthCm,
                 HeightCm = Input.HeightCm,
                 ShippingMethods = string.IsNullOrWhiteSpace(Input.ShippingMethods) ? null : Input.ShippingMethods.Trim(),
+                HasVariants = Input.HasVariants && variants.Any(),
+                VariantData = ProductVariantSerializer.Serialize(variants),
                 WorkflowState = ProductWorkflowStates.Draft,
                 SellerId = user.Id
             };
@@ -126,6 +136,12 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
         public class InputModel
         {
+            public bool HasVariants { get; set; }
+
+            [MaxLength(8000)]
+            [Display(Name = "Variant definitions (JSON)")]
+            public string? VariantJson { get; set; }
+
             [Required]
             [MaxLength(200)]
             [Display(Name = "Title")]
@@ -268,6 +284,19 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
             ImagePreviews = images.Distinct().ToList();
             return ImagePreviews;
+        }
+
+        private static List<ProductVariant> BuildVariants(InputModel input)
+        {
+            if (!input.HasVariants)
+            {
+                return new List<ProductVariant>();
+            }
+
+            var variants = ProductVariantSerializer.Deserialize(input.VariantJson);
+            return variants
+                .Where(v => v != null && v.Price > 0 && v.Stock >= 0)
+                .ToList();
         }
     }
 }
