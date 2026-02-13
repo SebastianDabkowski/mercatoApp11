@@ -54,7 +54,7 @@ namespace SD.ProjectName.WebApp.Services
 
     public record OrderShippingDetail(string SellerId, string SellerName, string MethodId, string MethodLabel, decimal Cost, string? Description);
 
-    public record OrderDetailsPayload(List<OrderItemDetail> Items, List<OrderShippingDetail> Shipping, int TotalQuantity);
+    public record OrderDetailsPayload(List<OrderItemDetail> Items, List<OrderShippingDetail> Shipping, int TotalQuantity, decimal DiscountTotal = 0, string? PromoCode = null);
 
     public record OrderView(
         int Id,
@@ -66,6 +66,8 @@ namespace SD.ProjectName.WebApp.Services
         decimal ItemsSubtotal,
         decimal ShippingTotal,
         decimal GrandTotal,
+        decimal DiscountTotal,
+        string? PromoCode,
         int TotalQuantity,
         DeliveryAddress Address,
         List<OrderItemDetail> Items,
@@ -169,6 +171,10 @@ namespace SD.ProjectName.WebApp.Services
 
             var address = DeserializeAddress(order.DeliveryAddressJson);
             var details = DeserializeDetails(order.DetailsJson);
+            var discountTotal = details.DiscountTotal > 0
+                ? details.DiscountTotal
+                : Math.Max(0, order.ItemsSubtotal + order.ShippingTotal - order.GrandTotal);
+            var promoCode = string.IsNullOrWhiteSpace(details.PromoCode) ? null : details.PromoCode;
 
             return new OrderView(
                 order.Id,
@@ -180,6 +186,8 @@ namespace SD.ProjectName.WebApp.Services
                 order.ItemsSubtotal,
                 order.ShippingTotal,
                 order.GrandTotal,
+                discountTotal,
+                promoCode,
                 order.TotalQuantity,
                 address,
                 details.Items,
@@ -229,7 +237,7 @@ namespace SD.ProjectName.WebApp.Services
                     match.Description));
             }
 
-            return new OrderDetailsPayload(items, shipping, quote.Summary.TotalQuantity);
+            return new OrderDetailsPayload(items, shipping, quote.Summary.TotalQuantity, quote.Summary.DiscountTotal, quote.Summary.AppliedPromoCode);
         }
 
         private async Task SendConfirmationEmailAsync(OrderRecord order, DeliveryAddress address, OrderDetailsPayload details, CancellationToken cancellationToken)
@@ -318,7 +326,7 @@ namespace SD.ProjectName.WebApp.Services
             {
             }
 
-            return new OrderDetailsPayload(new List<OrderItemDetail>(), new List<OrderShippingDetail>(), 0);
+            return new OrderDetailsPayload(new List<OrderItemDetail>(), new List<OrderShippingDetail>(), 0, 0, null);
         }
 
         private static string GenerateOrderNumber()

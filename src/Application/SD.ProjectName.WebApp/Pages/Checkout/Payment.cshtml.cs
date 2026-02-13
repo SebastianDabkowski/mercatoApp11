@@ -20,6 +20,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly OrderService _orderService;
         private readonly CartService _cartService;
+        private readonly PromoCodeService _promoCodeService;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -44,7 +45,8 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             CheckoutOptions checkoutOptions,
             UserManager<ApplicationUser> userManager,
             OrderService orderService,
-            CartService cartService)
+            CartService cartService,
+            PromoCodeService promoCodeService)
         {
             _cartViewService = cartViewService;
             _userCartService = userCartService;
@@ -54,6 +56,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             _userManager = userManager;
             _orderService = orderService;
             _cartService = cartService;
+            _promoCodeService = promoCodeService;
         }
 
         public async Task<IActionResult> OnGetAsync(string? providerResult = null, string? method = null)
@@ -256,7 +259,14 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 }
             }
 
-            var snapshot = new CheckoutOrderSnapshot(items, quote.Summary.ItemsSubtotal, quote.Summary.ShippingTotal, quote.Summary.GrandTotal, quote.Summary.TotalQuantity);
+            var snapshot = new CheckoutOrderSnapshot(
+                items,
+                quote.Summary.ItemsSubtotal,
+                quote.Summary.ShippingTotal,
+                quote.Summary.GrandTotal,
+                quote.Summary.TotalQuantity,
+                quote.Summary.DiscountTotal,
+                quote.Summary.AppliedPromoCode);
             TempData["CheckoutSnapshot"] = JsonSerializer.Serialize(snapshot, _serializerOptions);
         }
 
@@ -283,7 +293,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 }
             }
 
-            builder.Append($"items:{quote.Summary.ItemsSubtotal.ToString(CultureInfo.InvariantCulture)};shiptotal:{quote.Summary.ShippingTotal.ToString(CultureInfo.InvariantCulture)};grand:{quote.Summary.GrandTotal.ToString(CultureInfo.InvariantCulture)};qty:{quote.Summary.TotalQuantity}");
+            builder.Append($"items:{quote.Summary.ItemsSubtotal.ToString(CultureInfo.InvariantCulture)};shiptotal:{quote.Summary.ShippingTotal.ToString(CultureInfo.InvariantCulture)};discount:{quote.Summary.DiscountTotal.ToString(CultureInfo.InvariantCulture)};grand:{quote.Summary.GrandTotal.ToString(CultureInfo.InvariantCulture)};qty:{quote.Summary.TotalQuantity};promo:{quote.Summary.AppliedPromoCode}");
             var bytes = Encoding.UTF8.GetBytes(builder.ToString());
             var hash = SHA256.HashData(bytes);
             return Convert.ToBase64String(hash);
@@ -315,6 +325,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 await _userCartService.PersistAuthenticatedCartAsync(HttpContext, HttpContext.RequestAborted);
             }
 
+            _promoCodeService.Clear(HttpContext);
             _checkoutStateService.Clear(HttpContext);
             return RedirectToPage("/Checkout/Confirmation", new { orderId = result.Order.Id });
         }

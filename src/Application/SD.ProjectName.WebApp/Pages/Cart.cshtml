@@ -84,12 +84,26 @@
                         <span>Shipping</span>
                         <span id="cart-shipping-total">@Model.ShippingTotal.ToString("C")</span>
                     </div>
+                    <div class="d-flex justify-content-between align-items-center mb-2 @(Model.DiscountTotal > 0 ? "" : "d-none")" id="cart-discount-row">
+                        <span>Discount <span class="text-muted" id="cart-promo-label">@(string.IsNullOrWhiteSpace(Model.AppliedPromoCode) ? "" : $"({Model.AppliedPromoCode})")</span></span>
+                        <span id="cart-discount-total">-@Model.DiscountTotal.ToString("C")</span>
+                    </div>
                     <hr class="my-2" />
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <strong>Total</strong>
                         <strong id="cart-grand-total">@Model.GrandTotal.ToString("C")</strong>
                     </div>
                     <div class="text-muted small mb-3">Items: <span id="cart-total-quantity">@Model.TotalQuantity</span></div>
+                    <div class="mb-3">
+                        <label class="form-label" for="promo-code-input">Promo code</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="promo-code-input" value="@Model.AppliedPromoCode" placeholder="Enter promo code" />
+                            <button type="button" class="btn btn-outline-primary" id="apply-promo-button">Apply</button>
+                            <button type="button" class="btn btn-outline-secondary @(string.IsNullOrWhiteSpace(Model.AppliedPromoCode) ? "d-none" : "")" id="remove-promo-button">Remove</button>
+                        </div>
+                        <div class="small mt-2 text-danger d-none" id="promo-error"></div>
+                        <div class="small mt-2 text-success d-none" id="promo-success"></div>
+                    </div>
                     <button type="button" class="btn btn-primary w-100" id="checkout-button">Proceed to checkout</button>
                 </div>
             </div>
@@ -109,6 +123,14 @@
             const grandTotal = document.getElementById('cart-grand-total');
             const totalQuantity = document.getElementById('cart-total-quantity');
             const checkoutButton = document.getElementById('checkout-button');
+            const discountRow = document.getElementById('cart-discount-row');
+            const discountTotal = document.getElementById('cart-discount-total');
+            const promoLabel = document.getElementById('cart-promo-label');
+            const promoInput = document.getElementById('promo-code-input');
+            const applyPromoButton = document.getElementById('apply-promo-button');
+            const removePromoButton = document.getElementById('remove-promo-button');
+            const promoError = document.getElementById('promo-error');
+            const promoSuccess = document.getElementById('promo-success');
 
             const formatMoney = (value) => new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(value || 0);
 
@@ -142,6 +164,25 @@
                 if (totalQuantity) {
                     totalQuantity.textContent = totals.totalQuantity ?? 0;
                 }
+                const hasDiscount = typeof totals.discountTotal === 'number' && totals.discountTotal > 0;
+                if (discountRow) {
+                    discountRow.classList.toggle('d-none', !hasDiscount);
+                }
+                if (discountTotal) {
+                    discountTotal.textContent = formatMoney(totals.discountTotal || 0);
+                    if (hasDiscount) {
+                        discountTotal.textContent = `-${discountTotal.textContent}`;
+                    }
+                }
+                if (promoLabel) {
+                    promoLabel.textContent = totals.promoCode ? `(${totals.promoCode})` : '';
+                }
+                if (removePromoButton) {
+                    removePromoButton.classList.toggle('d-none', !hasDiscount);
+                }
+                if (promoInput) {
+                    promoInput.value = totals.promoCode || '';
+                }
                 if (Array.isArray(totals.sellers)) {
                     totals.sellers.forEach(seller => {
                         const card = document.querySelector(`[data-seller-id="${seller.sellerId}"]`);
@@ -173,6 +214,59 @@
                 if (summaryCard) {
                     summaryCard.classList.toggle('d-none', !hasItems);
                 }
+            };
+
+            const resetPromoMessages = () => {
+                if (promoError) {
+                    promoError.textContent = '';
+                    promoError.classList.add('d-none');
+                }
+                if (promoSuccess) {
+                    promoSuccess.textContent = '';
+                    promoSuccess.classList.add('d-none');
+                }
+            };
+
+            const handlePromoResponse = (result) => {
+                resetPromoMessages();
+                if (!result) {
+                    setFeedback('Could not apply promo code.', true);
+                    return;
+                }
+
+                if (result.totals) {
+                    updateSummary(result.totals);
+                }
+
+                if (result.success) {
+                    if (promoSuccess) {
+                        promoSuccess.textContent = result.message || 'Promo code applied.';
+                        promoSuccess.classList.remove('d-none');
+                    }
+                } else if (promoError) {
+                    promoError.textContent = result.message || 'Promo code could not be applied.';
+                    promoError.classList.remove('d-none');
+                }
+            };
+
+            const applyPromo = (code) => {
+                return fetch('/Api/Promo?handler=Apply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                })
+                    .then(response => response.json().catch(() => ({})))
+                    .then(handlePromoResponse)
+                    .catch(() => setFeedback('Could not apply promo code.', true));
+            };
+
+            const removePromo = () => {
+                return fetch('/Api/Promo?handler=Remove', {
+                    method: 'POST'
+                })
+                    .then(response => response.json().catch(() => ({})))
+                    .then(handlePromoResponse)
+                    .catch(() => setFeedback('Could not remove promo code.', true));
             };
 
             const handleUpdateResponse = (data, targetItem) => {
@@ -269,6 +363,17 @@
 
             checkoutButton?.addEventListener('click', () => {
                 window.location.href = '/Checkout/Address';
+            });
+
+            applyPromoButton?.addEventListener('click', () => {
+                const code = promoInput?.value ?? '';
+                resetPromoMessages();
+                applyPromo(code);
+            });
+
+            removePromoButton?.addEventListener('click', () => {
+                resetPromoMessages();
+                removePromo();
             });
 
             ensureVisibility();

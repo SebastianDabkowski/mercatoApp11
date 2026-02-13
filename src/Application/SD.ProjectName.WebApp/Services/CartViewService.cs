@@ -12,13 +12,20 @@ namespace SD.ProjectName.WebApp.Services
         private readonly CartTotalsCalculator _totalsCalculator;
         private readonly GetProducts _getProducts;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly PromoCodeService _promoCodeService;
 
-        public CartViewService(CartService cartService, CartTotalsCalculator totalsCalculator, GetProducts getProducts, UserManager<ApplicationUser> userManager)
+        public CartViewService(
+            CartService cartService,
+            CartTotalsCalculator totalsCalculator,
+            GetProducts getProducts,
+            UserManager<ApplicationUser> userManager,
+            PromoCodeService promoCodeService)
         {
             _cartService = cartService;
             _totalsCalculator = totalsCalculator;
             _getProducts = getProducts;
             _userManager = userManager;
+            _promoCodeService = promoCodeService;
         }
 
         public async Task<CartSummary> BuildAsync(HttpContext httpContext)
@@ -131,7 +138,9 @@ namespace SD.ProjectName.WebApp.Services
                 })
                 .ToList();
 
-            return _totalsCalculator.Calculate(sellerGroups);
+            var totals = _totalsCalculator.Calculate(sellerGroups);
+            var promo = _promoCodeService.ApplyStored(httpContext, totals);
+            return promo.Summary;
         }
 
         private async Task<Dictionary<string, string>> LoadSellerNamesAsync(IEnumerable<string> sellerIds)

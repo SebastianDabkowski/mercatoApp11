@@ -8,11 +8,13 @@ namespace SD.ProjectName.WebApp.Services
         decimal ShippingTotal,
         decimal GrandTotal,
         int TotalQuantity,
-        CartSettlementSummary Settlement)
+        CartSettlementSummary Settlement,
+        decimal DiscountTotal = 0,
+        string? AppliedPromoCode = null)
     {
         public bool IsEmpty => SellerGroups.Count == 0;
 
-        public static CartSummary Empty { get; } = new(new List<CartSellerGroup>(), 0, 0, 0, 0, CartSettlementSummary.Empty);
+        public static CartSummary Empty { get; } = new(new List<CartSellerGroup>(), 0, 0, 0, 0, CartSettlementSummary.Empty, 0, null);
     }
 
     public record CartSettlementSummary(List<CartSellerSettlement> Sellers, decimal PlatformCommissionTotal, decimal SellerPayoutTotal)

@@ -55,7 +55,15 @@ namespace SD.ProjectName.WebApp.Services
 
             var shippingTotal = adjustedGroups.Sum(g => g.Shipping);
             var settlementSummary = new CartSettlementSummary(settlements, settlements.Sum(s => s.Commission), settlements.Sum(s => s.Payout));
-            var updatedSummary = new CartSummary(adjustedGroups, summary.ItemsSubtotal, shippingTotal, summary.ItemsSubtotal + shippingTotal, summary.TotalQuantity, settlementSummary);
+            var updatedSummary = new CartSummary(
+                adjustedGroups,
+                summary.ItemsSubtotal,
+                shippingTotal,
+                Math.Max(0, summary.ItemsSubtotal + shippingTotal - summary.DiscountTotal),
+                summary.TotalQuantity,
+                settlementSummary,
+                summary.DiscountTotal,
+                summary.AppliedPromoCode);
 
             return new ShippingQuote(updatedSummary, sellerOptions, selected);
         }
