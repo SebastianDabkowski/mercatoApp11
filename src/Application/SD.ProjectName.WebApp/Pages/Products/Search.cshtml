@@ -1,0 +1,93 @@
+@page
+@model SD.ProjectName.WebApp.Pages.Products.SearchModel
+@{
+    ViewData["Title"] = "Search";
+    var query = Model.Q ?? string.Empty;
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+    <div>
+        <h1 class="mb-1">Search</h1>
+        <p class="text-muted mb-0">
+            @if (string.IsNullOrWhiteSpace(query))
+            {
+                @:Find products by title or description.
+            }
+            else
+            {
+                @:Results for "@query"
+            }
+        </p>
+    </div>
+    <form method="get" class="d-flex flex-wrap gap-2" asp-page="/Products/Search">
+        <input type="search"
+               name="q"
+               value="@query"
+               class="form-control"
+               placeholder="Search products..."
+               maxlength="200" />
+        <button type="submit" class="btn btn-primary">Search</button>
+    </form>
+</div>
+
+@if (!Model.Results.Any())
+{
+    <div class="alert alert-info">
+        <p class="mb-1">@Model.StatusMessage</p>
+        <ul class="mb-0">
+            <li>Try shorter or alternate keywords.</li>
+            <li>Check spelling or remove special characters.</li>
+            <li><a asp-page="/Products/Category">Browse categories</a> to explore the catalog.</li>
+        </ul>
+    </div>
+}
+else
+{
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <div class="small text-muted">Active products only</div>
+            <h2 class="h5 mb-0">@Model.Results.Count result@(Model.Results.Count == 1 ? "" : "s") for "@query"</h2>
+        </div>
+    </div>
+
+    <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3">
+        @foreach (var product in Model.Results)
+        {
+            var description = string.IsNullOrWhiteSpace(product.Description)
+                ? "No description provided."
+                : (product.Description.Length > 140 ? $"{product.Description[..140]}..." : product.Description);
+
+            <div class="col">
+                <div class="card h-100 shadow-sm">
+                    <div class="ratio ratio-4x3 bg-light border-bottom">
+                        @if (!string.IsNullOrWhiteSpace(product.MainImageUrl))
+                        {
+                            <img src="@product.MainImageUrl"
+                                 alt="Thumbnail for @product.Title"
+                                 class="w-100 h-100 rounded-top"
+                                 style="object-fit: cover; object-position: center;" />
+                        }
+                        else
+                        {
+                            <div class="d-flex align-items-center justify-content-center text-muted small w-100 h-100">
+                                No image
+                            </div>
+                        }
+                    </div>
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex align-items-start justify-content-between mb-2">
+                            <h5 class="card-title mb-0 me-2">@product.Title</h5>
+                            <span class="fw-semibold text-primary">@product.Price.ToString("C")</span>
+                        </div>
+                        <div class="text-muted small mb-2">@product.Category</div>
+                        <p class="card-text flex-grow-1">@description</p>
+                        <div class="d-flex align-items-center justify-content-between pt-2">
+                            <span class="text-muted small">Stock: @product.Stock</span>
+                            <a class="btn btn-sm btn-outline-primary" asp-page="/Products/Details" asp-route-id="@product.Id">View</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}

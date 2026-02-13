@@ -68,6 +68,32 @@ namespace SD.ProjectName.Modules.Products.Domain
                 .ToListAsync(cancellationToken);
         }
 
+        public async Task<List<ProductModel>> SearchActiveProducts(string search, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(search))
+            {
+                return new List<ProductModel>();
+            }
+
+            var term = search.Trim();
+            if (term.Length > 200)
+            {
+                term = term[..200];
+            }
+
+            var normalizedTerm = term.ToLowerInvariant();
+
+            var query = _context.Set<ProductModel>()
+                .Where(p => p.WorkflowState == ProductWorkflowStates.Active)
+                .Where(p =>
+                    p.Title.ToLower().Contains(normalizedTerm) ||
+                    (!string.IsNullOrWhiteSpace(p.Description) && p.Description!.ToLower().Contains(normalizedTerm)));
+
+            return await query
+                .OrderByDescending(p => p.Id)
+                .ToListAsync(cancellationToken);
+        }
+
         public async Task<List<ProductModel>> GetByIds(IEnumerable<int> ids, bool includeDrafts = false)
         {
             if (ids == null || !ids.Any())

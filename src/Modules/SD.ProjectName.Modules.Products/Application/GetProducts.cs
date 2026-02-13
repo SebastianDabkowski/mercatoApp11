@@ -39,5 +39,10 @@ namespace SD.ProjectName.Modules.Products.Application
             return await _repository.GetByCategoryIds(categoryIds, includeDrafts);
         }
 
+        public async Task<List<ProductModel>> SearchActive(string search, CancellationToken cancellationToken = default)
+        {
+            return await _repository.SearchActiveProducts(search, cancellationToken);
+        }
+
     }
 }
