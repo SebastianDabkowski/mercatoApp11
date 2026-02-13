@@ -93,6 +93,10 @@ else
                         priceEl.textContent = '—';
                         stockEl.textContent = '0';
                         addBtn?.setAttribute('disabled', 'disabled');
+                        if (addBtn) {
+                            addBtn.dataset.variantSelection = '';
+                            addBtn.dataset.variantAvailable = 'false';
+                        }
                         return;
                     }
 
@@ -100,6 +104,8 @@ else
                     priceEl.textContent = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(variant.price);
                     stockEl.textContent = variant.stock;
                     if (addBtn) {
+                        addBtn.dataset.variantSelection = JSON.stringify(state);
+                        addBtn.dataset.variantAvailable = variant.stock > 0 ? 'true' : 'false';
                         if (variant.stock > 0) {
                             addBtn.removeAttribute('disabled');
                         } else {
@@ -176,7 +182,13 @@ else
         }
     </dl>
     <div class="mt-3">
-        <button id="add-to-cart" type="button" class="btn btn-primary" @(Model.Product.Stock > 0 ? "" : "disabled")>Add to cart</button>
+        <button id="add-to-cart"
+                type="button"
+                class="btn btn-primary"
+                data-product-id="@Model.Product.Id"
+                data-has-variants="@(Model.Product.HasVariants.ToString().ToLowerInvariant())"
+                @(Model.Product.Stock > 0 ? "" : "disabled")>Add to cart</button>
+        <div id="cart-status" class="mt-2 text-success d-none"></div>
         @if (Model.Product.HasVariants && Model.Product.Variants.Any())
         {
             <span class="text-muted ms-2">Select a variant to see availability.</span>
@@ -231,4 +243,72 @@ else
             }
         </div>
     </div>
+}
+
+@section Scripts {
+    <script>
+        (() => {
+            const button = document.getElementById('add-to-cart');
+            const status = document.getElementById('cart-status');
+            if (!button) return;
+
+            const productId = parseInt(button.dataset.productId || '0', 10);
+            if (!productId) return;
+
+            if (button.dataset.hasVariants !== 'true' && !button.dataset.variantSelection) {
+                button.dataset.variantSelection = "{}";
+            }
+
+            const showStatus = (text, success) => {
+                if (!status) return;
+                status.textContent = text;
+                status.classList.toggle('text-success', !!success);
+                status.classList.toggle('text-danger', !success);
+                status.classList.remove('d-none');
+            };
+
+            const readVariant = () => {
+                const raw = button.dataset.variantSelection;
+                if (!raw) {
+                    return undefined;
+                }
+                try {
+                    return JSON.parse(raw);
+                } catch {
+                    return undefined;
+                }
+            };
+
+            button.addEventListener('click', () => {
+                const payload = {
+                    productId,
+                    quantity: 1,
+                    variantAttributes: readVariant()
+                };
+
+                button.disabled = true;
+                fetch('/Api/Cart?handler=Add', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                })
+                    .then(response => response.json().catch(() => ({})).then(data => ({ ok: response.ok, data })))
+                    .then(result => {
+                        if (result.ok && result.data?.success) {
+                            showStatus(result.data.message || 'Added to cart.', true);
+                            return;
+                        }
+                        showStatus(result.data?.message || 'Could not add to cart.', false);
+                    })
+                    .catch(() => showStatus('Could not add to cart.', false))
+                    .finally(() => {
+                        if (button.dataset.variantAvailable !== 'false') {
+                            button.disabled = false;
+                        }
+                    });
+            });
+        })();
+    </script>
 }
