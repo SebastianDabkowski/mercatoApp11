@@ -14,6 +14,7 @@ namespace SD.ProjectName.Tests.Products
             var product = new ProductModel
             {
                 Title = "New Product",
+                MerchantSku = "SKU-NEW",
                 Price = 20,
                 Stock = 10,
                 Category = "Default",
@@ -42,6 +43,7 @@ namespace SD.ProjectName.Tests.Products
             var product = new ProductModel
             {
                 Title = "Active Product",
+                MerchantSku = "SKU-ACTIVE",
                 Price = 30,
                 Stock = 3,
                 Category = "Default",

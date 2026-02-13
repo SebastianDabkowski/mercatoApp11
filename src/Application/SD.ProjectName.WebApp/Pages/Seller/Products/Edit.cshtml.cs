@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.Extensions.Logging;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
+using SD.ProjectName.Modules.Products.Domain.Interfaces;
 using SD.ProjectName.WebApp.Identity;
 
 namespace SD.ProjectName.WebApp.Pages.Seller.Products
@@ -19,19 +20,22 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly ManageCategories _categories;
         private readonly ILogger<EditModel> _logger;
+        private readonly IProductRepository _productRepository;
 
         public EditModel(
             GetProducts getProducts,
             UpdateProduct updateProduct,
             UserManager<ApplicationUser> userManager,
             ManageCategories categories,
-            ILogger<EditModel> logger)
+            ILogger<EditModel> logger,
+            IProductRepository productRepository)
         {
             _getProducts = getProducts;
             _updateProduct = updateProduct;
             _userManager = userManager;
             _categories = categories;
             _logger = logger;
+            _productRepository = productRepository;
         }
 
         [BindProperty]
@@ -62,6 +66,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             {
                 Id = product.Id,
                 Title = product.Title,
+                MerchantSku = product.MerchantSku,
                 Price = product.Price,
                 Stock = product.Stock,
                 CategoryId = product.CategoryId,
@@ -118,7 +123,15 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Page();
             }
 
+            var otherWithSku = await _productRepository.GetBySku(user.Id, Input.MerchantSku.Trim(), includeDrafts: true);
+            if (otherWithSku != null && otherWithSku.Id != product.Id)
+            {
+                ModelState.AddModelError(nameof(Input.MerchantSku), "This SKU is already used by another product.");
+                return Page();
+            }
+
             product.Title = Input.Title.Trim();
+            product.MerchantSku = Input.MerchantSku.Trim();
             product.Price = Input.Price;
             product.Stock = Input.Stock;
             product.CategoryId = category.Id;
@@ -148,6 +161,11 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             [MaxLength(200)]
             [Display(Name = "Title")]
             public string Title { get; set; } = string.Empty;
+
+            [Required]
+            [MaxLength(100)]
+            [Display(Name = "Merchant SKU")]
+            public string MerchantSku { get; set; } = string.Empty;
 
             [Required]
             [Range(0.01, double.MaxValue, ErrorMessage = "Price must be greater than zero.")]

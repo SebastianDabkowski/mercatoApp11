@@ -114,6 +114,9 @@ builder.Services.AddScoped<ChangeProductWorkflowState>();
 builder.Services.AddScoped<ArchiveProduct>();
 builder.Services.AddScoped<BulkUpdateProducts>();
 builder.Services.AddScoped<ManageCategories>();
+builder.Services.AddSingleton<ProductImportQueue>();
+builder.Services.AddScoped<ProductCatalogImportService>();
+builder.Services.AddHostedService<ProductImportBackgroundService>();
 
 builder.Services.AddRazorPages(options =>
 {

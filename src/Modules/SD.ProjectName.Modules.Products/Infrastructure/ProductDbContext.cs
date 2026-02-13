@@ -17,6 +17,7 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
 
         public DbSet<ProductModel> Products { get; set; }
         public DbSet<CategoryModel> Categories { get; set; }
+        public DbSet<ProductImportJob> ProductImportJobs { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -25,6 +26,7 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                 entity.ToTable("ProductModel");
                 entity.Property(p => p.Price).HasColumnType("decimal(18,2)");
                 entity.Property(p => p.Title).HasMaxLength(200).IsRequired();
+                entity.Property(p => p.MerchantSku).HasMaxLength(100).IsRequired();
                 entity.Property(p => p.MainImageUrl).HasMaxLength(500);
                 entity.Property(p => p.GalleryImageUrls).HasMaxLength(2000);
                 entity.Property(p => p.Category).HasMaxLength(256).IsRequired();
@@ -43,6 +45,7 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                       .WithMany()
                       .HasForeignKey(p => p.CategoryId)
                       .OnDelete(DeleteBehavior.SetNull);
+                entity.HasIndex(p => new { p.SellerId, p.MerchantSku }).IsUnique();
             });
 
             modelBuilder.Entity<CategoryModel>(entity =>
@@ -57,6 +60,18 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                       .HasForeignKey(c => c.ParentId)
                       .OnDelete(DeleteBehavior.Restrict);
                 entity.HasIndex(c => new { c.ParentId, c.SortOrder });
+            });
+
+            modelBuilder.Entity<ProductImportJob>(entity =>
+            {
+                entity.ToTable("ProductImportJob");
+                entity.Property(j => j.Status).HasMaxLength(64).IsRequired();
+                entity.Property(j => j.FileName).HasMaxLength(200).IsRequired();
+                entity.Property(j => j.SellerId).IsRequired();
+                entity.Property(j => j.Summary).HasMaxLength(4000);
+                entity.Property(j => j.ContentType).HasMaxLength(128);
+                entity.Property(j => j.TemplateVersion).HasMaxLength(32).HasDefaultValue("v1");
+                entity.HasIndex(j => new { j.SellerId, j.CreatedOn });
             });
         }
 
