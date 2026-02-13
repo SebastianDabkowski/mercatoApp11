@@ -76,6 +76,8 @@ Owns architecture and makes final technical decisions.
 
 \- Keep ARCHITECTURE.md and AGENT.md synchronized with accepted architectural decisions and agent ownership; trigger ADR creation/validation when structure changes.
 
+\- Run doc-sync automation that automatically updates `ARCHITECTURE.md` and `AGENT.md` after architectural or agent-responsibility changes and validates ADRs, creating any missing records.
+
 
 
 \*\*Mandatory ADR Rule\*\*

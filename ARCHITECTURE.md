@@ -115,6 +115,7 @@ Keep this list updated whenever ADRs are added or changed so this document mirro
 ## Documentation Sync Rules
 - Update this file in the same PR when module boundaries, data flows, or infrastructure change; add relevant ADR ids to the ADR Traceability section.
 - Architecture.md must reflect the new structure after any architecture change; run doc-sync automation to refresh `ARCHITECTURE.md` and `AGENT.md` from the implemented module inventory.
+- Doc-sync automation (AI agent) automatically updates `ARCHITECTURE.md` and `AGENT.md` when architecture or agent responsibilities change and runs ADR validation to flag and create missing ADRs.
 - When an ADR is added or its status changes, add it to ADR Traceability and ensure the record exists in `docs/adr`.
 - Run ADR validation before merge; validate all ADRs against the current architecture, create or update any missing ADR, and update ADR Traceability/AGENT.md in the same PR.
 - If agent ownership or responsibilities shift, update `AGENT.md` alongside architecture updates.
