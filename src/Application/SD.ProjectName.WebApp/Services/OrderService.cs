@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.WebApp.Data;
 using SD.ProjectName.WebApp.Identity;
 
@@ -191,6 +192,19 @@ namespace SD.ProjectName.WebApp.Services
 
     public record SubOrderStatusUpdateResult(bool Success, string? Error, OrderSubOrder? UpdatedSubOrder = null, string? OrderStatus = null);
 
+    public record BuyerOrderFilterOptions
+    {
+        public List<string> Statuses { get; init; } = new();
+
+        public DateTimeOffset? FromDate { get; init; }
+
+        public DateTimeOffset? ToDate { get; init; }
+
+        public string? SellerId { get; init; }
+    }
+
+    public record SellerFilterOption(string Id, string Name);
+
     public class OrderService
     {
         private readonly ApplicationDbContext _dbContext;
@@ -311,13 +325,74 @@ namespace SD.ProjectName.WebApp.Services
                 details.SubOrders);
         }
 
-        public async Task<List<OrderSummaryView>> GetSummariesForBuyerAsync(string buyerId, CancellationToken cancellationToken = default)
+        public async Task<PagedResult<OrderSummaryView>> GetSummariesForBuyerAsync(
+            string buyerId,
+            BuyerOrderFilterOptions? filters = null,
+            int pageNumber = 1,
+            int pageSize = 10,
+            CancellationToken cancellationToken = default)
         {
-            return await _dbContext.Orders.AsNoTracking()
-                .Where(o => o.BuyerId == buyerId)
+            pageNumber = Math.Max(1, pageNumber);
+            pageSize = Math.Clamp(pageSize, 1, 50);
+
+            var query = _dbContext.Orders.AsNoTracking()
+                .Where(o => o.BuyerId == buyerId);
+
+            if (filters != null)
+            {
+                var statuses = filters.Statuses
+                    .Select(OrderStatuses.Normalize)
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (statuses.Count > 0)
+                {
+                    query = query.Where(o => statuses.Contains(o.Status));
+                }
+
+                if (filters.FromDate.HasValue)
+                {
+                    query = query.Where(o => o.CreatedOn >= filters.FromDate.Value);
+                }
+
+                if (filters.ToDate.HasValue)
+                {
+                    query = query.Where(o => o.CreatedOn <= filters.ToDate.Value);
+                }
+
+                if (!string.IsNullOrWhiteSpace(filters.SellerId))
+                {
+                    var sellerToken = $"\"sellerId\":\"{filters.SellerId.Trim()}\"";
+                    query = query.Where(o => o.DetailsJson.Contains(sellerToken));
+                }
+            }
+
+            var totalCount = await query.CountAsync(cancellationToken);
+            var totalPages = pageSize <= 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pageSize);
+            if (totalPages == 0)
+            {
+                pageNumber = 1;
+            }
+            else if (pageNumber > totalPages)
+            {
+                pageNumber = totalPages;
+            }
+
+            var skip = (pageNumber - 1) * pageSize;
+            var items = await query
                 .OrderByDescending(o => o.CreatedOn)
+                .Skip(skip)
+                .Take(pageSize)
                 .Select(o => new OrderSummaryView(o.Id, o.OrderNumber, o.CreatedOn, o.Status, o.GrandTotal, o.TotalQuantity))
                 .ToListAsync(cancellationToken);
+
+            return new PagedResult<OrderSummaryView>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            };
         }
 
         public async Task<List<SellerOrderSummaryView>> GetSummariesForSellerAsync(string sellerId, CancellationToken cancellationToken = default)
@@ -350,6 +425,39 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             return summaries;
+        }
+
+        public async Task<List<SellerFilterOption>> GetSellerFiltersForBuyerAsync(string buyerId, CancellationToken cancellationToken = default)
+        {
+            var orders = await _dbContext.Orders.AsNoTracking()
+                .Where(o => o.BuyerId == buyerId)
+                .Select(o => o.DetailsJson)
+                .ToListAsync(cancellationToken);
+
+            var sellers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var payload in orders)
+            {
+                var details = DeserializeDetails(payload);
+                foreach (var sub in details.SubOrders)
+                {
+                    if (string.IsNullOrWhiteSpace(sub.SellerId))
+                    {
+                        continue;
+                    }
+
+                    var sellerId = sub.SellerId.Trim();
+                    var sellerName = string.IsNullOrWhiteSpace(sub.SellerName) ? sellerId : sub.SellerName;
+                    if (!sellers.ContainsKey(sellerId))
+                    {
+                        sellers[sellerId] = sellerName;
+                    }
+                }
+            }
+
+            return sellers
+                .Select(s => new SellerFilterOption(s.Key, s.Value))
+                .OrderBy(s => s.Name)
+                .ToList();
         }
 
         public async Task<SellerOrderView?> GetSellerOrderAsync(int id, string sellerId, CancellationToken cancellationToken = default)

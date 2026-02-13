@@ -232,7 +232,9 @@ namespace SD.ProjectName.WebApp.Data
                     .IsUnique()
                     .HasFilter("[PaymentReference] IS NOT NULL");
 
-                entity.HasIndex(o => new { o.BuyerId, o.CreatedOn });
+                entity.HasIndex(o => new { o.BuyerId, o.Status, o.CreatedOn });
+                entity.HasIndex(o => o.Status);
+                entity.HasIndex(o => o.CreatedOn);
             });
         }
     }
