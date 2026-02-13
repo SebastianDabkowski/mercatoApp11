@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using SD.ProjectName.WebApp.Identity;
+using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Data
 {
@@ -9,6 +10,7 @@ namespace SD.ProjectName.WebApp.Data
     {
         public DbSet<LoginAudit> LoginAudits => Set<LoginAudit>();
         public DbSet<SellerTeamMember> SellerTeamMembers => Set<SellerTeamMember>();
+        public DbSet<OrderRecord> Orders => Set<OrderRecord>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -184,6 +186,53 @@ namespace SD.ProjectName.WebApp.Data
 
                 entity.HasIndex(e => e.UserId);
                 entity.HasIndex(e => e.OccurredOn);
+            });
+
+            builder.Entity<OrderRecord>(entity =>
+            {
+                entity.Property(o => o.OrderNumber)
+                    .HasMaxLength(40)
+                    .IsRequired();
+
+                entity.Property(o => o.Status)
+                    .HasMaxLength(32)
+                    .IsRequired();
+
+                entity.Property(o => o.BuyerId)
+                    .HasMaxLength(450);
+
+                entity.Property(o => o.BuyerEmail)
+                    .HasMaxLength(256);
+
+                entity.Property(o => o.BuyerName)
+                    .HasMaxLength(256);
+
+                entity.Property(o => o.PaymentMethodId)
+                    .HasMaxLength(64);
+
+                entity.Property(o => o.PaymentMethodLabel)
+                    .HasMaxLength(128);
+
+                entity.Property(o => o.PaymentReference)
+                    .HasMaxLength(128);
+
+                entity.Property(o => o.CartSignature)
+                    .HasMaxLength(256);
+
+                entity.Property(o => o.DeliveryAddressJson)
+                    .IsRequired();
+
+                entity.Property(o => o.DetailsJson)
+                    .IsRequired();
+
+                entity.HasIndex(o => o.OrderNumber)
+                    .IsUnique();
+
+                entity.HasIndex(o => o.PaymentReference)
+                    .IsUnique()
+                    .HasFilter("[PaymentReference] IS NOT NULL");
+
+                entity.HasIndex(o => new { o.BuyerId, o.CreatedOn });
             });
         }
     }

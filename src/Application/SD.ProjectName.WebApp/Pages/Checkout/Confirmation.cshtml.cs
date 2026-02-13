@@ -15,6 +15,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         private readonly ShippingOptionsService _shippingOptionsService;
         private readonly CheckoutOptions _checkoutOptions;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly OrderService _orderService;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -28,13 +29,16 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
 
         public string? PaymentReference { get; private set; }
 
+        public OrderView? Order { get; private set; }
+
         public ConfirmationModel(
             CartViewService cartViewService,
             IUserCartService userCartService,
             CheckoutStateService checkoutStateService,
             ShippingOptionsService shippingOptionsService,
             CheckoutOptions checkoutOptions,
-            UserManager<ApplicationUser> userManager)
+            UserManager<ApplicationUser> userManager,
+            OrderService orderService)
         {
             _cartViewService = cartViewService;
             _userCartService = userCartService;
@@ -42,10 +46,25 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             _shippingOptionsService = shippingOptionsService;
             _checkoutOptions = checkoutOptions;
             _userManager = userManager;
+            _orderService = orderService;
         }
 
-        public async Task<IActionResult> OnGetAsync()
+        public async Task<IActionResult> OnGetAsync(int? orderId = null)
         {
+            if (orderId.HasValue)
+            {
+                var currentUserId = _userManager.GetUserId(User);
+                var order = await _orderService.GetOrderAsync(orderId.Value, currentUserId, HttpContext.RequestAborted);
+                if (order == null)
+                {
+                    return NotFound();
+                }
+
+                PopulateFromOrder(order);
+                _checkoutStateService.Clear(HttpContext);
+                return Page();
+            }
+
             await _userCartService.EnsureUserCartAsync(HttpContext, HttpContext.RequestAborted);
             var summary = await _cartViewService.BuildAsync(HttpContext);
             var state = _checkoutStateService.Get(HttpContext);
@@ -125,6 +144,15 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             {
                 return null;
             }
+        }
+
+        private void PopulateFromOrder(OrderView order)
+        {
+            Order = order;
+            Address = order.Address;
+            PaymentReference = order.PaymentReference;
+            PaymentMethodLabel = order.PaymentMethodLabel;
+            Summary = new CartSummary(new List<CartSellerGroup>(), order.ItemsSubtotal, order.ShippingTotal, order.GrandTotal, order.TotalQuantity, CartSettlementSummary.Empty);
         }
     }
 }

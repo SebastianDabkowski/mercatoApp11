@@ -76,6 +76,7 @@ builder.Services.AddScoped<CartViewService>();
 builder.Services.AddScoped<IUserCartService, UserCartService>();
 builder.Services.AddScoped<CheckoutStateService>();
 builder.Services.AddScoped<ShippingOptionsService>();
+builder.Services.AddScoped<OrderService>();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {

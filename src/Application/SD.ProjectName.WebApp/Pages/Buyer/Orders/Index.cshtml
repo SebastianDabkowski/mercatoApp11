@@ -1,0 +1,44 @@
+@page
+@model SD.ProjectName.WebApp.Pages.Buyer.Orders.IndexModel
+@{
+    ViewData["Title"] = "My orders";
+}
+
+<h1 class="mb-3">My orders</h1>
+
+@if (Model.Orders.Count == 0)
+{
+    <div class="alert alert-info">You have no orders yet.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">Order</th>
+                    <th scope="col">Placed</th>
+                    <th scope="col" class="text-end">Items</th>
+                    <th scope="col" class="text-end">Total</th>
+                    <th scope="col">Status</th>
+                    <th scope="col" class="text-end"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var order in Model.Orders)
+                {
+                    <tr>
+                        <td class="fw-semibold">@order.OrderNumber</td>
+                        <td>@order.CreatedOn.ToLocalTime().ToString("g")</td>
+                        <td class="text-end">@order.TotalQuantity</td>
+                        <td class="text-end">@order.GrandTotal.ToString("C")</td>
+                        <td>@order.Status</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary" asp-page="/Checkout/Confirmation" asp-route-orderId="@order.Id">View</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

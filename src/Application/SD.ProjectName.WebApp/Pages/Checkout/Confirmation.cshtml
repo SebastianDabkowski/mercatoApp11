@@ -1,10 +1,14 @@
-@page "/Checkout/Confirmation"
+@page "/Checkout/Confirmation/{orderId:int?}"
 @model SD.ProjectName.WebApp.Pages.Checkout.ConfirmationModel
 @{
     ViewData["Title"] = "Order confirmed";
 }
 
 <h1 class="mb-3">Order confirmed</h1>
+@if (Model.Order != null)
+{
+    <div class="text-muted mb-2">Order #@Model.Order.OrderNumber · placed @Model.Order.CreatedOn.ToLocalTime().ToString("d")</div>
+}
 
 <div class="alert alert-success">
     <strong>Payment confirmed.</strong> Your order is being prepared.
@@ -16,10 +20,82 @@
     {
         <div class="small text-muted">Paid with: @Model.PaymentMethodLabel</div>
     }
+    @if (Model.Order != null)
+    {
+        <div class="small text-muted">Status: @Model.Order.Status</div>
+    }
 </div>
 
 <div class="row">
     <div class="col-lg-8">
+        <div class="card mb-3">
+            <div class="card-header">Items</div>
+            <div class="card-body">
+                @if (Model.Order?.Items != null && Model.Order.Items.Count > 0)
+                {
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Item</th>
+                                    <th scope="col">Seller</th>
+                                    <th scope="col" class="text-end">Qty</th>
+                                    <th scope="col" class="text-end">Unit</th>
+                                    <th scope="col" class="text-end">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in Model.Order.Items)
+                                {
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">@item.Name</div>
+                                            @if (!string.IsNullOrWhiteSpace(item.Variant))
+                                            {
+                                                <div class="text-muted small">@item.Variant</div>
+                                            }
+                                        </td>
+                                        <td>@item.SellerName</td>
+                                        <td class="text-end">@item.Quantity</td>
+                                        <td class="text-end">@item.UnitPrice.ToString("C")</td>
+                                        <td class="text-end">@item.LineTotal.ToString("C")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div class="text-muted">Item details are not available.</div>
+                }
+            </div>
+        </div>
+        <div class="card mb-3">
+            <div class="card-header">Shipping</div>
+            <div class="card-body">
+                @if (Model.Order?.Shipping != null && Model.Order.Shipping.Count > 0)
+                {
+                    <ul class="list-unstyled mb-0">
+                        @foreach (var shipping in Model.Order.Shipping)
+                        {
+                            <li class="mb-2">
+                                <div class="fw-semibold">@shipping.SellerName</div>
+                                <div>@shipping.MethodLabel (@shipping.Cost.ToString("C"))</div>
+                                @if (!string.IsNullOrWhiteSpace(shipping.Description))
+                                {
+                                    <div class="text-muted small">Estimated: @shipping.Description</div>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <div class="text-muted">Shipping selections are not available.</div>
+                }
+            </div>
+        </div>
         <div class="card mb-3">
             <div class="card-header">Delivery address</div>
             <div class="card-body">
