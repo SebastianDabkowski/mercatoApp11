@@ -31,7 +31,59 @@
         <div class="card mb-3">
             <div class="card-header">Items</div>
             <div class="card-body">
-                @if (Model.Order?.Items != null && Model.Order.Items.Count > 0)
+                @if (Model.Order?.SubOrders != null && Model.Order.SubOrders.Count > 0)
+                {
+                    foreach (var sub in Model.Order.SubOrders)
+                    {
+                        <div class="border rounded p-3 mb-3">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div>
+                                    <div class="fw-semibold">@sub.SellerName</div>
+                                    <div class="text-muted small">Sub-order @sub.SubOrderNumber</div>
+                                    <div class="text-muted small">Shipping: @sub.ShippingDetail.MethodLabel (@sub.ShippingDetail.Cost.ToString("C"))</div>
+                                </div>
+                                <div class="text-end">
+                                    <div class="fw-semibold">@sub.GrandTotal.ToString("C")</div>
+                                    <div class="text-muted small">@sub.TotalQuantity item(s)</div>
+                                    @if (sub.DiscountTotal > 0)
+                                    {
+                                        <div class="text-success small">Discount -@sub.DiscountTotal.ToString("C")</div>
+                                    }
+                                </div>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table align-middle mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Item</th>
+                                            <th scope="col" class="text-end">Qty</th>
+                                            <th scope="col" class="text-end">Unit</th>
+                                            <th scope="col" class="text-end">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in sub.Items)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <div class="fw-semibold">@item.Name</div>
+                                                    @if (!string.IsNullOrWhiteSpace(item.Variant))
+                                                    {
+                                                        <div class="text-muted small">@item.Variant</div>
+                                                    }
+                                                </td>
+                                                <td class="text-end">@item.Quantity</td>
+                                                <td class="text-end">@item.UnitPrice.ToString("C")</td>
+                                                <td class="text-end">@item.LineTotal.ToString("C")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+                }
+                else if (Model.Order?.Items != null && Model.Order.Items.Count > 0)
                 {
                     <div class="table-responsive">
                         <table class="table align-middle">
@@ -74,7 +126,23 @@
         <div class="card mb-3">
             <div class="card-header">Shipping</div>
             <div class="card-body">
-                @if (Model.Order?.Shipping != null && Model.Order.Shipping.Count > 0)
+                @if (Model.Order?.SubOrders != null && Model.Order.SubOrders.Count > 0)
+                {
+                    <ul class="list-unstyled mb-0">
+                        @foreach (var sub in Model.Order.SubOrders)
+                        {
+                            <li class="mb-2">
+                                <div class="fw-semibold">@sub.SellerName <span class="text-muted small">(Sub-order @sub.SubOrderNumber)</span></div>
+                                <div>@sub.ShippingDetail.MethodLabel (@sub.ShippingDetail.Cost.ToString("C"))</div>
+                                @if (!string.IsNullOrWhiteSpace(sub.ShippingDetail.Description))
+                                {
+                                    <div class="text-muted small">Estimated: @sub.ShippingDetail.Description</div>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                else if (Model.Order?.Shipping != null && Model.Order.Shipping.Count > 0)
                 {
                     <ul class="list-unstyled mb-0">
                         @foreach (var shipping in Model.Order.Shipping)

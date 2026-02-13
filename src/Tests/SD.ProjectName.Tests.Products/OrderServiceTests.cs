@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -32,6 +33,9 @@ namespace SD.ProjectName.Tests.Products
             Assert.NotNull(view);
             Assert.Equal("Card", view!.PaymentMethodLabel);
             Assert.Single(view.Items);
+            Assert.Single(view.SubOrders);
+            Assert.Equal(view.GrandTotal, view.SubOrders.First().GrandTotal);
+            Assert.Equal(view.SubOrders.First().TotalQuantity, view.TotalQuantity);
 
             emailSender.Verify(e => e.SendEmailAsync("buyer@example.com", It.Is<string>(s => s.Contains(result.Order.OrderNumber)), It.IsAny<string>()), Times.Once);
         }
@@ -55,6 +59,56 @@ namespace SD.ProjectName.Tests.Products
             emailSender.Verify(e => e.SendEmailAsync("buyer2@example.com", It.IsAny<string>(), It.IsAny<string>()), Times.Once);
         }
 
+        [Fact]
+        public async Task EnsureOrderAsync_ShouldSplitIntoSellerSubOrders()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildMultiSellerQuote();
+            var selections = new Dictionary<string, string> { ["seller-1"] = "express", ["seller-2"] = "standard" };
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, selections, "card", CheckoutPaymentStatus.Confirmed, "ref-3", "sig-3");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-3", "buyer3@example.com", "Buyer Three", "Card", "card");
+
+            Assert.True(result.Created);
+            var view = await service.GetOrderAsync(result.Order.Id, "buyer-3");
+            Assert.NotNull(view);
+            Assert.Equal(2, view!.SubOrders.Count);
+            Assert.Equal(view.SubOrders.Sum(s => s.GrandTotal), view.GrandTotal);
+            var firstSeller = view.SubOrders.First(s => s.SellerId == "seller-1");
+            Assert.Equal("express", firstSeller.ShippingDetail.MethodId);
+            Assert.Equal(7, firstSeller.Shipping);
+            Assert.True(firstSeller.Items.All(i => i.SellerId == "seller-1"));
+            var secondSeller = view.SubOrders.First(s => s.SellerId == "seller-2");
+            Assert.Equal("standard", secondSeller.ShippingDetail.MethodId);
+            Assert.Equal(5, secondSeller.Shipping);
+            Assert.True(secondSeller.Items.All(i => i.SellerId == "seller-2"));
+        }
+
+        [Fact]
+        public async Task GetSellerOrderAsync_ShouldReturnOnlySellerItems()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildMultiSellerQuote();
+            var selections = new Dictionary<string, string> { ["seller-1"] = "express", ["seller-2"] = "standard" };
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, selections, "card", CheckoutPaymentStatus.Confirmed, "ref-4", "sig-4");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-4", "buyer4@example.com", "Buyer Four", "Card", "card");
+            var sellerOrder = await service.GetSellerOrderAsync(result.Order.Id, "seller-2");
+
+            Assert.NotNull(sellerOrder);
+            Assert.Equal("seller-2", sellerOrder!.Shipping.SellerId);
+            Assert.True(sellerOrder.Items.All(i => i.SellerId == "seller-2"));
+            Assert.Equal(sellerOrder.ShippingTotal + sellerOrder.ItemsSubtotal - sellerOrder.DiscountTotal, sellerOrder.GrandTotal);
+
+            var sellerSummaries = await service.GetSummariesForSellerAsync("seller-2");
+            Assert.Single(sellerSummaries);
+            Assert.Equal(result.Order.Id, sellerSummaries[0].Id);
+        }
+
         private static ShippingQuote BuildQuote()
         {
             var product = new ProductModel { Id = 1, Title = "Sample Item", Price = 10, Stock = 5, SellerId = "seller-1" };
@@ -64,6 +118,29 @@ namespace SD.ProjectName.Tests.Products
             var options = new List<ShippingMethodOption> { new("standard", "Standard", 5, "Standard delivery", true) };
             var sellerOptions = new List<SellerShippingOptions> { new("seller-1", "Seller One", options) };
             var selections = new Dictionary<string, string> { ["seller-1"] = "standard" };
+            return new ShippingQuote(summary, sellerOptions, selections);
+        }
+
+        private static ShippingQuote BuildMultiSellerQuote()
+        {
+            var productOne = new ProductModel { Id = 1, Title = "Red Shirt", Price = 10, Stock = 5, SellerId = "seller-1" };
+            var productTwo = new ProductModel { Id = 2, Title = "Blue Jeans", Price = 20, Stock = 5, SellerId = "seller-2" };
+            var itemOne = new CartDisplayItem(productOne, 1, string.Empty, 10, 10, true, 5, new Dictionary<string, string>());
+            var itemTwo = new CartDisplayItem(productTwo, 2, "32", 20, 40, true, 5, new Dictionary<string, string>());
+
+            var sellerOneGroup = new CartSellerGroup("seller-1", "Seller One", 10, 7, 17, new List<CartDisplayItem> { itemOne });
+            var sellerTwoGroup = new CartSellerGroup("seller-2", "Seller Two", 40, 5, 45, new List<CartDisplayItem> { itemTwo });
+            var summary = new CartSummary(new List<CartSellerGroup> { sellerOneGroup, sellerTwoGroup }, 50, 12, 62, 3, CartSettlementSummary.Empty);
+
+            var sellerOneOptions = new List<ShippingMethodOption> { new("standard", "Standard", 5, "Standard", false), new("express", "Express", 7, "Express", true) };
+            var sellerTwoOptions = new List<ShippingMethodOption> { new("standard", "Standard", 5, "Standard", true) };
+            var sellerOptions = new List<SellerShippingOptions>
+            {
+                new("seller-1", "Seller One", sellerOneOptions),
+                new("seller-2", "Seller Two", sellerTwoOptions)
+            };
+            var selections = new Dictionary<string, string> { ["seller-1"] = "express", ["seller-2"] = "standard" };
+
             return new ShippingQuote(summary, sellerOptions, selections);
         }
 
