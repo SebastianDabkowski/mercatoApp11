@@ -1,0 +1,91 @@
+@page
+@model SD.ProjectName.WebApp.Pages.Notifications.IndexModel
+@using SD.ProjectName.WebApp.Services
+@{
+    ViewData["Title"] = "Notifications";
+}
+
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <h1 class="mb-0">Notifications</h1>
+    <span class="badge bg-primary">@Model.UnreadCount unread</span>
+</div>
+
+<div class="btn-group mb-4" role="group" aria-label="Filter notifications">
+    <a class="btn btn-outline-secondary @(Model.Filter == NotificationFilterOptions.All ? "active" : string.Empty)"
+       asp-page="./Index"
+       asp-route-filter="@NotificationFilterOptions.All"
+       asp-route-page="1">All</a>
+    <a class="btn btn-outline-secondary @(Model.Filter == NotificationFilterOptions.Unread ? "active" : string.Empty)"
+       asp-page="./Index"
+       asp-route-filter="@NotificationFilterOptions.Unread"
+       asp-route-page="1">Unread</a>
+    <a class="btn btn-outline-secondary @(Model.Filter == NotificationFilterOptions.Read ? "active" : string.Empty)"
+       asp-page="./Index"
+       asp-route-filter="@NotificationFilterOptions.Read"
+       asp-route-page="1">Read</a>
+</div>
+
+@if (!Model.Notifications.Items.Any())
+{
+    <div class="alert alert-info">
+        @if (Model.Filter == NotificationFilterOptions.Unread)
+        {
+            <text>You are all caught up. No unread notifications.</text>
+        }
+        else
+        {
+            <text>No notifications to show yet.</text>
+        }
+    </div>
+}
+else
+{
+    foreach (var notification in Model.Notifications.Items)
+    {
+        <div class="card notification-card @(notification.IsRead ? "notification-read" : "notification-unread") mb-3">
+            <div class="card-body d-flex justify-content-between align-items-start">
+                <div class="me-3">
+                    <div class="d-flex align-items-center gap-2 fw-semibold">
+                        <span>@notification.Title</span>
+                        @if (!notification.IsRead)
+                        {
+                            <span class="badge bg-success">New</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-secondary">Read</span>
+                        }
+                    </div>
+                    <div class="notification-meta">@notification.CreatedOn.ToLocalTime().ToString("g") - @notification.Category</div>
+                    <p class="mb-2 mt-2">@notification.Description</p>
+                    <a class="btn btn-sm btn-link px-0" href="@notification.TargetUrl">Open</a>
+                </div>
+                <div class="text-end">
+                    @if (!notification.IsRead)
+                    {
+                        <form method="post" asp-page-handler="MarkAsRead" class="d-inline">
+                            <input type="hidden" name="notificationId" value="@notification.Id" />
+                            <input type="hidden" name="filter" value="@Model.Filter" />
+                            <input type="hidden" name="page" value="@Model.PageNumber" />
+                            <button type="submit" class="btn btn-sm btn-outline-primary">Mark as read</button>
+                        </form>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (Model.Notifications.TotalPages > 1)
+    {
+        <nav aria-label="Notifications pagination">
+            <ul class="pagination justify-content-center">
+                <li class="page-item @(Model.Notifications.HasPreviousPage ? string.Empty : "disabled")">
+                    <a class="page-link" href="@Url.Page(null, new { filter = Model.Filter, page = Model.Notifications.PageNumber - 1 })">Previous</a>
+                </li>
+                <li class="page-item @(Model.Notifications.HasNextPage ? string.Empty : "disabled")">
+                    <a class="page-link" href="@Url.Page(null, new { filter = Model.Filter, page = Model.Notifications.PageNumber + 1 })">Next</a>
+                </li>
+            </ul>
+        </nav>
+    }
+}

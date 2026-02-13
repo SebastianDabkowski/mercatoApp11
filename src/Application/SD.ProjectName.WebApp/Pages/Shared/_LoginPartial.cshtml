@@ -29,6 +29,9 @@
         </li>
     }
     <li class="nav-item">
+        @await Component.InvokeAsync("NotificationBell")
+    </li>
+    <li class="nav-item">
         <a  class="nav-link text-dark" asp-area="Identity" asp-page="/Account/ChangePassword" title="Manage">Hello @User.Identity?.Name!</a>
     </li>
     <li class="nav-item">
