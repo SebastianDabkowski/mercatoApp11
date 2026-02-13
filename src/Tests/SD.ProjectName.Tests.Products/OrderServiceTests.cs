@@ -264,6 +264,31 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task GetPublishedReviewsPageAsync_ShouldReturnSortedPageWithAverage()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            var now = DateTimeOffset.UtcNow;
+            context.ProductReviews.AddRange(
+                new ProductReview { ProductId = 7, OrderId = 1, BuyerId = "buyer-1", BuyerName = "Buyer One", Rating = 3, Comment = "Ok", CreatedOn = now.AddDays(-1), Status = ReviewStatuses.Published },
+                new ProductReview { ProductId = 7, OrderId = 1, BuyerId = "buyer-2", BuyerName = "Buyer Two", Rating = 5, Comment = "Great", CreatedOn = now, Status = ReviewStatuses.Published },
+                new ProductReview { ProductId = 7, OrderId = 1, BuyerId = "buyer-3", BuyerName = "Buyer Three", Rating = 1, Comment = "Bad", CreatedOn = now.AddDays(-2), Status = ReviewStatuses.Published },
+                new ProductReview { ProductId = 7, OrderId = 1, BuyerId = "buyer-4", BuyerName = "Buyer Four", Rating = 4, Comment = "Hidden", CreatedOn = now, Status = ReviewStatuses.Pending });
+            await context.SaveChangesAsync();
+
+            var page = await service.GetPublishedReviewsPageAsync(7, page: 2, pageSize: 1, sort: "highest");
+
+            Assert.Equal(3, page.TotalCount);
+            Assert.Equal(2, page.PageNumber);
+            Assert.Equal("highest", page.Sort);
+            Assert.NotNull(page.AverageRating);
+            Assert.Equal(3.0, page.AverageRating!.Value);
+            var review = Assert.Single(page.Reviews);
+            Assert.Equal(3, review.Rating);
+            Assert.Equal("Buyer One", review.BuyerName);
+        }
+
+        [Fact]
         public async Task UpdatePaymentStatusAsync_ShouldApplyWebhookStatus()
         {
             await using var context = CreateContext();

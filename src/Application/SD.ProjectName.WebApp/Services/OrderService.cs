@@ -396,6 +396,13 @@ namespace SD.ProjectName.WebApp.Services
         List<EscrowAllocation> Escrow);
 
     public record ProductReviewView(int ProductId, int Rating, string Comment, string BuyerName, DateTimeOffset CreatedOn);
+    public record ProductReviewsPage(
+        IReadOnlyList<ProductReviewView> Reviews,
+        int TotalCount,
+        int PageNumber,
+        int PageSize,
+        string Sort,
+        double? AverageRating);
 
     public record OrderSummaryView(int Id, string OrderNumber, DateTimeOffset CreatedOn, string Status, decimal GrandTotal, int TotalQuantity);
 
@@ -1111,21 +1118,67 @@ namespace SD.ProjectName.WebApp.Services
             int take = 20,
             CancellationToken cancellationToken = default)
         {
+            var page = await GetPublishedReviewsPageAsync(productId, 1, take, "newest", cancellationToken);
+            return page.Reviews.ToList();
+        }
+
+        public async Task<ProductReviewsPage> GetPublishedReviewsPageAsync(
+            int productId,
+            int page = 1,
+            int pageSize = 10,
+            string? sort = null,
+            CancellationToken cancellationToken = default)
+        {
             if (productId <= 0)
             {
-                return new List<ProductReviewView>();
+                var normalizedPageSize = pageSize <= 0 ? 10 : Math.Min(pageSize, 50);
+                var normalizedSort = NormalizeReviewSort(sort);
+                return new ProductReviewsPage(Array.Empty<ProductReviewView>(), 0, 1, normalizedPageSize, normalizedSort, null);
             }
 
-            var limit = take <= 0 ? 20 : Math.Min(take, 100);
-            var reviews = await _dbContext.ProductReviews.AsNoTracking()
-                .Where(r => r.ProductId == productId && ReviewStatuses.IsVisible(r.Status))
-                .OrderByDescending(r => r.CreatedOn)
+            var normalizedSortOption = NormalizeReviewSort(sort);
+            var limit = pageSize <= 0 ? 10 : Math.Min(pageSize, 50);
+            var source = _dbContext.ProductReviews.AsNoTracking()
+                .Where(r => r.ProductId == productId && ReviewStatuses.IsVisible(r.Status));
+
+            var totalCount = await source.CountAsync(cancellationToken);
+            var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling(totalCount / (double)limit);
+            var pageNumber = Math.Clamp(page, 1, totalPages);
+
+            double? averageRating = null;
+            if (totalCount > 0)
+            {
+                var average = await source.AverageAsync(r => (double)r.Rating, cancellationToken);
+                averageRating = Math.Round(average, 1);
+            }
+
+            source = normalizedSortOption switch
+            {
+                "highest" => source.OrderByDescending(r => r.Rating).ThenByDescending(r => r.CreatedOn),
+                "lowest" => source.OrderBy(r => r.Rating).ThenByDescending(r => r.CreatedOn),
+                _ => source.OrderByDescending(r => r.CreatedOn)
+            };
+
+            var reviews = await source
+                .Skip((pageNumber - 1) * limit)
                 .Take(limit)
                 .ToListAsync(cancellationToken);
 
-            return reviews
+            var views = reviews
                 .Select(r => new ProductReviewView(r.ProductId, r.Rating, r.Comment, r.BuyerName, r.CreatedOn))
                 .ToList();
+
+            return new ProductReviewsPage(views, totalCount, pageNumber, limit, normalizedSortOption, averageRating);
+        }
+
+        private static string NormalizeReviewSort(string? sort)
+        {
+            return sort?.Trim().ToLowerInvariant() switch
+            {
+                "highest" or "rating_desc" => "highest",
+                "lowest" or "rating_asc" => "lowest",
+                _ => "newest"
+            };
         }
 
         public async Task<PaymentStatusUpdateResult> UpdatePaymentStatusAsync(
