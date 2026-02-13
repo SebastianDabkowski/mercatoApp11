@@ -195,6 +195,22 @@ namespace SD.ProjectName.WebApp.Services
         }
     }
 
+    public static class ReviewTargetTypes
+    {
+        public const string Product = "Product";
+        public const string Seller = "Seller";
+
+        public static string Normalize(string? value)
+        {
+            if (string.Equals(value, Seller, StringComparison.OrdinalIgnoreCase))
+            {
+                return Seller;
+            }
+
+            return Product;
+        }
+    }
+
     public static class ReviewReportReasons
     {
         public const string Abuse = "Abuse";
@@ -213,6 +229,28 @@ namespace SD.ProjectName.WebApp.Services
 
             var match = Allowed.FirstOrDefault(r => string.Equals(r, reason, StringComparison.OrdinalIgnoreCase));
             return match;
+        }
+    }
+
+    public static class ReviewModerationReasons
+    {
+        public const string HateSpeech = "Hate speech";
+        public const string Spam = "Spam";
+        public const string OffTopic = "Off-topic";
+        public const string PersonalData = "Personal data";
+        public const string Other = "Other";
+
+        public static readonly IReadOnlyList<string> Allowed = new[] { HateSpeech, Spam, OffTopic, PersonalData, Other };
+
+        public static string Normalize(string? reason)
+        {
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return Other;
+            }
+
+            var match = Allowed.FirstOrDefault(r => string.Equals(r, reason, StringComparison.OrdinalIgnoreCase));
+            return match ?? Other;
         }
     }
 
@@ -394,7 +432,21 @@ namespace SD.ProjectName.WebApp.Services
 
         public string BuyerId { get; set; } = string.Empty;
 
+        public string BuyerName { get; set; } = string.Empty;
+
+        public string SellerName { get; set; } = string.Empty;
+
         public int Rating { get; set; }
+
+        public string Status { get; set; } = ReviewStatuses.Published;
+
+        public bool IsFlagged { get; set; }
+
+        public string? FlagReason { get; set; }
+
+        public string? LastModeratedBy { get; set; }
+
+        public DateTimeOffset? LastModeratedOn { get; set; }
 
         public DateTimeOffset CreatedOn { get; set; }
     }
@@ -731,11 +783,13 @@ namespace SD.ProjectName.WebApp.Services
 
     public record ReviewModerationItem(
         int Id,
-        int ProductId,
+        string Type,
+        int? ProductId,
+        string? SellerId,
         int OrderId,
-        string BuyerName,
+        string Reviewer,
         int Rating,
-        string Comment,
+        string? Comment,
         string Status,
         bool IsFlagged,
         string? FlagReason,
@@ -1435,20 +1489,29 @@ namespace SD.ProjectName.WebApp.Services
                 return new SellerRatingResult(false, "You already rated this seller for this order.");
             }
 
+            var moderation = EvaluateSellerRatingForModeration(rating);
+            var now = DateTimeOffset.UtcNow;
             var ratingRecord = new SellerRating
             {
                 OrderId = order.Id,
                 SellerId = normalizedSellerId,
                 BuyerId = buyerId,
+                BuyerName = string.IsNullOrWhiteSpace(order.BuyerName) ? "Buyer" : order.BuyerName,
+                SellerName = string.IsNullOrWhiteSpace(subOrder.SellerName) ? normalizedSellerId : subOrder.SellerName,
                 Rating = rating,
-                CreatedOn = DateTimeOffset.UtcNow
+                Status = moderation.Flagged ? ReviewStatuses.Pending : ReviewStatuses.Published,
+                IsFlagged = moderation.Flagged,
+                FlagReason = moderation.Reason,
+                LastModeratedBy = moderation.Flagged ? "System" : null,
+                LastModeratedOn = moderation.Flagged ? now : null,
+                CreatedOn = now
             };
 
             _dbContext.SellerRatings.Add(ratingRecord);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
             var average = await _dbContext.SellerRatings.AsNoTracking()
-                .Where(r => r.SellerId == normalizedSellerId)
+                .Where(r => r.SellerId == normalizedSellerId && r.Status == ReviewStatuses.Published)
                 .Select(r => (double?)r.Rating)
                 .AverageAsync(cancellationToken);
 
@@ -1832,6 +1895,123 @@ namespace SD.ProjectName.WebApp.Services
             return new ReviewModerationResult(true, null);
         }
 
+        public async Task<ReviewModerationResult> FlagSellerRatingAsync(
+            int ratingId,
+            string actor,
+            string? reason = null,
+            CancellationToken cancellationToken = default)
+        {
+            var rating = await _dbContext.SellerRatings.FirstOrDefaultAsync(r => r.Id == ratingId, cancellationToken);
+            if (rating == null)
+            {
+                return new ReviewModerationResult(false, "Review not found.");
+            }
+
+            var normalizedActor = NormalizeActor(actor);
+            var normalizedReason = string.IsNullOrWhiteSpace(reason) ? "Flagged for review" : reason.Trim();
+            var previousStatus = ReviewStatuses.Normalize(rating.Status);
+            var now = DateTimeOffset.UtcNow;
+
+            rating.IsFlagged = true;
+            rating.FlagReason = normalizedReason;
+            rating.LastModeratedBy = normalizedActor;
+            rating.LastModeratedOn = now;
+            if (ReviewStatuses.IsVisible(rating.Status))
+            {
+                rating.Status = ReviewStatuses.Pending;
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            return new ReviewModerationResult(true, null);
+        }
+
+        public async Task<ReviewModerationResult> ApproveSellerRatingAsync(
+            int ratingId,
+            string actor,
+            string? note = null,
+            CancellationToken cancellationToken = default)
+        {
+            var rating = await _dbContext.SellerRatings.FirstOrDefaultAsync(r => r.Id == ratingId, cancellationToken);
+            if (rating == null)
+            {
+                return new ReviewModerationResult(false, "Review not found.");
+            }
+
+            var normalizedActor = NormalizeActor(actor);
+            var normalizedNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+            var previousStatus = ReviewStatuses.Normalize(rating.Status);
+            var now = DateTimeOffset.UtcNow;
+
+            rating.Status = ReviewStatuses.Published;
+            rating.IsFlagged = false;
+            rating.FlagReason = normalizedNote ?? rating.FlagReason;
+            rating.LastModeratedBy = normalizedActor;
+            rating.LastModeratedOn = now;
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            return new ReviewModerationResult(true, null);
+        }
+
+        public async Task<ReviewModerationResult> RejectSellerRatingAsync(
+            int ratingId,
+            string actor,
+            string? note = null,
+            CancellationToken cancellationToken = default)
+        {
+            var rating = await _dbContext.SellerRatings.FirstOrDefaultAsync(r => r.Id == ratingId, cancellationToken);
+            if (rating == null)
+            {
+                return new ReviewModerationResult(false, "Review not found.");
+            }
+
+            var normalizedActor = NormalizeActor(actor);
+            var normalizedNote = string.IsNullOrWhiteSpace(note) ? "Rejected by moderator" : note.Trim();
+            var previousStatus = ReviewStatuses.Normalize(rating.Status);
+            var now = DateTimeOffset.UtcNow;
+
+            rating.Status = ReviewStatuses.Rejected;
+            rating.IsFlagged = true;
+            rating.FlagReason = normalizedNote;
+            rating.LastModeratedBy = normalizedActor;
+            rating.LastModeratedOn = now;
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            return new ReviewModerationResult(true, null);
+        }
+
+        public async Task<ReviewModerationResult> UpdateSellerRatingVisibilityAsync(
+            int ratingId,
+            string actor,
+            bool isVisible,
+            string? note = null,
+            CancellationToken cancellationToken = default)
+        {
+            var rating = await _dbContext.SellerRatings.FirstOrDefaultAsync(r => r.Id == ratingId, cancellationToken);
+            if (rating == null)
+            {
+                return new ReviewModerationResult(false, "Review not found.");
+            }
+
+            var normalizedActor = NormalizeActor(actor);
+            var normalizedNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+            var previousStatus = ReviewStatuses.Normalize(rating.Status);
+            var now = DateTimeOffset.UtcNow;
+            var targetStatus = isVisible ? ReviewStatuses.Published : ReviewStatuses.Hidden;
+
+            rating.Status = targetStatus;
+            rating.IsFlagged = !isVisible;
+            rating.FlagReason = normalizedNote ?? rating.FlagReason;
+            rating.LastModeratedBy = normalizedActor;
+            rating.LastModeratedOn = now;
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            return new ReviewModerationResult(true, null);
+        }
+
         public async Task<PagedResult<ReviewModerationItem>> GetReviewsForModerationAsync(
             ReviewModerationFilters? filters = null,
             int page = 1,
@@ -1840,39 +2020,41 @@ namespace SD.ProjectName.WebApp.Services
         {
             var normalizedFilters = NormalizeReviewFilters(filters);
             var limit = pageSize <= 0 ? 20 : Math.Min(50, pageSize);
-            var source = _dbContext.ProductReviews.AsNoTracking().AsQueryable();
+            var productSource = _dbContext.ProductReviews.AsNoTracking().AsQueryable();
+            var sellerSource = _dbContext.SellerRatings.AsNoTracking().AsQueryable();
 
             if (normalizedFilters.FlaggedOnly == true)
             {
-                source = source.Where(r => r.IsFlagged);
+                productSource = productSource.Where(r => r.IsFlagged);
+                sellerSource = sellerSource.Where(r => r.IsFlagged);
             }
 
             if (normalizedFilters.Statuses.Count > 0)
             {
-                source = source.Where(r => normalizedFilters.Statuses.Contains(r.Status));
+                productSource = productSource.Where(r => normalizedFilters.Statuses.Contains(r.Status));
+                sellerSource = sellerSource.Where(r => normalizedFilters.Statuses.Contains(r.Status));
             }
 
             if (!string.IsNullOrWhiteSpace(normalizedFilters.Query))
             {
                 var query = normalizedFilters.Query;
-                source = source.Where(r =>
+                productSource = productSource.Where(r =>
                     r.Comment.Contains(query) ||
                     r.BuyerName.Contains(query) ||
                     (r.FlagReason != null && r.FlagReason.Contains(query)));
+                sellerSource = sellerSource.Where(r =>
+                    r.BuyerName.Contains(query) ||
+                    r.SellerId.Contains(query) ||
+                    r.SellerName.Contains(query) ||
+                    (r.FlagReason != null && r.FlagReason.Contains(query)));
             }
 
-            var totalCount = await source.CountAsync(cancellationToken);
-            var totalPages = limit <= 0 ? 0 : (int)Math.Ceiling(totalCount / (double)limit);
-            var pageNumber = totalPages == 0 ? 1 : Math.Clamp(page, 1, totalPages);
-
-            var items = await source
-                .OrderByDescending(r => r.IsFlagged)
-                .ThenByDescending(r => r.CreatedOn)
-                .Skip((pageNumber - 1) * limit)
-                .Take(limit)
+            var productItems = await productSource
                 .Select(r => new ReviewModerationItem(
                     r.Id,
+                    ReviewTargetTypes.Product,
                     r.ProductId,
+                    null,
                     r.OrderId,
                     r.BuyerName,
                     r.Rating,
@@ -1885,6 +2067,39 @@ namespace SD.ProjectName.WebApp.Services
                     r.LastModeratedBy))
                 .ToListAsync(cancellationToken);
 
+            var sellerItems = await sellerSource
+                .Select(r => new ReviewModerationItem(
+                    r.Id,
+                    ReviewTargetTypes.Seller,
+                    null,
+                    r.SellerId,
+                    r.OrderId,
+                    r.BuyerName,
+                    r.Rating,
+                    null,
+                    r.Status,
+                    r.IsFlagged,
+                    r.FlagReason,
+                    r.CreatedOn,
+                    r.LastModeratedOn,
+                    r.LastModeratedBy))
+                .ToListAsync(cancellationToken);
+
+            var combined = productItems
+                .Concat(sellerItems)
+                .OrderByDescending(r => r.IsFlagged)
+                .ThenByDescending(r => r.CreatedOn)
+                .ToList();
+
+            var totalCount = combined.Count;
+            var totalPages = limit <= 0 ? 0 : (int)Math.Ceiling(totalCount / (double)limit);
+            var pageNumber = totalPages == 0 ? 1 : Math.Clamp(page, 1, totalPages);
+
+            var items = combined
+                .Skip((pageNumber - 1) * limit)
+                .Take(limit)
+                .ToList();
+
             return new PagedResult<ReviewModerationItem>
             {
                 Items = items,
@@ -1894,8 +2109,16 @@ namespace SD.ProjectName.WebApp.Services
             };
         }
 
-        public async Task<List<ReviewAuditView>> GetReviewAuditAsync(int reviewId, CancellationToken cancellationToken = default)
+        public async Task<List<ReviewAuditView>> GetReviewAuditAsync(
+            int reviewId,
+            string reviewType = ReviewTargetTypes.Product,
+            CancellationToken cancellationToken = default)
         {
+            if (!string.Equals(ReviewTargetTypes.Normalize(reviewType), ReviewTargetTypes.Product, StringComparison.OrdinalIgnoreCase))
+            {
+                return new List<ReviewAuditView>();
+            }
+
             var audits = await _dbContext.ProductReviewAudits.AsNoTracking()
                 .Where(a => a.ReviewId == reviewId)
                 .OrderByDescending(a => a.CreatedOn)
@@ -1926,6 +2149,16 @@ namespace SD.ProjectName.WebApp.Services
             if (rating <= 2 && lowered.Contains("refund"))
             {
                 return (true, "Low rating mentioning refund");
+            }
+
+            return (false, null);
+        }
+
+        private static (bool Flagged, string? Reason) EvaluateSellerRatingForModeration(int rating)
+        {
+            if (rating <= 2)
+            {
+                return (true, "Low rating flagged for review");
             }
 
             return (false, null);
@@ -2199,7 +2432,7 @@ namespace SD.ProjectName.WebApp.Services
 
             var normalizedSellerId = sellerId.Trim();
             var ratings = _dbContext.SellerRatings.AsNoTracking()
-                .Where(r => r.SellerId == normalizedSellerId);
+                .Where(r => r.SellerId == normalizedSellerId && r.Status == ReviewStatuses.Published);
 
             var count = await ratings.CountAsync(cancellationToken);
             if (count == 0)

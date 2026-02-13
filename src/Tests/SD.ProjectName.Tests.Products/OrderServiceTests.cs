@@ -287,6 +287,28 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task SubmitSellerRatingAsync_ShouldFlagLowRatingsForModeration()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-seller-rating-flag", "sig-seller-rating-flag");
+
+            var creation = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-seller-flag", "buyer-flag@example.com", "Buyer Flag", "Card", "card");
+            await service.UpdateSubOrderStatusAsync(creation.Order.Id, "seller-1", OrderStatuses.Delivered);
+
+            var result = await service.SubmitSellerRatingAsync(creation.Order.Id, "seller-1", "buyer-seller-flag", 1);
+
+            Assert.True(result.Success);
+            var stored = await context.SellerRatings.FirstAsync();
+            Assert.True(stored.IsFlagged);
+            Assert.Equal(ReviewStatuses.Pending, stored.Status);
+            Assert.False(string.IsNullOrWhiteSpace(stored.FlagReason));
+            Assert.Equal("System", stored.LastModeratedBy);
+            Assert.NotNull(stored.LastModeratedOn);
+        }
+
+        [Fact]
         public async Task GetSellerRatingSummaryAsync_ShouldReturnAverageAndCount()
         {
             await using var context = CreateContext();
@@ -304,6 +326,85 @@ namespace SD.ProjectName.Tests.Products
             var missing = await service.GetSellerRatingSummaryAsync("seller-none");
             Assert.Equal(0, missing.RatedOrderCount);
             Assert.Null(missing.AverageRating);
+        }
+
+        [Fact]
+        public async Task GetSellerRatingSummaryAsync_ShouldIgnoreNonPublishedRatings()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            var now = DateTimeOffset.UtcNow;
+            context.SellerRatings.AddRange(
+                new SellerRating { OrderId = 1, SellerId = "seller-filter", BuyerId = "buyer-1", BuyerName = "Buyer One", SellerName = "Seller One", Rating = 5, Status = ReviewStatuses.Published, CreatedOn = now },
+                new SellerRating { OrderId = 2, SellerId = "seller-filter", BuyerId = "buyer-2", BuyerName = "Buyer Two", SellerName = "Seller One", Rating = 1, Status = ReviewStatuses.Rejected, IsFlagged = true, FlagReason = "Abuse", CreatedOn = now.AddMinutes(1) });
+            await context.SaveChangesAsync();
+
+            var summary = await service.GetSellerRatingSummaryAsync("seller-filter");
+
+            Assert.Equal(1, summary.RatedOrderCount);
+            Assert.Equal(5, summary.AverageRating);
+        }
+
+        [Fact]
+        public async Task ApproveSellerRatingAsync_ShouldPublishAndClearFlag()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            var rating = new SellerRating
+            {
+                OrderId = 5,
+                SellerId = "seller-approve",
+                SellerName = "Seller Approve",
+                BuyerId = "buyer-approve",
+                BuyerName = "Buyer Approve",
+                Rating = 1,
+                Status = ReviewStatuses.Pending,
+                IsFlagged = true,
+                FlagReason = "Low rating",
+                CreatedOn = DateTimeOffset.UtcNow
+            };
+            context.SellerRatings.Add(rating);
+            await context.SaveChangesAsync();
+
+            var result = await service.ApproveSellerRatingAsync(rating.Id, "moderator@example.com", "Reviewed");
+
+            Assert.True(result.Success);
+            var updated = await context.SellerRatings.FirstAsync(r => r.Id == rating.Id);
+            Assert.Equal(ReviewStatuses.Published, updated.Status);
+            Assert.False(updated.IsFlagged);
+            Assert.Equal("moderator@example.com", updated.LastModeratedBy);
+            Assert.NotNull(updated.LastModeratedOn);
+            Assert.Equal("Reviewed", updated.FlagReason);
+        }
+
+        [Fact]
+        public async Task RejectSellerRatingAsync_ShouldStoreReason()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            var rating = new SellerRating
+            {
+                OrderId = 6,
+                SellerId = "seller-reject",
+                SellerName = "Seller Reject",
+                BuyerId = "buyer-reject",
+                BuyerName = "Buyer Reject",
+                Rating = 2,
+                Status = ReviewStatuses.Published,
+                CreatedOn = DateTimeOffset.UtcNow
+            };
+            context.SellerRatings.Add(rating);
+            await context.SaveChangesAsync();
+
+            var result = await service.RejectSellerRatingAsync(rating.Id, "moderator", ReviewModerationReasons.Spam);
+
+            Assert.True(result.Success);
+            var updated = await context.SellerRatings.FirstAsync(r => r.Id == rating.Id);
+            Assert.Equal(ReviewStatuses.Rejected, updated.Status);
+            Assert.True(updated.IsFlagged);
+            Assert.Equal(ReviewModerationReasons.Spam, updated.FlagReason);
+            Assert.Equal("moderator", updated.LastModeratedBy);
+            Assert.NotNull(updated.LastModeratedOn);
         }
 
         [Fact]
@@ -564,6 +665,59 @@ namespace SD.ProjectName.Tests.Products
             var stored = await context.ProductReviews.FirstAsync();
             Assert.Equal(ReviewStatuses.Rejected, stored.Status);
             Assert.True(stored.IsFlagged);
+        }
+
+        [Fact]
+        public async Task GetReviewsForModerationAsync_ShouldIncludeSellerRatings()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            var now = DateTimeOffset.UtcNow;
+            context.ProductReviews.Add(new ProductReview
+            {
+                ProductId = 11,
+                OrderId = 21,
+                BuyerId = "buyer-moderation",
+                BuyerName = "Buyer Moderation",
+                Rating = 2,
+                Comment = "Flagged comment",
+                Status = ReviewStatuses.Pending,
+                IsFlagged = true,
+                FlagReason = "Reported",
+                CreatedOn = now
+            });
+            context.SellerRatings.AddRange(
+                new SellerRating
+                {
+                    OrderId = 22,
+                    SellerId = "seller-queue",
+                    SellerName = "Seller Queue",
+                    BuyerId = "buyer-moderation",
+                    BuyerName = "Buyer Moderation",
+                    Rating = 1,
+                    Status = ReviewStatuses.Pending,
+                    IsFlagged = true,
+                    FlagReason = "Low rating",
+                    CreatedOn = now.AddMinutes(1)
+                },
+                new SellerRating
+                {
+                    OrderId = 23,
+                    SellerId = "seller-ok",
+                    SellerName = "Seller Ok",
+                    BuyerId = "buyer-moderation-2",
+                    BuyerName = "Buyer Moderation 2",
+                    Rating = 5,
+                    Status = ReviewStatuses.Published,
+                    CreatedOn = now.AddMinutes(2)
+                });
+            await context.SaveChangesAsync();
+
+            var result = await service.GetReviewsForModerationAsync(new ReviewModerationFilters { FlaggedOnly = true }, 1, 10);
+
+            Assert.Equal(2, result.TotalCount);
+            Assert.Contains(result.Items, i => i.Type == ReviewTargetTypes.Seller && i.SellerId == "seller-queue");
+            Assert.Contains(result.Items, i => i.Type == ReviewTargetTypes.Product && i.ProductId == 11);
         }
 
         [Fact]

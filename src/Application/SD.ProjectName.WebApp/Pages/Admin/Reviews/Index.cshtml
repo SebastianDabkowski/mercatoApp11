@@ -66,17 +66,39 @@ else
             <tbody>
                 @foreach (var review in Model.Reviews.Items)
                 {
-                    Model.AuditTrail.TryGetValue(review.Id, out var audit);
+                    var auditKey = Model.GetAuditKey(review);
+                    Model.AuditTrail.TryGetValue(auditKey, out var audit);
                     <tr>
                         <td>
-                            <div class="fw-semibold">Product #@review.ProductId</div>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="badge text-bg-info text-dark">@review.Type</span>
+                                <div class="fw-semibold">
+                                    @if (review.Type == ReviewTargetTypes.Seller)
+                                    {
+                                        <span>Seller @(!string.IsNullOrWhiteSpace(review.SellerId) ? $"#{review.SellerId}" : "N/A")</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Product @((review.ProductId.HasValue && review.ProductId.Value > 0) ? $"#{review.ProductId}" : "N/A")</span>
+                                    }
+                                </div>
+                            </div>
                             <div class="text-muted small">Order #@review.OrderId</div>
                             <div class="small mt-1">
                                 <span class="badge text-bg-secondary">@review.Rating/5</span>
-                                <span class="ms-2">@review.BuyerName</span>
+                                <span class="ms-2">@review.Reviewer</span>
                                 <span class="text-muted">· @review.CreatedOn.ToLocalTime().ToString("g")</span>
                             </div>
-                            <div class="mt-2">@review.Comment</div>
+                            <div class="mt-2">
+                                @if (!string.IsNullOrWhiteSpace(review.Comment))
+                                {
+                                    @review.Comment
+                                }
+                                else
+                                {
+                                    <span class="text-muted">No review text</span>
+                                }
+                            </div>
                             @if (audit != null && audit.Count > 0)
                             {
                                 <details class="small mt-2 text-muted">
@@ -124,6 +146,7 @@ else
                         <td class="text-end">
                             <form method="post" asp-page-handler="Approve" class="d-inline">
                                 <input type="hidden" name="reviewId" value="@review.Id" />
+                                <input type="hidden" name="reviewType" value="@review.Type" />
                                 <input type="hidden" name="page" value="@Model.PageNumber" />
                                 <input type="hidden" name="Query" value="@Model.Query" />
                                 <input type="hidden" name="FlaggedOnly" value="@Model.FlaggedOnly" />
@@ -135,6 +158,7 @@ else
                             </form>
                             <form method="post" asp-page-handler="Reject" class="d-inline">
                                 <input type="hidden" name="reviewId" value="@review.Id" />
+                                <input type="hidden" name="reviewType" value="@review.Type" />
                                 <input type="hidden" name="page" value="@Model.PageNumber" />
                                 <input type="hidden" name="Query" value="@Model.Query" />
                                 <input type="hidden" name="FlaggedOnly" value="@Model.FlaggedOnly" />
@@ -142,12 +166,19 @@ else
                                 {
                                     <input type="hidden" name="status" value="@status" />
                                 }
+                                <select class="form-select form-select-sm d-inline-block w-auto" name="note" aria-label="Removal reason">
+                                    @foreach (var reason in Model.RemovalReasons)
+                                    {
+                                        <option value="@reason">@reason</option>
+                                    }
+                                </select>
                                 <button type="submit" class="btn btn-sm btn-outline-danger ms-1" title="Reject and remove">Reject</button>
                             </form>
                             @if (review.Status == ReviewStatuses.Published)
                             {
                                 <form method="post" asp-page-handler="Hide" class="d-inline">
                                     <input type="hidden" name="reviewId" value="@review.Id" />
+                                    <input type="hidden" name="reviewType" value="@review.Type" />
                                     <input type="hidden" name="page" value="@Model.PageNumber" />
                                     <input type="hidden" name="Query" value="@Model.Query" />
                                     <input type="hidden" name="FlaggedOnly" value="@Model.FlaggedOnly" />
@@ -155,6 +186,12 @@ else
                                     {
                                         <input type="hidden" name="status" value="@status" />
                                     }
+                                    <select class="form-select form-select-sm d-inline-block w-auto" name="note" aria-label="Removal reason">
+                                        @foreach (var reason in Model.RemovalReasons)
+                                        {
+                                            <option value="@reason">@reason</option>
+                                        }
+                                    </select>
                                     <button type="submit" class="btn btn-sm btn-outline-secondary ms-1" title="Hide without rejecting">Hide</button>
                                 </form>
                             }
@@ -162,6 +199,7 @@ else
                             {
                                 <form method="post" asp-page-handler="Publish" class="d-inline">
                                     <input type="hidden" name="reviewId" value="@review.Id" />
+                                    <input type="hidden" name="reviewType" value="@review.Type" />
                                     <input type="hidden" name="page" value="@Model.PageNumber" />
                                     <input type="hidden" name="Query" value="@Model.Query" />
                                     <input type="hidden" name="FlaggedOnly" value="@Model.FlaggedOnly" />
@@ -176,6 +214,7 @@ else
                             {
                                 <form method="post" asp-page-handler="Flag" class="d-inline">
                                     <input type="hidden" name="reviewId" value="@review.Id" />
+                                    <input type="hidden" name="reviewType" value="@review.Type" />
                                     <input type="hidden" name="page" value="@Model.PageNumber" />
                                     <input type="hidden" name="Query" value="@Model.Query" />
                                     <input type="hidden" name="FlaggedOnly" value="@Model.FlaggedOnly" />
@@ -183,6 +222,12 @@ else
                                     {
                                         <input type="hidden" name="status" value="@status" />
                                     }
+                                    <select class="form-select form-select-sm d-inline-block w-auto" name="note" aria-label="Flag reason">
+                                        @foreach (var reason in Model.RemovalReasons)
+                                        {
+                                            <option value="@reason">@reason</option>
+                                        }
+                                    </select>
                                     <button type="submit" class="btn btn-sm btn-outline-warning text-dark ms-1" title="Hold for review">Flag</button>
                                 </form>
                             }
