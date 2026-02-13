@@ -1,0 +1,155 @@
+@page "/Seller/Reports/Orders"
+@model SD.ProjectName.WebApp.Pages.Seller.Reports.OrdersModel
+@{
+    ViewData["Title"] = "Order & revenue report";
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div>
+        <h1 class="mb-1">Order &amp; revenue report</h1>
+        <p class="text-muted mb-0">Review order value, commissions, and net payouts for your store.</p>
+    </div>
+    <form method="get" asp-page-handler="Export" class="d-flex align-items-start gap-2">
+        @foreach (var status in Model.StatusFilters)
+        {
+            <input type="hidden" name="status" value="@status" />
+        }
+        @if (Model.FromDate.HasValue)
+        {
+            <input type="hidden" name="FromDate" value="@(Model.FromDate?.ToString("yyyy-MM-dd"))" />
+        }
+        @if (Model.ToDate.HasValue)
+        {
+            <input type="hidden" name="ToDate" value="@(Model.ToDate?.ToString("yyyy-MM-dd"))" />
+        }
+        <button type="submit" class="btn btn-outline-secondary">Export CSV</button>
+    </form>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success mt-3">@statusMessage</div>
+}
+@if (TempData["ErrorMessage"] is string errorMessage)
+{
+    <div class="alert alert-warning mt-3">@errorMessage</div>
+}
+
+<div class="row g-3 mt-3">
+    <div class="col-12 col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">Order value</div>
+                <div class="fs-4 fw-semibold">@Model.TotalOrderValue.ToString("C")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">Commission charged</div>
+                <div class="fs-4 fw-semibold">@Model.TotalCommission.ToString("C")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">Net to seller</div>
+                <div class="fs-4 fw-semibold">@Model.TotalNet.ToString("C")</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3 mt-3">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-12">
+                <label class="form-label fw-semibold d-block">Status</label>
+                <div class="d-flex flex-wrap gap-2">
+                    @foreach (var status in Model.AvailableStatuses)
+                    {
+                        var inputId = $"status-{status.ToLower()}";
+                        var isChecked = Model.StatusFilters.Any(s => s.Equals(status, StringComparison.OrdinalIgnoreCase));
+                        <div class="form-check me-2">
+                            <input class="form-check-input" type="checkbox" name="status" value="@status" id="@inputId" @(isChecked ? "checked" : null) />
+                            <label class="form-check-label" for="@inputId">@status</label>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <label class="form-label fw-semibold" for="fromDate">From</label>
+                <input id="fromDate" class="form-control" type="date" name="FromDate" value="@(Model.FromDate?.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-6 col-lg-3">
+                <label class="form-label fw-semibold" for="toDate">To</label>
+                <input id="toDate" class="form-control" type="date" name="ToDate" value="@(Model.ToDate?.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-12 col-lg-2 text-lg-end">
+                <input type="hidden" name="page" value="1" />
+                <button type="submit" class="btn btn-primary w-100">Apply</button>
+                @if (Model.HasFilters)
+                {
+                    <a class="btn btn-link text-decoration-none mt-2 w-100" asp-page="./Orders">Clear</a>
+                }
+            </div>
+        </form>
+    </div>
+</div>
+
+@if (Model.Rows.Count == 0)
+{
+    <div class="alert alert-info">
+        @(Model.HasFilters ? "No orders match these filters." : "No orders yet for this period.")
+    </div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">Sub-order</th>
+                    <th scope="col">Parent order</th>
+                    <th scope="col">Placed</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Payment</th>
+                    <th scope="col" class="text-end">Order value</th>
+                    <th scope="col" class="text-end">Commission</th>
+                    <th scope="col" class="text-end">Net to seller</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in Model.Rows)
+                {
+                    <tr>
+                        <td class="fw-semibold">@row.SubOrderNumber</td>
+                        <td>@row.OrderNumber</td>
+                        <td>@row.CreatedOn.ToLocalTime().ToString("g")</td>
+                        <td>@row.Status</td>
+                        <td>@row.PaymentStatus</td>
+                        <td class="text-end">@row.OrderValue.ToString("C")</td>
+                        <td class="text-end">@row.Commission.ToString("C")</td>
+                        <td class="text-end">@row.NetAmount.ToString("C")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (Model.TotalPages > 1)
+    {
+        <nav aria-label="Report pagination">
+            <ul class="pagination justify-content-center">
+                <li class="page-item @(Model.PageNumber <= 1 ? "disabled" : "")">
+                    <a class="page-link" href="@Url.Page(null, new { page = Model.PageNumber - 1, status = Model.StatusFilters, fromDate = Model.FromDate?.ToString("yyyy-MM-dd"), toDate = Model.ToDate?.ToString("yyyy-MM-dd") })">Previous</a>
+                </li>
+                <li class="page-item @(Model.PageNumber >= Model.TotalPages ? "disabled" : "")">
+                    <a class="page-link" href="@Url.Page(null, new { page = Model.PageNumber + 1, status = Model.StatusFilters, fromDate = Model.FromDate?.ToString("yyyy-MM-dd"), toDate = Model.ToDate?.ToString("yyyy-MM-dd") })">Next</a>
+                </li>
+            </ul>
+        </nav>
+    }
+}
