@@ -202,6 +202,70 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task UpdatePaymentStatusAsync_ShouldAdjustEscrowForPartialRefunds()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-webhook-partial", "sig-webhook-partial");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-webhook-partial", "partial@example.com", "Partial Webhook Buyer", "Card", "card");
+            var update = await service.UpdatePaymentStatusAsync("ref-webhook-partial", "partial_refund", 10m, "Provider refunded 10");
+
+            Assert.True(update.Success);
+            Assert.Equal(PaymentStatuses.Refunded, update.PaymentStatus);
+            Assert.Equal(10m, update.PaymentRefundedAmount);
+
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-webhook-partial");
+            Assert.NotNull(orderView);
+            Assert.Equal(10m, orderView!.PaymentRefundedAmount);
+            Assert.Equal(PaymentStatuses.Refunded, orderView.PaymentStatus);
+
+            var sellerOrder = await service.GetSellerOrderAsync(result.Order.Id, "seller-1");
+            Assert.NotNull(sellerOrder);
+            Assert.Equal(10m, sellerOrder!.RefundedAmount);
+            Assert.Equal("Provider refunded 10", sellerOrder.PaymentStatusMessage);
+            Assert.NotNull(sellerOrder.Escrow);
+            Assert.Equal(10m, sellerOrder.Escrow!.ReleasedToBuyer);
+            Assert.Equal(1.5m, sellerOrder.Escrow.CommissionAmount);
+            Assert.Equal(13.5m, sellerOrder.Escrow.SellerPayoutAmount);
+        }
+
+        [Fact]
+        public async Task UpdatePaymentStatusAsync_ShouldHandleFullRefunds()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-webhook-full", "sig-webhook-full");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-webhook-full", "full@example.com", "Full Webhook Buyer", "Card", "card");
+            var update = await service.UpdatePaymentStatusAsync("ref-webhook-full", "refunded", 25m, "Provider refunded everything");
+
+            Assert.True(update.Success);
+            Assert.Equal(PaymentStatuses.Refunded, update.PaymentStatus);
+            Assert.Equal(25m, update.PaymentRefundedAmount);
+
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-webhook-full");
+            Assert.NotNull(orderView);
+            Assert.Equal(OrderStatuses.Refunded, orderView!.Status);
+            Assert.Equal(25m, orderView.PaymentRefundedAmount);
+
+            var sellerOrder = await service.GetSellerOrderAsync(result.Order.Id, "seller-1");
+            Assert.NotNull(sellerOrder);
+            Assert.Equal(OrderStatuses.Refunded, sellerOrder!.Status);
+            Assert.Equal(25m, sellerOrder.RefundedAmount);
+            Assert.Equal("Provider refunded everything", sellerOrder.PaymentStatusMessage);
+            Assert.NotNull(sellerOrder.Escrow);
+            Assert.Equal(25m, sellerOrder.Escrow!.ReleasedToBuyer);
+            Assert.Equal(0m, sellerOrder.Escrow.CommissionAmount);
+            Assert.Equal(0m, sellerOrder.Escrow.SellerPayoutAmount);
+            Assert.False(sellerOrder.Escrow.PayoutEligible);
+        }
+
+        [Fact]
         public async Task UpdateSubOrderStatusAsync_ShouldEnforceTransitions_AndPersist()
         {
             await using var context = CreateContext();

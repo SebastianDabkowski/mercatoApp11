@@ -308,6 +308,7 @@ namespace SD.ProjectName.WebApp.Services
         string BuyerEmail,
         string? BuyerPhone,
         string PaymentStatus,
+        string? PaymentStatusMessage,
         ReturnRequest? ReturnRequest,
         EscrowAllocation? Escrow);
 
@@ -609,13 +610,20 @@ namespace SD.ProjectName.WebApp.Services
             var normalizedMessage = string.IsNullOrWhiteSpace(paymentMessage)
                 ? PaymentStatusMapper.BuildBuyerMessage(normalizedPaymentStatus)
                 : paymentMessage.Trim();
-            var paymentRefunded = Math.Max(details.PaymentRefundedAmount, paymentRefundedAmount);
+            var targetRefund = Math.Max(details.PaymentRefundedAmount, paymentRefundedAmount);
             var hasChanges = false;
-            var updatedDetails = details;
+            var updatedDetails = ApplyPaymentRefund(details, targetRefund, paymentReference ?? order.PaymentReference, out var refundChanged);
+            hasChanges |= refundChanged;
 
-            if (!string.Equals(details.PaymentStatus, normalizedPaymentStatus, StringComparison.OrdinalIgnoreCase)
-                || paymentRefunded > details.PaymentRefundedAmount
-                || !string.Equals(details.PaymentStatusMessage ?? string.Empty, normalizedMessage, StringComparison.Ordinal))
+            var paymentRefunded = Math.Max(updatedDetails.PaymentRefundedAmount, targetRefund);
+            if (paymentRefunded > 0 && !string.Equals(normalizedPaymentStatus, PaymentStatuses.Refunded, StringComparison.OrdinalIgnoreCase))
+            {
+                normalizedPaymentStatus = PaymentStatuses.Refunded;
+            }
+
+            if (!string.Equals(updatedDetails.PaymentStatus, normalizedPaymentStatus, StringComparison.OrdinalIgnoreCase)
+                || paymentRefunded > updatedDetails.PaymentRefundedAmount
+                || !string.Equals(updatedDetails.PaymentStatusMessage ?? string.Empty, normalizedMessage, StringComparison.Ordinal))
             {
                 updatedDetails = updatedDetails with
                 {
@@ -629,7 +637,13 @@ namespace SD.ProjectName.WebApp.Services
             if (ShouldApplyFulfillmentStatus(order.Status, normalizedInitialStatus, updatedDetails.SubOrders))
             {
                 updatedDetails = ApplyStatusToDetails(updatedDetails, normalizedInitialStatus);
-                order.Status = CalculateOrderStatus(updatedDetails.SubOrders, normalizedInitialStatus);
+                hasChanges = true;
+            }
+
+            var recalculatedStatus = CalculateOrderStatus(updatedDetails.SubOrders, normalizedInitialStatus);
+            if (!string.Equals(order.Status, recalculatedStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                order.Status = recalculatedStatus;
                 hasChanges = true;
             }
 
@@ -733,13 +747,18 @@ namespace SD.ProjectName.WebApp.Services
                 return new PaymentStatusUpdateResult(false, "Order not found for this payment reference.");
             }
 
+            var targetPaymentStatus = PaymentStatusMapper.MapProviderStatus(providerStatus);
             if (!string.IsNullOrWhiteSpace(providerMessage))
             {
-                _logger.LogInformation("Payment webhook status {Status} for {Reference}: {Message}", providerStatus, reference, providerMessage);
+                var level = string.Equals(targetPaymentStatus, PaymentStatuses.Failed, StringComparison.OrdinalIgnoreCase)
+                    ? LogLevel.Warning
+                    : LogLevel.Information;
+                _logger.Log(level, "Payment webhook status {Status} for {Reference}: {Message}", providerStatus, reference, providerMessage);
             }
 
-            var targetPaymentStatus = PaymentStatusMapper.MapProviderStatus(providerStatus);
-            var buyerMessage = PaymentStatusMapper.BuildBuyerMessage(targetPaymentStatus);
+            var buyerMessage = string.IsNullOrWhiteSpace(providerMessage)
+                ? PaymentStatusMapper.BuildBuyerMessage(targetPaymentStatus)
+                : providerMessage!.Trim();
             var normalizedOrderStatus = OrderStatuses.Normalize(order.Status);
             var targetFulfillmentStatus = normalizedOrderStatus;
             if (targetPaymentStatus == PaymentStatuses.Paid && string.Equals(normalizedOrderStatus, OrderStatuses.New, StringComparison.OrdinalIgnoreCase))
@@ -1535,6 +1554,7 @@ namespace SD.ProjectName.WebApp.Services
                 order.BuyerEmail,
                 address.Phone,
                 paymentStatus,
+                details.PaymentStatusMessage,
                 subOrder.Return,
                 escrow);
         }
@@ -2140,6 +2160,104 @@ namespace SD.ProjectName.WebApp.Services
             return allocations;
         }
 
+        private OrderDetailsPayload ApplyPaymentRefund(
+            OrderDetailsPayload details,
+            decimal paymentRefundedAmount,
+            string? paymentReference,
+            out bool changed)
+        {
+            changed = false;
+            var normalized = NormalizeDetails(details);
+            var subOrders = normalized.SubOrders.ToList();
+            if (subOrders.Count == 0)
+            {
+                return normalized;
+            }
+
+            var totalHold = subOrders.Sum(s => Math.Max(0, s.GrandTotal));
+            if (totalHold <= 0)
+            {
+                return normalized;
+            }
+
+            var targetRefund = Math.Min(Math.Max(0, paymentRefundedAmount), totalHold);
+            var alreadyRefunded = subOrders.Sum(s => Math.Max(0, s.RefundedAmount));
+            if (targetRefund <= alreadyRefunded && targetRefund <= normalized.PaymentRefundedAmount)
+            {
+                return normalized;
+            }
+
+            var outstandingTotals = subOrders
+                .Select(s => Math.Max(0, s.GrandTotal - Math.Max(0, s.RefundedAmount)))
+                .ToList();
+            var totalOutstanding = outstandingTotals.Sum();
+            if (totalOutstanding <= 0)
+            {
+                return normalized with { PaymentRefundedAmount = Math.Max(normalized.PaymentRefundedAmount, targetRefund) };
+            }
+
+            var remaining = Math.Max(0, targetRefund - alreadyRefunded);
+            decimal allocated = 0;
+            var updatedSubOrders = new List<OrderSubOrder>();
+
+            for (var i = 0; i < subOrders.Count; i++)
+            {
+                var subOrder = subOrders[i];
+                var outstanding = outstandingTotals[i];
+                if (outstanding <= 0)
+                {
+                    updatedSubOrders.Add(subOrder);
+                    continue;
+                }
+
+                var proportional = remaining * (outstanding / totalOutstanding);
+                var share = Math.Min(outstanding, Math.Round(proportional, 2, MidpointRounding.AwayFromZero));
+                if (i == subOrders.Count - 1)
+                {
+                    share = Math.Max(0, Math.Min(outstanding, remaining - allocated));
+                }
+
+                var newRefund = Math.Min(subOrder.GrandTotal, Math.Max(0, subOrder.RefundedAmount) + share);
+                var fullyRefunded = newRefund >= subOrder.GrandTotal;
+                var updatedItems = subOrder.Items
+                    .Select(i => fullyRefunded ? i with { Status = OrderStatuses.Refunded } : i)
+                    .ToList();
+                var updatedStatus = fullyRefunded ? OrderStatuses.Refunded : subOrder.Status;
+
+                allocated += Math.Max(0, newRefund - Math.Max(0, subOrder.RefundedAmount));
+                updatedSubOrders.Add(subOrder with
+                {
+                    RefundedAmount = newRefund,
+                    Items = updatedItems,
+                    Status = updatedStatus
+                });
+            }
+
+            var updatedItemsList = updatedSubOrders.SelectMany(s => s.Items).ToList();
+            var updatedEscrow = normalized.Escrow;
+            foreach (var updatedSubOrder in updatedSubOrders)
+            {
+                updatedEscrow = UpdateEscrowAllocations(updatedEscrow, updatedSubOrders, updatedSubOrder, paymentReference);
+            }
+
+            changed = allocated > 0;
+            var updatedRefunded = Math.Max(normalized.PaymentRefundedAmount, Math.Min(targetRefund, alreadyRefunded + allocated));
+            var updatedPaymentStatus = updatedRefunded > 0 ? PaymentStatuses.Refunded : normalized.PaymentStatus;
+            var updatedMessage = string.IsNullOrWhiteSpace(normalized.PaymentStatusMessage)
+                ? PaymentStatusMapper.BuildBuyerMessage(updatedPaymentStatus)
+                : normalized.PaymentStatusMessage;
+
+            return normalized with
+            {
+                SubOrders = updatedSubOrders,
+                Items = updatedItemsList,
+                Escrow = updatedEscrow,
+                PaymentRefundedAmount = updatedRefunded,
+                PaymentStatus = updatedPaymentStatus,
+                PaymentStatusMessage = updatedMessage
+            };
+        }
+
         private List<EscrowAllocation> UpdateEscrowAllocations(List<EscrowAllocation>? existing, List<OrderSubOrder> subOrders, OrderSubOrder updatedSubOrder, string? paymentReference)
         {
             var normalized = NormalizeEscrow(existing, subOrders);
@@ -2175,7 +2293,7 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             refundAmount = Math.Min(refundAmount, holdAmount);
-            var commission = _commissionCalculator.CalculateForOrderItems(updatedSubOrder.Items);
+            var commission = CalculateCommissionAfterRefund(updatedSubOrder);
             var releaseDelta = Math.Max(0, refundAmount - allocation.ReleasedToBuyer);
 
             if (IsPayoutEligible(updatedSubOrder.Status) && !allocation.PayoutEligible)
@@ -2223,6 +2341,45 @@ namespace SD.ProjectName.WebApp.Services
             };
 
             return normalized;
+        }
+
+        private decimal CalculateCommissionAfterRefund(OrderSubOrder subOrder)
+        {
+            var commission = _commissionCalculator.CalculateForOrderItems(subOrder.Items);
+            if (commission <= 0)
+            {
+                return commission;
+            }
+
+            var refundAmount = Math.Max(0, subOrder.RefundedAmount);
+            if (refundAmount <= 0)
+            {
+                return commission;
+            }
+
+            var hasItemLevelRefunds = subOrder.Items.Any(i =>
+            {
+                var status = OrderStatuses.Normalize(i.Status);
+                return string.Equals(status, OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(status, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(status, OrderStatuses.Failed, StringComparison.OrdinalIgnoreCase);
+            });
+            if (hasItemLevelRefunds)
+            {
+                return commission;
+            }
+
+            var shipping = Math.Max(0, subOrder.Shipping);
+            var refundableForItems = Math.Max(0, refundAmount - Math.Min(refundAmount, shipping));
+            var itemTotal = Math.Max(0, subOrder.Items.Sum(i => i.LineTotal));
+            if (itemTotal <= 0 || refundableForItems <= 0)
+            {
+                return commission;
+            }
+
+            var ratio = Math.Min(1, refundableForItems / itemTotal);
+            var reduced = commission * (1 - ratio);
+            return _commissionCalculator.Round(Math.Max(0, reduced));
         }
 
         private static List<ReturnRequestItem> BuildReturnItems(OrderSubOrder subOrder, List<int>? productIds)
