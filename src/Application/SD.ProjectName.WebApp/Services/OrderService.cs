@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Identity.UI.Services;
@@ -167,7 +168,18 @@ namespace SD.ProjectName.WebApp.Services
 
     public record OrderSummaryView(int Id, string OrderNumber, DateTimeOffset CreatedOn, string Status, decimal GrandTotal, int TotalQuantity);
 
-    public record SellerOrderSummaryView(int Id, string OrderNumber, string SubOrderNumber, DateTimeOffset CreatedOn, string Status, decimal GrandTotal, int TotalQuantity, string SellerName);
+    public record SellerOrderSummaryView(
+        int Id,
+        string OrderNumber,
+        string SubOrderNumber,
+        DateTimeOffset CreatedOn,
+        string Status,
+        decimal GrandTotal,
+        int TotalQuantity,
+        string SellerName,
+        string BuyerName,
+        string BuyerEmail,
+        string ShippingMethod);
 
     public record SellerOrderView(
         int Id,
@@ -201,6 +213,17 @@ namespace SD.ProjectName.WebApp.Services
         public DateTimeOffset? ToDate { get; init; }
 
         public string? SellerId { get; init; }
+    }
+
+    public record SellerOrderFilterOptions
+    {
+        public List<string> Statuses { get; init; } = new();
+
+        public DateTimeOffset? FromDate { get; init; }
+
+        public DateTimeOffset? ToDate { get; init; }
+
+        public string? BuyerQuery { get; init; }
     }
 
     public record SellerFilterOption(string Id, string Name);
@@ -395,11 +418,105 @@ namespace SD.ProjectName.WebApp.Services
             };
         }
 
-        public async Task<List<SellerOrderSummaryView>> GetSummariesForSellerAsync(string sellerId, CancellationToken cancellationToken = default)
+        public async Task<PagedResult<SellerOrderSummaryView>> GetSummariesForSellerAsync(
+            string sellerId,
+            SellerOrderFilterOptions? filters = null,
+            int pageNumber = 1,
+            int pageSize = 10,
+            CancellationToken cancellationToken = default)
         {
+            pageNumber = Math.Max(1, pageNumber);
+            pageSize = Math.Clamp(pageSize, 1, 50);
+
+            var summaries = await GetSellerOrderSummariesAsync(sellerId, filters, cancellationToken);
+            var totalCount = summaries.Count;
+            var totalPages = pageSize <= 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pageSize);
+            if (totalPages == 0)
+            {
+                pageNumber = 1;
+            }
+            else if (pageNumber > totalPages)
+            {
+                pageNumber = totalPages;
+            }
+
+            var skip = (pageNumber - 1) * pageSize;
+            var items = summaries
+                .OrderByDescending(o => o.CreatedOn)
+                .Skip(skip)
+                .Take(pageSize)
+                .ToList();
+
+            return new PagedResult<SellerOrderSummaryView>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            };
+        }
+
+        public async Task<byte[]> ExportSellerOrdersAsync(
+            string sellerId,
+            SellerOrderFilterOptions? filters = null,
+            CancellationToken cancellationToken = default)
+        {
+            var summaries = await GetSellerOrderSummariesAsync(sellerId, filters, cancellationToken);
+            var builder = new StringBuilder();
+            builder.AppendLine("SubOrder,Order,CreatedOn,Status,Buyer,BuyerEmail,Total,ShippingMethod");
+
+            foreach (var summary in summaries.OrderByDescending(s => s.CreatedOn))
+            {
+                builder.AppendLine(string.Join(",", new[]
+                {
+                    CsvEscape(summary.SubOrderNumber),
+                    CsvEscape(summary.OrderNumber),
+                    CsvEscape(summary.CreatedOn.ToString("u", CultureInfo.InvariantCulture)),
+                    CsvEscape(summary.Status),
+                    CsvEscape(summary.BuyerName),
+                    CsvEscape(summary.BuyerEmail),
+                    CsvEscape(summary.GrandTotal.ToString("F2", CultureInfo.InvariantCulture)),
+                    CsvEscape(summary.ShippingMethod)
+                }));
+            }
+
+            return Encoding.UTF8.GetBytes(builder.ToString());
+        }
+
+        private async Task<List<SellerOrderSummaryView>> GetSellerOrderSummariesAsync(
+            string sellerId,
+            SellerOrderFilterOptions? filters,
+            CancellationToken cancellationToken)
+        {
+            var normalizedStatuses = filters?.Statuses
+                .Select(OrderStatuses.Normalize)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
+
+            var buyerQuery = filters?.BuyerQuery?.Trim();
             var sellerToken = $"\"sellerId\":\"{sellerId}\"";
-            var candidates = await _dbContext.Orders.AsNoTracking()
-                .Where(o => o.DetailsJson.Contains(sellerToken))
+
+            var query = _dbContext.Orders.AsNoTracking()
+                .Where(o => o.DetailsJson.Contains(sellerToken));
+
+            if (filters?.FromDate.HasValue == true)
+            {
+                query = query.Where(o => o.CreatedOn >= filters.FromDate.Value);
+            }
+
+            if (filters?.ToDate.HasValue == true)
+            {
+                query = query.Where(o => o.CreatedOn <= filters.ToDate.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(buyerQuery))
+            {
+                var like = $"%{buyerQuery}%";
+                query = query.Where(o => EF.Functions.Like(o.BuyerName, like) || EF.Functions.Like(o.BuyerEmail, like));
+            }
+
+            var candidates = await query
                 .OrderByDescending(o => o.CreatedOn)
                 .ToListAsync(cancellationToken);
 
@@ -413,18 +530,58 @@ namespace SD.ProjectName.WebApp.Services
                     continue;
                 }
 
+                var normalizedStatus = OrderStatuses.Normalize(match.Status);
+                if (normalizedStatuses.Count > 0 && !normalizedStatuses.Contains(normalizedStatus))
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(buyerQuery))
+                {
+                    var matchesBuyer = (!string.IsNullOrWhiteSpace(order.BuyerName) && order.BuyerName.Contains(buyerQuery, StringComparison.OrdinalIgnoreCase))
+                        || (!string.IsNullOrWhiteSpace(order.BuyerEmail) && order.BuyerEmail.Contains(buyerQuery, StringComparison.OrdinalIgnoreCase));
+                    if (!matchesBuyer)
+                    {
+                        continue;
+                    }
+                }
+
+                var shippingMethod = string.IsNullOrWhiteSpace(match.ShippingDetail.MethodLabel)
+                    ? match.ShippingDetail.MethodId
+                    : match.ShippingDetail.MethodLabel;
+                var buyerName = string.IsNullOrWhiteSpace(order.BuyerName) ? order.BuyerEmail ?? string.Empty : order.BuyerName;
+
                 summaries.Add(new SellerOrderSummaryView(
                     order.Id,
                     order.OrderNumber,
                     match.SubOrderNumber,
                     order.CreatedOn,
-                    match.Status,
+                    normalizedStatus,
                     match.GrandTotal,
                     match.TotalQuantity,
-                    match.SellerName));
+                    match.SellerName,
+                    buyerName,
+                    order.BuyerEmail ?? string.Empty,
+                    shippingMethod));
             }
 
             return summaries;
+        }
+
+        private static string CsvEscape(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return string.Empty;
+            }
+
+            var needsQuotes = value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r');
+            if (value.Contains('"'))
+            {
+                value = value.Replace("\"", "\"\"");
+            }
+
+            return needsQuotes ? $"\"{value}\"" : value;
         }
 
         public async Task<List<SellerFilterOption>> GetSellerFiltersForBuyerAsync(string buyerId, CancellationToken cancellationToken = default)

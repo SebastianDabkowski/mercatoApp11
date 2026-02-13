@@ -12,14 +12,41 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
     {
         private readonly OrderService _orderService;
         private readonly UserManager<ApplicationUser> _userManager;
+        private const int DefaultPageSize = 10;
+
+        [BindProperty(SupportsGet = true, Name = "status")]
+        public List<string> StatusFilters { get; set; } = new();
+
+        [BindProperty(SupportsGet = true)]
+        public DateTime? FromDate { get; set; }
+
+        [BindProperty(SupportsGet = true)]
+        public DateTime? ToDate { get; set; }
+
+        [BindProperty(SupportsGet = true)]
+        public string? Buyer { get; set; }
+
+        [BindProperty(SupportsGet = true, Name = "page")]
+        public int PageNumber { get; set; } = 1;
+
+        public List<SellerOrderSummaryView> Orders { get; private set; } = new();
+
+        public int TotalOrders { get; private set; }
+
+        public int TotalPages { get; private set; }
+
+        public int PageSize => DefaultPageSize;
+
+        public bool HasFilters =>
+            StatusFilters.Count > 0 || FromDate.HasValue || ToDate.HasValue || !string.IsNullOrWhiteSpace(Buyer);
+
+        public List<string> AvailableStatuses { get; } = OrderStatuses.All.ToList();
 
         public IndexModel(OrderService orderService, UserManager<ApplicationUser> userManager)
         {
             _orderService = orderService;
             _userManager = userManager;
         }
-
-        public List<SellerOrderSummaryView> Orders { get; private set; } = new();
 
         public async Task<IActionResult> OnGetAsync()
         {
@@ -29,8 +56,76 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
                 return Challenge();
             }
 
-            Orders = await _orderService.GetSummariesForSellerAsync(sellerId, HttpContext.RequestAborted);
+            PageNumber = Math.Max(1, PageNumber);
+            var filters = BuildFilters();
+            var paged = await _orderService.GetSummariesForSellerAsync(sellerId, filters, PageNumber, DefaultPageSize, HttpContext.RequestAborted);
+
+            Orders = paged.Items;
+            TotalOrders = paged.TotalCount;
+            TotalPages = paged.TotalPages;
+            PageNumber = paged.PageNumber;
+
             return Page();
+        }
+
+        public async Task<IActionResult> OnGetExportAsync()
+        {
+            var sellerId = _userManager.GetUserId(User);
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return Challenge();
+            }
+
+            var filters = BuildFilters();
+            var csv = await _orderService.ExportSellerOrdersAsync(sellerId, filters, HttpContext.RequestAborted);
+            var fileName = $"orders-{DateTime.UtcNow:yyyyMMddHHmmss}.csv";
+            return File(csv, "text/csv", fileName);
+        }
+
+        private SellerOrderFilterOptions BuildFilters()
+        {
+            var normalizedStatuses = StatusFilters
+                .Select(OrderStatuses.Normalize)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var from = NormalizeStartOfDay(FromDate);
+            var to = NormalizeEndOfDay(ToDate);
+            if (from.HasValue && to.HasValue && from > to)
+            {
+                (from, to) = (to, from);
+            }
+
+            return new SellerOrderFilterOptions
+            {
+                Statuses = normalizedStatuses,
+                FromDate = from,
+                ToDate = to,
+                BuyerQuery = string.IsNullOrWhiteSpace(Buyer) ? null : Buyer.Trim()
+            };
+        }
+
+        private static DateTimeOffset? NormalizeStartOfDay(DateTime? date)
+        {
+            if (!date.HasValue)
+            {
+                return null;
+            }
+
+            var normalized = DateTime.SpecifyKind(date.Value.Date, DateTimeKind.Utc);
+            return new DateTimeOffset(normalized);
+        }
+
+        private static DateTimeOffset? NormalizeEndOfDay(DateTime? date)
+        {
+            if (!date.HasValue)
+            {
+                return null;
+            }
+
+            var normalized = DateTime.SpecifyKind(date.Value.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
+            return new DateTimeOffset(normalized);
         }
     }
 }
