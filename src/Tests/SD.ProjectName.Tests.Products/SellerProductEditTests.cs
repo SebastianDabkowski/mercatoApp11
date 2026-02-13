@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -43,6 +44,62 @@ namespace SD.ProjectName.Tests.Products
             Assert.IsType<ForbidResult>(result);
         }
 
+        [Fact]
+        public async Task OnPost_ShouldUpdateAllAttributes_ForOwnedProduct()
+        {
+            var product = new ProductModel
+            {
+                Id = 3,
+                Title = "Original",
+                Price = 10,
+                Stock = 1,
+                Category = "Cat",
+                WorkflowState = ProductWorkflowStates.Active,
+                SellerId = "current-seller"
+            };
+
+            ProductModel? saved = null;
+            var repository = new Mock<IProductRepository>();
+            repository.Setup(r => r.GetById(product.Id, true)).ReturnsAsync(product);
+            repository.Setup(r => r.Update(It.IsAny<ProductModel>())).Callback<ProductModel>(p => saved = p).Returns(Task.CompletedTask);
+
+            var getProducts = new GetProducts(repository.Object);
+            var updateProduct = new UpdateProduct(repository.Object);
+            var user = new ApplicationUser { Id = "current-seller", UserName = "seller@example.com" };
+            var userManager = CreateUserManager(user);
+            var model = CreateModel(getProducts, updateProduct, userManager.Object);
+            model.Input = new EditModel.InputModel
+            {
+                Id = product.Id,
+                Title = "Updated title",
+                Price = 25,
+                Stock = 5,
+                Category = "Updated category",
+                Description = "Updated description",
+                MainImageUrl = "https://cdn.example.com/main.jpg",
+                GalleryImageUrls = "https://cdn.example.com/img1.jpg, https://cdn.example.com/img2.jpg",
+                WeightKg = 1.25m,
+                LengthCm = 30m,
+                WidthCm = 20m,
+                HeightCm = 10m,
+                ShippingMethods = "Courier, Locker"
+            };
+
+            var result = await model.OnPostAsync();
+
+            Assert.IsType<RedirectToPageResult>(result);
+            Assert.NotNull(saved);
+            Assert.Equal("Updated title", saved!.Title);
+            Assert.Equal("Updated description", saved.Description);
+            Assert.Equal("https://cdn.example.com/main.jpg", saved.MainImageUrl);
+            Assert.Equal("https://cdn.example.com/img1.jpg, https://cdn.example.com/img2.jpg", saved.GalleryImageUrls);
+            Assert.Equal(1.25m, saved.WeightKg);
+            Assert.Equal(30m, saved.LengthCm);
+            Assert.Equal(20m, saved.WidthCm);
+            Assert.Equal(10m, saved.HeightCm);
+            Assert.Equal("Courier, Locker", saved.ShippingMethods);
+        }
+
         private static EditModel CreateModel(GetProducts getProducts, UpdateProduct updateProduct, UserManager<ApplicationUser> userManager)
         {
             var logger = Mock.Of<ILogger<EditModel>>();
@@ -55,7 +112,8 @@ namespace SD.ProjectName.Tests.Products
 
             return new EditModel(getProducts, updateProduct, userManager, logger)
             {
-                PageContext = pageContext
+                PageContext = pageContext,
+                TempData = new TempDataDictionary(httpContext, Mock.Of<ITempDataProvider>())
             };
         }
 

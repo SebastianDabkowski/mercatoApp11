@@ -23,6 +23,27 @@ namespace SD.ProjectName.Modules.Products.Domain
         [MaxLength(1000)]
         public string? Description { get; set; }
 
+        [MaxLength(500)]
+        public string? MainImageUrl { get; set; }
+
+        [MaxLength(2000)]
+        public string? GalleryImageUrls { get; set; }
+
+        [Range(0, double.MaxValue)]
+        public decimal? WeightKg { get; set; }
+
+        [Range(0, double.MaxValue)]
+        public decimal? LengthCm { get; set; }
+
+        [Range(0, double.MaxValue)]
+        public decimal? WidthCm { get; set; }
+
+        [Range(0, double.MaxValue)]
+        public decimal? HeightCm { get; set; }
+
+        [MaxLength(200)]
+        public string? ShippingMethods { get; set; }
+
         [Required]
         [MaxLength(32)]
         public string WorkflowState { get; set; } = ProductWorkflowStates.Draft;

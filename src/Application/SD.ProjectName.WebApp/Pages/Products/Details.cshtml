@@ -13,6 +13,12 @@
 else
 {
     <h1>@Model.Product.Title</h1>
+    @if (!string.IsNullOrWhiteSpace(Model.Product.MainImageUrl))
+    {
+        <div class="mb-3">
+            <img src="@Model.Product.MainImageUrl" alt="Main image for @Model.Product.Title" class="img-fluid rounded" />
+        </div>
+    }
     <dl class="row">
         <dt class="col-sm-2">Price</dt>
         <dd class="col-sm-10">@Model.Product.Price.ToString("C")</dd>
@@ -24,6 +30,35 @@ else
         {
             <dt class="col-sm-2">Description</dt>
             <dd class="col-sm-10">@Model.Product.Description</dd>
+        }
+        @if (!string.IsNullOrWhiteSpace(Model.Product.ShippingMethods))
+        {
+            <dt class="col-sm-2">Shipping</dt>
+            <dd class="col-sm-10">@Model.Product.ShippingMethods</dd>
+        }
+        @if (Model.Product.WeightKg.HasValue || Model.Product.LengthCm.HasValue || Model.Product.WidthCm.HasValue || Model.Product.HeightCm.HasValue)
+        {
+            <dt class="col-sm-2">Package</dt>
+            <dd class="col-sm-10">
+                <div>Weight: @(Model.Product.WeightKg?.ToString("0.###") ?? "n/a") kg</div>
+                <div>Dimensions: @(Model.Product.LengthCm?.ToString("0.###") ?? "n/a") x @(Model.Product.WidthCm?.ToString("0.###") ?? "n/a") x @(Model.Product.HeightCm?.ToString("0.###") ?? "n/a") cm</div>
+            </dd>
+        }
+        @if (!string.IsNullOrWhiteSpace(Model.Product.GalleryImageUrls))
+        {
+            var galleryImages = Model.Product.GalleryImageUrls
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList();
+            if (galleryImages.Any())
+            {
+                <dt class="col-sm-2">Gallery</dt>
+                <dd class="col-sm-10 d-flex flex-wrap gap-2">
+                    @foreach (var image in galleryImages)
+                    {
+                        <img src="@image" alt="Gallery image for @Model.Product.Title" class="img-thumbnail" style="max-width: 120px;" />
+                    }
+                </dd>
+            }
         }
     </dl>
 }
