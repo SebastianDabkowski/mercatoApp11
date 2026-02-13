@@ -113,6 +113,9 @@ Keep this list updated whenever ADRs are added or changed so this document mirro
 - Ensure unit tests cover new paths.
 
 ## Documentation Sync Rules
+- Architecture changes must trigger DocSync to regenerate `ARCHITECTURE.md` so it mirrors the current structure.
+- Agent additions or responsibility updates must trigger DocSync to refresh `AGENT.md` in the same change.
+- ADR validation must create or update missing ADRs to match the current architecture before merge.
 - Update this file in the same PR when module boundaries, data flows, or infrastructure change; add relevant ADR ids to the ADR Traceability section.
 - Architecture.md must reflect the new structure after any architecture change; run doc-sync automation to refresh `ARCHITECTURE.md` and `AGENT.md` from the implemented module inventory.
 - DocSync agent automatically regenerates `ARCHITECTURE.md` when architecture changes and `AGENT.md` when agent responsibilities change, validates all ADRs against the current architecture, and creates any missing ADR stubs when validation runs.
