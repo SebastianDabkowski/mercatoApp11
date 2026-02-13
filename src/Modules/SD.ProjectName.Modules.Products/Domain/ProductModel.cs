@@ -1,6 +1,6 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using System.Text.Json;
 
 namespace SD.ProjectName.Modules.Products.Domain
 {
@@ -51,6 +51,16 @@ namespace SD.ProjectName.Modules.Products.Domain
 
         [MaxLength(200)]
         public string? ShippingMethods { get; set; }
+
+        [MaxLength(4000)]
+        public string? AttributeData { get; set; }
+
+        [NotMapped]
+        public Dictionary<string, string> Attributes
+        {
+            get => ProductAttributeSerializer.Deserialize(AttributeData);
+            set => AttributeData = ProductAttributeSerializer.Serialize(value);
+        }
 
         [MaxLength(32)]
         public string Condition { get; set; } = ProductConditions.New;
