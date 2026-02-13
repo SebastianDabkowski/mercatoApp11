@@ -90,6 +90,36 @@ namespace SD.ProjectName.WebApp.Services
         }
     }
 
+    public static class ReturnRequestStatuses
+    {
+        public const string Requested = "Requested";
+        public const string Approved = "Approved";
+        public const string Rejected = "Rejected";
+        public const string Completed = "Completed";
+
+        private static readonly IReadOnlyList<string> OrderedStatuses = new[]
+        {
+            Requested, Approved, Rejected, Completed
+        };
+
+        public static string Normalize(string? status)
+        {
+            if (string.IsNullOrWhiteSpace(status))
+            {
+                return Requested;
+            }
+
+            var match = OrderedStatuses.FirstOrDefault(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+            return match ?? status.Trim();
+        }
+    }
+
+    public static class ReturnPolicies
+    {
+        public const int ReturnWindowDays = 14;
+        public static readonly TimeSpan ReturnWindow = TimeSpan.FromDays(ReturnWindowDays);
+    }
+
     public class OrderRecord
     {
         public int Id { get; set; }
@@ -131,6 +161,10 @@ namespace SD.ProjectName.WebApp.Services
 
     public record OrderShippingDetail(string SellerId, string SellerName, string MethodId, string MethodLabel, decimal Cost, string? Description);
 
+    public record ReturnRequestItem(int ProductId, int Quantity);
+
+    public record ReturnRequest(string SubOrderNumber, string Status, string Reason, DateTimeOffset RequestedOn, List<ReturnRequestItem> Items);
+
     public record OrderSubOrder(
         string SubOrderNumber,
         string SellerId,
@@ -145,7 +179,9 @@ namespace SD.ProjectName.WebApp.Services
         string Status,
         string? TrackingNumber = null,
         string? TrackingCarrier = null,
-        decimal RefundedAmount = 0);
+        decimal RefundedAmount = 0,
+        DateTimeOffset? DeliveredOn = null,
+        ReturnRequest? Return = null);
 
     public record OrderDetailsPayload(List<OrderItemDetail> Items, List<OrderShippingDetail> Shipping, int TotalQuantity, decimal DiscountTotal = 0, string? PromoCode = null, List<OrderSubOrder> SubOrders = null!);
 
@@ -204,11 +240,14 @@ namespace SD.ProjectName.WebApp.Services
         string BuyerName,
         string BuyerEmail,
         string? BuyerPhone,
-        string PaymentStatus);
+        string PaymentStatus,
+        ReturnRequest? ReturnRequest);
 
     public record OrderCreationResult(OrderRecord Order, bool Created);
 
     public record SubOrderStatusUpdateResult(bool Success, string? Error, OrderSubOrder? UpdatedSubOrder = null, string? OrderStatus = null);
+
+    public record ReturnRequestResult(bool Success, string? Error, ReturnRequest? Request = null);
 
     public record BuyerOrderFilterOptions
     {
@@ -352,6 +391,75 @@ namespace SD.ProjectName.WebApp.Services
                 details.Items,
                 details.Shipping,
                 details.SubOrders);
+        }
+
+        public async Task<ReturnRequestResult> CreateReturnRequestAsync(
+            int orderId,
+            string buyerId,
+            string? subOrderNumber,
+            List<int>? productIds,
+            string? reason,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(buyerId))
+            {
+                return new ReturnRequestResult(false, "Buyer is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(subOrderNumber))
+            {
+                return new ReturnRequestResult(false, "Select a sub-order to return.");
+            }
+
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return new ReturnRequestResult(false, "Provide a reason for the return.");
+            }
+
+            var order = await _dbContext.Orders.FirstOrDefaultAsync(
+                o => o.Id == orderId && o.BuyerId == buyerId,
+                cancellationToken);
+            if (order == null)
+            {
+                return new ReturnRequestResult(false, "Order not found.");
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            var subOrderIndex = details.SubOrders.FindIndex(s => string.Equals(s.SubOrderNumber, subOrderNumber, StringComparison.OrdinalIgnoreCase));
+            if (subOrderIndex < 0)
+            {
+                return new ReturnRequestResult(false, "Sub-order not found.");
+            }
+
+            var subOrder = details.SubOrders[subOrderIndex];
+            var status = OrderStatuses.Normalize(subOrder.Status);
+            if (!string.Equals(status, OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase))
+            {
+                return new ReturnRequestResult(false, "Returns are only available after delivery.");
+            }
+
+            if (subOrder.Return != null)
+            {
+                return new ReturnRequestResult(false, "A return has already been requested for this sub-order.");
+            }
+
+            if (!IsReturnWindowOpen(subOrder, order.CreatedOn))
+            {
+                return new ReturnRequestResult(false, $"Returns are only available within {ReturnPolicies.ReturnWindowDays} days of delivery.");
+            }
+
+            var items = BuildReturnItems(subOrder, productIds);
+            if (items.Count == 0)
+            {
+                return new ReturnRequestResult(false, "Select at least one item to return.");
+            }
+
+            var request = new ReturnRequest(subOrder.SubOrderNumber, ReturnRequestStatuses.Requested, reason.Trim(), DateTimeOffset.UtcNow, items);
+            details.SubOrders[subOrderIndex] = subOrder with { Return = request };
+            order.DetailsJson = JsonSerializer.Serialize(details, _serializerOptions);
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return new ReturnRequestResult(true, null, request);
         }
 
         public async Task<PagedResult<OrderSummaryView>> GetSummariesForBuyerAsync(
@@ -668,7 +776,8 @@ namespace SD.ProjectName.WebApp.Services
                 order.BuyerName,
                 order.BuyerEmail,
                 address.Phone,
-                OrderStatuses.Normalize(order.Status));
+                OrderStatuses.Normalize(order.Status),
+                subOrder.Return);
         }
 
         public async Task<SubOrderStatusUpdateResult> UpdateSubOrderStatusAsync(
@@ -712,6 +821,7 @@ namespace SD.ProjectName.WebApp.Services
                 return new SubOrderStatusUpdateResult(false, $"Cannot change status from {subOrder.Status} to {normalizedStatus}.");
             }
 
+            var now = DateTimeOffset.UtcNow;
             var updatedSubOrder = subOrder with
             {
                 Status = normalizedStatus,
@@ -719,7 +829,10 @@ namespace SD.ProjectName.WebApp.Services
                 TrackingCarrier = string.IsNullOrWhiteSpace(trackingCarrier) ? subOrder.TrackingCarrier : trackingCarrier.Trim(),
                 RefundedAmount = string.Equals(normalizedStatus, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase)
                     ? Math.Max(0, refundedAmount ?? subOrder.GrandTotal)
-                    : subOrder.RefundedAmount
+                    : subOrder.RefundedAmount,
+                DeliveredOn = string.Equals(normalizedStatus, OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase)
+                    ? subOrder.DeliveredOn ?? now
+                    : subOrder.DeliveredOn
             };
 
             var subOrderIndex = details.SubOrders.FindIndex(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
@@ -830,6 +943,36 @@ namespace SD.ProjectName.WebApp.Services
             var proportional = remainingDiscount * (baseTotal / totalBeforeDiscount);
             var rounded = Math.Round(proportional, 2, MidpointRounding.AwayFromZero);
             return Math.Min(rounded, baseTotal);
+        }
+
+        private static List<ReturnRequestItem> BuildReturnItems(OrderSubOrder subOrder, List<int>? productIds)
+        {
+            var normalizedIds = productIds?
+                .Where(id => id > 0)
+                .Distinct()
+                .ToHashSet() ?? new HashSet<int>();
+
+            var items = new List<ReturnRequestItem>();
+            foreach (var item in subOrder.Items)
+            {
+                if (normalizedIds.Count == 0 || normalizedIds.Contains(item.ProductId))
+                {
+                    items.Add(new ReturnRequestItem(item.ProductId, Math.Max(1, item.Quantity)));
+                }
+            }
+
+            return items;
+        }
+
+        public static bool IsReturnWindowOpen(OrderSubOrder subOrder, DateTimeOffset orderCreatedOn)
+        {
+            var deliveredOn = subOrder.DeliveredOn ?? orderCreatedOn;
+            if (deliveredOn == DateTimeOffset.MinValue)
+            {
+                return false;
+            }
+
+            return deliveredOn.Add(ReturnPolicies.ReturnWindow) >= DateTimeOffset.UtcNow;
         }
 
         private async Task SendConfirmationEmailAsync(OrderRecord order, DeliveryAddress address, OrderDetailsPayload details, CancellationToken cancellationToken)
@@ -944,6 +1087,8 @@ namespace SD.ProjectName.WebApp.Services
             var tracking = string.IsNullOrWhiteSpace(subOrder.TrackingNumber) ? null : subOrder.TrackingNumber.Trim();
             var carrier = string.IsNullOrWhiteSpace(subOrder.TrackingCarrier) ? null : subOrder.TrackingCarrier.Trim();
             var refunded = Math.Max(0, subOrder.RefundedAmount);
+            var deliveredOn = subOrder.DeliveredOn == DateTimeOffset.MinValue ? null : subOrder.DeliveredOn;
+            var normalizedReturn = NormalizeReturnRequest(subOrder.Return, items);
 
             return subOrder with
             {
@@ -951,7 +1096,45 @@ namespace SD.ProjectName.WebApp.Services
                 Status = string.IsNullOrWhiteSpace(status) ? OrderStatuses.Paid : status,
                 TrackingNumber = tracking,
                 TrackingCarrier = carrier,
-                RefundedAmount = refunded
+                RefundedAmount = refunded,
+                DeliveredOn = deliveredOn,
+                Return = normalizedReturn
+            };
+        }
+
+        private static ReturnRequest? NormalizeReturnRequest(ReturnRequest? request, List<OrderItemDetail> items)
+        {
+            if (request == null)
+            {
+                return null;
+            }
+
+            var normalizedStatus = ReturnRequestStatuses.Normalize(request.Status);
+            var normalizedReason = request.Reason?.Trim() ?? string.Empty;
+            var normalizedItems = request.Items ?? new List<ReturnRequestItem>();
+            if (normalizedItems.Count == 0)
+            {
+                normalizedItems = items.Select(i => new ReturnRequestItem(i.ProductId, i.Quantity)).ToList();
+            }
+            else
+            {
+                var allowedProducts = items.Select(i => i.ProductId).ToHashSet();
+                normalizedItems = normalizedItems
+                    .Where(i => allowedProducts.Contains(i.ProductId))
+                    .Select(i => new ReturnRequestItem(i.ProductId, Math.Max(1, i.Quantity)))
+                    .ToList();
+
+                if (normalizedItems.Count == 0)
+                {
+                    normalizedItems = items.Select(i => new ReturnRequestItem(i.ProductId, i.Quantity)).ToList();
+                }
+            }
+
+            return request with
+            {
+                Status = normalizedStatus,
+                Reason = normalizedReason,
+                Items = normalizedItems
             };
         }
 

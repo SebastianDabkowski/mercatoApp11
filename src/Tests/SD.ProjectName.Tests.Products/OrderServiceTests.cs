@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -161,6 +162,58 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal(OrderStatuses.Delivered, sellerOrder!.Status);
             Assert.Equal("TRACK456", sellerOrder.TrackingNumber);
             Assert.Equal("Carrier B", sellerOrder.TrackingCarrier);
+        }
+
+        [Fact]
+        public async Task CreateReturnRequestAsync_ShouldCreateRequestForDeliveredSubOrder()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-ret-1", "sig-ret-1");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-ret-1", "buyerret1@example.com", "Return Buyer", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-ret-1");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+
+            var request = await service.CreateReturnRequestAsync(result.Order.Id, "buyer-ret-1", subOrderNumber, new List<int> { 1 }, "Item damaged");
+            Assert.True(request.Success);
+
+            var refreshed = await service.GetOrderAsync(result.Order.Id, "buyer-ret-1");
+            var subOrder = Assert.Single(refreshed!.SubOrders);
+            Assert.NotNull(subOrder.Return);
+            Assert.Equal(ReturnRequestStatuses.Requested, subOrder.Return!.Status);
+            Assert.Equal("Item damaged", subOrder.Return.Reason);
+            Assert.Single(subOrder.Return.Items);
+            Assert.Equal(1, subOrder.Return.Items.First().ProductId);
+        }
+
+        [Fact]
+        public async Task CreateReturnRequestAsync_ShouldRejectWhenOutsideWindow()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-ret-2", "sig-ret-2");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-ret-2", "buyerret2@example.com", "Return Buyer Two", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-ret-2");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+
+            var record = context.Orders.Single(o => o.Id == result.Order.Id);
+            var details = JsonSerializer.Deserialize<OrderDetailsPayload>(record.DetailsJson, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase })!;
+            var outdated = DateTimeOffset.UtcNow.Subtract(TimeSpan.FromDays(ReturnPolicies.ReturnWindowDays + 1));
+            details = details with { SubOrders = details.SubOrders.Select(s => s with { DeliveredOn = outdated }).ToList() };
+            record.DetailsJson = JsonSerializer.Serialize(details, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            await context.SaveChangesAsync();
+
+            var request = await service.CreateReturnRequestAsync(result.Order.Id, "buyer-ret-2", subOrderNumber, new List<int> { 1 }, "Too late");
+            Assert.False(request.Success);
         }
 
         [Fact]
