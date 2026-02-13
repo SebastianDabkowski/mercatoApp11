@@ -54,6 +54,10 @@ else
                     }
                 }
                 <div class="text-muted small">Payment status: <span class="badge @paymentBadge">@Model.Order.PaymentStatus</span></div>
+                @if (!string.IsNullOrWhiteSpace(Model.Order.PaymentStatusMessage))
+                {
+                    <div class="text-muted small">@Model.Order.PaymentStatusMessage</div>
+                }
                 <div class="text-muted small">Paid with: @Model.Order.PaymentMethodLabel</div>
             </div>
             <div class="text-end">
