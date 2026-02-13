@@ -1,6 +1,7 @@
 @page
 @using Microsoft.AspNetCore.Authorization
 @using SD.ProjectName.WebApp.Identity
+@using SD.ProjectName.WebApp.Services
 @attribute [Authorize(Roles = AccountTypes.Seller)]
 @model SD.ProjectName.WebApp.Pages.Seller.DashboardModel
 @{
@@ -62,6 +63,232 @@ else
         Payouts will use @Model.PayoutMethod on a @Model.PayoutSchedule schedule. <a class="alert-link" href="~/Seller/PayoutSettings">Update payout preferences</a>.
     </div>
 }
+
+<div class="card shadow-sm mt-3">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+            <div>
+                <h2 class="h5 mb-1">Sales analytics</h2>
+                <p class="text-muted mb-2">GMV and orders for your store only.</p>
+                <div class="text-muted small">
+                    Range @Model.SalesRangeStart.ToString("yyyy-MM-dd") to @Model.SalesRangeEnd.ToString("yyyy-MM-dd") · Grouped by @Model.ActiveSalesGranularity
+                </div>
+            </div>
+            <div class="text-end">
+                <div class="fw-semibold fs-4">@Model.SalesTotalGmv.ToString("C")</div>
+                <div class="text-muted small">@Model.SalesTotalOrders orders in range</div>
+            </div>
+        </div>
+        <form class="row g-3 align-items-end mt-2" method="get">
+            <div class="col-6 col-lg-3">
+                <label class="form-label fw-semibold" for="salesFrom">From</label>
+                <input id="salesFrom" class="form-control form-control-sm" type="date" name="SalesFromDate" value="@(Model.SalesFromDate?.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-6 col-lg-3">
+                <label class="form-label fw-semibold" for="salesTo">To</label>
+                <input id="salesTo" class="form-control form-control-sm" type="date" name="SalesToDate" value="@(Model.SalesToDate?.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-6 col-lg-2">
+                <label class="form-label fw-semibold" for="granularity">Granularity</label>
+                <select id="granularity" class="form-select form-select-sm" name="SalesGranularity">
+                    <option value="@SellerSalesGranularities.Day" selected="@(Model.ActiveSalesGranularity == SellerSalesGranularities.Day ? "selected" : null)">Day</option>
+                    <option value="@SellerSalesGranularities.Week" selected="@(Model.ActiveSalesGranularity == SellerSalesGranularities.Week ? "selected" : null)">Week</option>
+                    <option value="@SellerSalesGranularities.Month" selected="@(Model.ActiveSalesGranularity == SellerSalesGranularities.Month ? "selected" : null)">Month</option>
+                </select>
+            </div>
+            <div class="col-6 col-lg-2">
+                <label class="form-label fw-semibold" for="product">Product</label>
+                <select id="product" class="form-select form-select-sm" name="ProductId">
+                    <option value="">All products</option>
+                    @foreach (var product in Model.ProductOptions)
+                    {
+                        <option value="@product.Id" selected="@(Model.ProductId == product.Id ? "selected" : null)">@product.Title</option>
+                    }
+                </select>
+            </div>
+            <div class="col-6 col-lg-2">
+                <label class="form-label fw-semibold" for="category">Category</label>
+                <select id="category" class="form-select form-select-sm" name="CategoryId">
+                    <option value="">All categories</option>
+                    @foreach (var category in Model.CategoryOptions)
+                    {
+                        <option value="@category.Id" selected="@(Model.CategoryId == category.Id ? "selected" : null)">@category.FullPath</option>
+                    }
+                </select>
+            </div>
+            <div class="col-12 col-lg-2 text-lg-end">
+                <button type="submit" class="btn btn-primary w-100">Update</button>
+                <a class="btn btn-link text-decoration-none w-100 mt-1" asp-page="./Dashboard">Reset</a>
+            </div>
+        </form>
+        @if (!Model.SalesHasData)
+        {
+            <div class="alert alert-info mt-3">
+                No sales found for this period and filters. Expand the date range or clear filters to explore your trends.
+            </div>
+        }
+        else
+        {
+            <div class="row g-3 mt-3">
+                <div class="col-6 col-lg-3">
+                    <div class="border rounded-3 p-3 h-100">
+                        <div class="text-muted small">GMV</div>
+                        <div class="fs-4 fw-semibold">@Model.SalesTotalGmv.ToString("C")</div>
+                        <div class="text-muted small">Includes shipping for matching products</div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="border rounded-3 p-3 h-100">
+                        <div class="text-muted small">Orders</div>
+                        <div class="fs-4 fw-semibold">@Model.SalesTotalOrders</div>
+                        <div class="text-muted small">Only your sub-orders</div>
+                    </div>
+                </div>
+                <div class="col-12 col-lg-6">
+                    <div class="border rounded-3 p-3 h-100">
+                        <div class="text-muted small">Average order value</div>
+                        <div class="fs-4 fw-semibold">
+                            @(Model.SalesTotalOrders == 0 ? "-" : (Model.SalesTotalGmv / Math.Max(1, Model.SalesTotalOrders)).ToString("C"))
+                        </div>
+                        <div class="text-muted small">Across the selected period</div>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-3 border rounded-3 p-3">
+                <div class="d-flex justify-content-between flex-wrap gap-2 mb-2">
+                    <div class="fw-semibold">Sales over time</div>
+                    <div class="d-flex gap-3 align-items-center small text-muted">
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <span style="width:12px;height:12px;background-color:#0d6efd;" class="rounded-circle d-inline-block"></span>GMV
+                        </span>
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <span style="width:12px;height:12px;border:2px solid #20c997;" class="rounded-circle d-inline-block"></span>Orders
+                        </span>
+                    </div>
+                </div>
+                <div class="position-relative">
+                    <svg id="sales-chart-canvas" class="w-100" style="min-height:240px;" role="img" aria-label="Sales over time chart"></svg>
+                    <script id="sales-data" type="application/json">
+                        @Html.Raw(Model.SalesSeriesJson)
+                    </script>
+                </div>
+                <div class="table-responsive mt-3">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th scope="col">Period</th>
+                                <th scope="col" class="text-end">GMV</th>
+                                <th scope="col" class="text-end">Orders</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var point in Model.SalesSeries)
+                            {
+                                <tr>
+                                    <td class="fw-semibold">@point.Label</td>
+                                    <td class="text-end">@point.Gmv.ToString("C")</td>
+                                    <td class="text-end">@point.Orders</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <script>
+                (function () {
+                    const dataElement = document.getElementById('sales-data');
+                    const svg = document.getElementById('sales-chart-canvas');
+                    if (!dataElement || !svg) {
+                        return;
+                    }
+
+                    let data = [];
+                    try {
+                        data = JSON.parse(dataElement.textContent || '[]');
+                    } catch {
+                        data = [];
+                    }
+
+                    if (!Array.isArray(data) || data.length === 0) {
+                        svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#6c757d" font-size="14">No data for this range</text>';
+                        svg.setAttribute('viewBox', '0 0 400 240');
+                        svg.setAttribute('preserveAspectRatio', 'none');
+                        return;
+                    }
+
+                    const width = Math.max(400, data.length * 56);
+                    const height = 240;
+                    const padding = 28;
+                    const plotWidth = width - padding * 2;
+                    const plotHeight = height - padding * 2;
+                    const gmvMax = Math.max(...data.map(d => Number(d.gmv) || 0), 1);
+                    const ordersMax = Math.max(...data.map(d => Number(d.orders) || 0), 1);
+                    const step = plotWidth / data.length;
+                    const barWidth = Math.max(12, step * 0.55);
+                    const ns = 'http://www.w3.org/2000/svg';
+
+                    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+                    svg.setAttribute('preserveAspectRatio', 'none');
+                    svg.innerHTML = '';
+
+                    const axis = document.createElementNS(ns, 'line');
+                    axis.setAttribute('x1', padding.toString());
+                    axis.setAttribute('x2', (width - padding).toString());
+                    axis.setAttribute('y1', (height - padding).toString());
+                    axis.setAttribute('y2', (height - padding).toString());
+                    axis.setAttribute('stroke', '#dee2e6');
+                    axis.setAttribute('stroke-width', '1');
+                    svg.appendChild(axis);
+
+                    data.forEach((point, index) => {
+                        const gmvHeight = plotHeight * ((Number(point.gmv) || 0) / gmvMax);
+                        const x = padding + index * step + (step - barWidth) / 2;
+                        const bar = document.createElementNS(ns, 'rect');
+                        bar.setAttribute('x', x.toString());
+                        bar.setAttribute('y', (height - padding - gmvHeight).toString());
+                        bar.setAttribute('width', barWidth.toString());
+                        bar.setAttribute('height', gmvHeight.toString());
+                        bar.setAttribute('fill', '#0d6efd');
+                        bar.setAttribute('rx', '3');
+                        svg.appendChild(bar);
+                    });
+
+                    const points = data.map((point, index) => {
+                        const ordersHeight = plotHeight * ((Number(point.orders) || 0) / ordersMax);
+                        const x = padding + index * step + step / 2;
+                        const y = height - padding - ordersHeight;
+                        const dot = document.createElementNS(ns, 'circle');
+                        dot.setAttribute('cx', x.toString());
+                        dot.setAttribute('cy', y.toString());
+                        dot.setAttribute('r', '4');
+                        dot.setAttribute('fill', '#20c997');
+                        dot.setAttribute('stroke', '#0f5132');
+                        dot.setAttribute('stroke-width', '1');
+                        svg.appendChild(dot);
+                        return `${x},${y}`;
+                    }).join(' ');
+
+                    const line = document.createElementNS(ns, 'polyline');
+                    line.setAttribute('points', points);
+                    line.setAttribute('fill', 'none');
+                    line.setAttribute('stroke', '#20c997');
+                    line.setAttribute('stroke-width', '3');
+                    line.setAttribute('stroke-linejoin', 'round');
+                    line.setAttribute('stroke-linecap', 'round');
+
+                    const firstDot = svg.querySelector('circle');
+                    if (firstDot) {
+                        svg.insertBefore(line, firstDot);
+                    }
+                    else
+                    {
+                        svg.appendChild(line);
+                    }
+                })();
+            </script>
+        }
+    </div>
+</div>
 
 <div class="card shadow-sm mt-3">
     <div class="card-body">
