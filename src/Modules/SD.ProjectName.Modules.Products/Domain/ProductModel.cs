@@ -52,6 +52,9 @@ namespace SD.ProjectName.Modules.Products.Domain
         [MaxLength(200)]
         public string? ShippingMethods { get; set; }
 
+        [MaxLength(32)]
+        public string Condition { get; set; } = ProductConditions.New;
+
         public bool HasVariants { get; set; }
 
         [MaxLength(8000)]

@@ -59,6 +59,70 @@
     </div>
 }
 
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <h2 class="h5 mb-0">Filters</h2>
+            <div class="d-flex gap-2">
+                <a class="btn btn-outline-secondary btn-sm" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-includeSubcategories="@Model.IncludeSubcategories">Clear all filters</a>
+                <button type="submit" form="categoryFilters" class="btn btn-primary btn-sm">Apply filters</button>
+            </div>
+        </div>
+        <form id="categoryFilters" method="get" asp-page="/Products/Category">
+            <input type="hidden" name="includeSubcategories" value="@Model.IncludeSubcategories" />
+            <div class="row g-3">
+                <div class="col-12 col-md-6 col-lg-3">
+                    <label class="form-label" for="categorySelect">Category</label>
+                    <select id="categorySelect" name="id" class="form-select">
+                        @foreach (var option in Model.CategoryOptions)
+                        {
+                            <option value="@option.Value" selected="@(option.Selected ? "selected" : null)">@option.Text</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <label class="form-label" for="sellerSelect">Seller</label>
+                    <select id="sellerSelect" name="sellerId" class="form-select">
+                        <option value="">All sellers</option>
+                        @foreach (var seller in Model.SellerOptions)
+                        {
+                            <option value="@seller.Value" selected="@(seller.Selected ? "selected" : null)">@seller.Text</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <label class="form-label" for="conditionSelect">Condition</label>
+                    <select id="conditionSelect" name="condition" class="form-select">
+                        <option value="">Any condition</option>
+                        @foreach (var condition in Model.ConditionOptions)
+                        {
+                            <option value="@condition" selected="@(string.Equals(Model.Condition, condition, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@condition</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <label class="form-label">Price range</label>
+                    <div class="d-flex gap-2">
+                        <input type="number" step="0.01" min="0" name="minPrice" value="@(Model.MinPrice?.ToString() ?? string.Empty)" class="form-control" placeholder="Min" />
+                        <input type="number" step="0.01" min="0" name="maxPrice" value="@(Model.MaxPrice?.ToString() ?? string.Empty)" class="form-control" placeholder="Max" />
+                    </div>
+                </div>
+            </div>
+        </form>
+        @if (Model.HasActiveFilters)
+        {
+            <div class="d-flex align-items-center gap-2 mt-3 flex-wrap">
+                <span class="text-muted small">Active filters:</span>
+                @foreach (var filter in Model.ActiveFilters)
+                {
+                    <span class="badge bg-primary">@filter</span>
+                }
+                <a class="btn btn-link btn-sm text-decoration-none" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-includeSubcategories="@Model.IncludeSubcategories">Clear</a>
+            </div>
+        }
+    </div>
+</div>
+
 <div class="d-flex align-items-center justify-content-between mb-2">
     <h2 class="h5 mb-0">Products</h2>
     <small class="text-muted">@((Model.IncludeSubcategories ? "Including subcategories" : "This category only"))</small>
@@ -95,8 +159,12 @@
 else
 {
     <div class="alert alert-info">
-        <p class="mb-1">No products found in this category.</p>
-        @if (Model.Subcategories.Any())
+        <p class="mb-1">@Model.StatusMessage</p>
+        @if (Model.HasActiveFilters)
+        {
+            <p class="mb-0">Active filters are highlighted above. <a class="link-primary" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-includeSubcategories="@Model.IncludeSubcategories">Clear filters</a> to see all products.</p>
+        }
+        else if (Model.Subcategories.Any())
         {
             <p class="mb-0">Try a subcategory above or <a asp-page="/Products/List">browse all products</a>.</p>
         }
