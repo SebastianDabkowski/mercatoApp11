@@ -73,6 +73,11 @@ builder.Services.AddOptions<EscrowOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<EscrowOptions>(sp => sp.GetRequiredService<IOptions<EscrowOptions>>().Value);
+builder.Services.AddOptions<SettlementOptions>()
+    .Bind(builder.Configuration.GetSection(SettlementOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<SettlementOptions>(sp => sp.GetRequiredService<IOptions<SettlementOptions>>().Value);
 builder.Services.AddOptions<PaymentProviderOptions>()
     .Bind(builder.Configuration.GetSection(PaymentProviderOptions.SectionName))
     .ValidateDataAnnotations()

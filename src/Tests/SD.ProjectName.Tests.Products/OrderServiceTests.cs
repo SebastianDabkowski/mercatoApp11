@@ -450,6 +450,93 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task GetMonthlySettlementsAsync_ShouldSummarizeAndFlagAdjustments()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var settlementOptions = new SettlementOptions { CloseDay = 1, TimeZone = "UTC" };
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, null, null, settlementOptions);
+            var serializerOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+            var windowEnd = new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero);
+
+            var januaryState = new CheckoutState("profile", TestAddress, windowEnd.AddDays(-10), new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-settle-jan", "sig-settle-jan");
+            var januaryOrder = await service.EnsureOrderAsync(januaryState, BuildQuote(), TestAddress, "buyer-settle-jan", "settlejan@example.com", "Settle Jan", "Card", "card", OrderStatuses.Paid, PaymentStatuses.Paid);
+
+            var januaryRecord = context.Orders.Single(o => o.Id == januaryOrder.Order.Id);
+            var januaryDetails = JsonSerializer.Deserialize<OrderDetailsPayload>(januaryRecord.DetailsJson, serializerOptions)!;
+            var januaryAllocation = Assert.Single(januaryDetails.Escrow);
+            januaryAllocation = januaryAllocation with
+            {
+                PayoutStatus = PayoutStatuses.Paid,
+                ReleasedToSeller = januaryAllocation.SellerPayoutAmount,
+                PayoutEligible = true,
+                Ledger = januaryAllocation.Ledger
+                    .Select(l => l with { RecordedOn = windowEnd.AddDays(-5) })
+                    .Append(new EscrowLedgerEntry(januaryAllocation.SubOrderNumber, januaryAllocation.SellerId, EscrowEntryTypes.PayoutEligible, januaryAllocation.SellerPayoutAmount, "Settlement ready", windowEnd.AddDays(-5)))
+                    .ToList()
+            };
+            januaryDetails = januaryDetails with { Escrow = new List<EscrowAllocation> { januaryAllocation } };
+            januaryRecord.DetailsJson = JsonSerializer.Serialize(januaryDetails, serializerOptions);
+            januaryRecord.CreatedOn = windowEnd.AddDays(-12);
+
+            var decemberState = new CheckoutState("profile", TestAddress, windowEnd.AddMonths(-1).AddDays(-10), new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-settle-dec", "sig-settle-dec");
+            var decemberOrder = await service.EnsureOrderAsync(decemberState, BuildQuote(), TestAddress, "buyer-settle-dec", "settledec@example.com", "Settle Dec", "Card", "card", OrderStatuses.Paid, PaymentStatuses.Paid);
+
+            var decemberRecord = context.Orders.Single(o => o.Id == decemberOrder.Order.Id);
+            var decemberDetails = JsonSerializer.Deserialize<OrderDetailsPayload>(decemberRecord.DetailsJson, serializerOptions)!;
+            var decemberAllocation = Assert.Single(decemberDetails.Escrow);
+            decemberAllocation = decemberAllocation with
+            {
+                PayoutStatus = PayoutStatuses.Processing,
+                PayoutEligible = true,
+                Ledger = decemberAllocation.Ledger
+                    .Select(l => l with { RecordedOn = windowEnd.AddDays(-3) })
+                    .Append(new EscrowLedgerEntry(decemberAllocation.SubOrderNumber, decemberAllocation.SellerId, EscrowEntryTypes.PayoutEligible, decemberAllocation.SellerPayoutAmount, "Settlement adjustment", windowEnd.AddDays(-3)))
+                    .ToList()
+            };
+            decemberDetails = decemberDetails with { Escrow = new List<EscrowAllocation> { decemberAllocation } };
+            decemberRecord.DetailsJson = JsonSerializer.Serialize(decemberDetails, serializerOptions);
+            decemberRecord.CreatedOn = windowEnd.AddMonths(-1).AddDays(-12);
+
+            var februaryState = new CheckoutState("profile", TestAddress, windowEnd.AddDays(5), new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-settle-feb", "sig-settle-feb");
+            var februaryOrder = await service.EnsureOrderAsync(februaryState, BuildQuote(), TestAddress, "buyer-settle-feb", "settlefeb@example.com", "Settle Feb", "Card", "card", OrderStatuses.Paid, PaymentStatuses.Paid);
+            var februaryRecord = context.Orders.Single(o => o.Id == februaryOrder.Order.Id);
+            var februaryDetails = JsonSerializer.Deserialize<OrderDetailsPayload>(februaryRecord.DetailsJson, serializerOptions)!;
+            var februaryAllocation = Assert.Single(februaryDetails.Escrow);
+            februaryAllocation = februaryAllocation with
+            {
+                PayoutEligible = true,
+                Ledger = februaryAllocation.Ledger
+                    .Select(l => l with { RecordedOn = windowEnd.AddDays(2) })
+                    .Append(new EscrowLedgerEntry(februaryAllocation.SubOrderNumber, februaryAllocation.SellerId, EscrowEntryTypes.PayoutEligible, februaryAllocation.SellerPayoutAmount, "Next window", windowEnd.AddDays(2)))
+                    .ToList()
+            };
+            februaryDetails = februaryDetails with { Escrow = new List<EscrowAllocation> { februaryAllocation } };
+            februaryRecord.DetailsJson = JsonSerializer.Serialize(februaryDetails, serializerOptions);
+            februaryRecord.CreatedOn = windowEnd.AddDays(2);
+
+            await context.SaveChangesAsync();
+
+            var summaries = await service.GetMonthlySettlementsAsync(windowEnd.Year, windowEnd.Month);
+            var summary = Assert.Single(summaries);
+            Assert.Equal("seller-1", summary.SellerId);
+            Assert.Equal(2, summary.OrderCount);
+            Assert.Equal(1, summary.AdjustmentCount);
+            Assert.Equal(windowEnd.AddMonths(-1), summary.PeriodStart);
+            Assert.Equal(windowEnd, summary.PeriodEnd);
+            Assert.True(summary.GrossTotal >= 50);
+            Assert.True(summary.PayoutTotal > 0);
+            Assert.True(summary.AdjustmentTotal > 0);
+
+            var detail = await service.GetMonthlySettlementDetailAsync(windowEnd.Year, windowEnd.Month, "seller-1");
+            Assert.NotNull(detail);
+            Assert.Equal(2, detail!.Orders.Count);
+            Assert.Contains(detail.Orders, o => o.IsAdjustment);
+            Assert.DoesNotContain(detail.Orders, o => o.PayoutOn >= summary.PeriodEnd);
+        }
+
+        [Fact]
         public async Task UpdateSubOrderStatusAsync_ShouldUpdateSelectedItemsWithoutAffectingOthers()
         {
             await using var context = CreateContext();

@@ -384,6 +384,34 @@ namespace SD.ProjectName.WebApp.Services
         public DateTimeOffset? ToDate { get; init; }
     }
 
+    public record SellerMonthlySettlementLine(
+        int OrderId,
+        string OrderNumber,
+        string SubOrderNumber,
+        DateTimeOffset PayoutOn,
+        DateTimeOffset CreatedOn,
+        decimal GrossTotal,
+        decimal CommissionTotal,
+        decimal PayoutTotal,
+        string PayoutStatus,
+        bool IsAdjustment);
+
+    public record SellerMonthlySettlementSummary(
+        string SellerId,
+        string SellerName,
+        int Year,
+        int Month,
+        DateTimeOffset PeriodStart,
+        DateTimeOffset PeriodEnd,
+        int OrderCount,
+        decimal GrossTotal,
+        decimal CommissionTotal,
+        decimal PayoutTotal,
+        int AdjustmentCount,
+        decimal AdjustmentTotal);
+
+    public record SellerMonthlySettlementDetail(SellerMonthlySettlementSummary Summary, List<SellerMonthlySettlementLine> Orders);
+
     public record SellerFilterOption(string Id, string Name);
 
     public class OrderService
@@ -393,19 +421,23 @@ namespace SD.ProjectName.WebApp.Services
         private readonly ILogger<OrderService> _logger;
         private readonly EscrowOptions _escrowOptions;
         private readonly CartOptions _cartOptions;
+        private readonly SettlementOptions _settlementOptions;
+        private readonly TimeZoneInfo _settlementTimeZone;
         private readonly CommissionCalculator _commissionCalculator;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        public OrderService(ApplicationDbContext dbContext, IEmailSender emailSender, ILogger<OrderService> logger, EscrowOptions? escrowOptions = null, CartOptions? cartOptions = null)
+        public OrderService(ApplicationDbContext dbContext, IEmailSender emailSender, ILogger<OrderService> logger, EscrowOptions? escrowOptions = null, CartOptions? cartOptions = null, SettlementOptions? settlementOptions = null)
         {
             _dbContext = dbContext;
             _emailSender = emailSender;
             _logger = logger;
             _escrowOptions = escrowOptions ?? new EscrowOptions();
             _cartOptions = cartOptions ?? new CartOptions();
+            _settlementOptions = settlementOptions ?? new SettlementOptions();
+            _settlementTimeZone = ResolveSettlementTimeZone(_settlementOptions.TimeZone);
             _commissionCalculator = new CommissionCalculator(_cartOptions);
         }
 
@@ -974,6 +1006,246 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             return needsQuotes ? $"\"{value}\"" : value;
+        }
+
+        public async Task<List<SellerMonthlySettlementSummary>> GetMonthlySettlementsAsync(
+            int year,
+            int month,
+            string? sellerId = null,
+            CancellationToken cancellationToken = default)
+        {
+            var (start, end) = ResolveSettlementWindow(year, month);
+            var normalizedSeller = string.IsNullOrWhiteSpace(sellerId) ? null : sellerId.Trim();
+            var sellerToken = normalizedSeller == null ? null : $"\"sellerId\":\"{normalizedSeller}\"";
+
+            var ordersQuery = _dbContext.Orders.AsNoTracking().Where(o => o.CreatedOn < end);
+            if (!string.IsNullOrWhiteSpace(sellerToken))
+            {
+                ordersQuery = ordersQuery.Where(o => o.DetailsJson.Contains(sellerToken));
+            }
+
+            var orders = await ordersQuery
+                .OrderBy(o => o.CreatedOn)
+                .ToListAsync(cancellationToken);
+
+            var summaries = new Dictionary<string, (string SellerName, int Count, decimal Gross, decimal Commission, decimal Payout, int Adjustments, decimal AdjustmentTotal)>(StringComparer.OrdinalIgnoreCase);
+            foreach (var order in orders)
+            {
+                var details = DeserializeDetails(order.DetailsJson);
+                var subOrders = details.SubOrders ?? new List<OrderSubOrder>();
+                var allocations = details.Escrow ?? new List<EscrowAllocation>();
+
+                foreach (var subOrder in subOrders)
+                {
+                    if (normalizedSeller != null && !string.Equals(subOrder.SellerId, normalizedSeller, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    var allocation = allocations.FirstOrDefault(e =>
+                        string.Equals(e.SubOrderNumber, subOrder.SubOrderNumber, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(e.SellerId, subOrder.SellerId, StringComparison.OrdinalIgnoreCase));
+
+                    var payoutOn = allocation == null ? order.CreatedOn : ResolvePayoutDate(allocation, order.CreatedOn);
+                    if (payoutOn < start || payoutOn >= end)
+                    {
+                        continue;
+                    }
+
+                    var key = subOrder.SellerId ?? string.Empty;
+                    var sellerName = string.IsNullOrWhiteSpace(subOrder.SellerName) ? key : subOrder.SellerName;
+                    if (!summaries.TryGetValue(key, out var acc))
+                    {
+                        acc = (sellerName, 0, 0, 0, 0, 0, 0);
+                    }
+
+                    var gross = allocation?.HeldAmount ?? subOrder.GrandTotal;
+                    var commission = allocation?.CommissionAmount ?? 0;
+                    var payout = allocation?.ReleasedToSeller > 0
+                        ? allocation.ReleasedToSeller
+                        : allocation?.SellerPayoutAmount ?? Math.Max(0, gross - commission);
+                    var isAdjustment = order.CreatedOn < start;
+
+                    acc.SellerName = string.IsNullOrWhiteSpace(acc.SellerName) ? sellerName : acc.SellerName;
+                    acc.Count += 1;
+                    acc.Gross += gross;
+                    acc.Commission += commission;
+                    acc.Payout += payout;
+                    if (isAdjustment)
+                    {
+                        acc.Adjustments += 1;
+                        acc.AdjustmentTotal += payout;
+                    }
+
+                    summaries[key] = acc;
+                }
+            }
+
+            return summaries
+                .Select(s => new SellerMonthlySettlementSummary(
+                    s.Key,
+                    string.IsNullOrWhiteSpace(s.Value.SellerName) ? s.Key : s.Value.SellerName,
+                    year,
+                    month,
+                    start,
+                    end,
+                    s.Value.Count,
+                    s.Value.Gross,
+                    s.Value.Commission,
+                    s.Value.Payout,
+                    s.Value.Adjustments,
+                    s.Value.AdjustmentTotal))
+                .OrderBy(s => s.SellerName)
+                .ToList();
+        }
+
+        public async Task<SellerMonthlySettlementDetail?> GetMonthlySettlementDetailAsync(
+            int year,
+            int month,
+            string sellerId,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return null;
+            }
+
+            var normalizedSeller = sellerId.Trim();
+            var (start, end) = ResolveSettlementWindow(year, month);
+            var sellerToken = $"\"sellerId\":\"{normalizedSeller}\"";
+
+            var orders = await _dbContext.Orders.AsNoTracking()
+                .Where(o => o.CreatedOn < end && o.DetailsJson.Contains(sellerToken))
+                .OrderBy(o => o.CreatedOn)
+                .ToListAsync(cancellationToken);
+
+            var lines = new List<SellerMonthlySettlementLine>();
+            string sellerName = normalizedSeller;
+
+            foreach (var order in orders)
+            {
+                var details = DeserializeDetails(order.DetailsJson);
+                var subOrder = (details.SubOrders ?? new List<OrderSubOrder>())
+                    .FirstOrDefault(s => string.Equals(s.SellerId, normalizedSeller, StringComparison.OrdinalIgnoreCase));
+                if (subOrder == null)
+                {
+                    continue;
+                }
+
+                var allocations = details.Escrow ?? new List<EscrowAllocation>();
+                var allocation = allocations.FirstOrDefault(e =>
+                    string.Equals(e.SubOrderNumber, subOrder.SubOrderNumber, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(e.SellerId, normalizedSeller, StringComparison.OrdinalIgnoreCase));
+
+                var payoutOn = allocation == null ? order.CreatedOn : ResolvePayoutDate(allocation, order.CreatedOn);
+                if (payoutOn < start || payoutOn >= end)
+                {
+                    continue;
+                }
+
+                sellerName = string.IsNullOrWhiteSpace(subOrder.SellerName) ? sellerName : subOrder.SellerName;
+                var gross = allocation?.HeldAmount ?? subOrder.GrandTotal;
+                var commission = allocation?.CommissionAmount ?? 0;
+                var payout = allocation?.ReleasedToSeller > 0
+                    ? allocation.ReleasedToSeller
+                    : allocation?.SellerPayoutAmount ?? Math.Max(0, gross - commission);
+                var status = PayoutStatuses.Normalize(allocation?.PayoutStatus);
+                var isAdjustment = order.CreatedOn < start;
+
+                lines.Add(new SellerMonthlySettlementLine(
+                    order.Id,
+                    order.OrderNumber,
+                    subOrder.SubOrderNumber,
+                    payoutOn,
+                    order.CreatedOn,
+                    gross,
+                    commission,
+                    payout,
+                    status,
+                    isAdjustment));
+            }
+
+            var summary = (await GetMonthlySettlementsAsync(year, month, normalizedSeller, cancellationToken)).FirstOrDefault();
+            if (summary == null)
+            {
+                summary = new SellerMonthlySettlementSummary(
+                    normalizedSeller,
+                    sellerName,
+                    year,
+                    month,
+                    start,
+                    end,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0);
+            }
+            else if (string.IsNullOrWhiteSpace(summary.SellerName))
+            {
+                summary = summary with { SellerName = sellerName };
+            }
+
+            return new SellerMonthlySettlementDetail(
+                summary,
+                lines.OrderByDescending(l => l.PayoutOn).ToList());
+        }
+
+        public async Task<byte[]> ExportMonthlySettlementsAsync(
+            int year,
+            int month,
+            string? sellerId = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (!string.IsNullOrWhiteSpace(sellerId))
+            {
+                var detail = await GetMonthlySettlementDetailAsync(year, month, sellerId, cancellationToken)
+                             ?? new SellerMonthlySettlementDetail(
+                                 new SellerMonthlySettlementSummary(sellerId.Trim(), sellerId.Trim(), year, month, DateTimeOffset.MinValue, DateTimeOffset.MinValue, 0, 0, 0, 0, 0, 0),
+                                 new List<SellerMonthlySettlementLine>());
+
+                var builder = new StringBuilder();
+                builder.AppendLine("Order,SubOrder,PayoutOn,CreatedOn,Gross,Commission,Payout,Status,Adjustment");
+                foreach (var line in detail.Orders.OrderByDescending(l => l.PayoutOn))
+                {
+                    builder.AppendLine(string.Join(",", new[]
+                    {
+                        CsvEscape(line.OrderNumber),
+                        CsvEscape(line.SubOrderNumber),
+                        CsvEscape(line.PayoutOn.ToString("u", CultureInfo.InvariantCulture)),
+                        CsvEscape(line.CreatedOn.ToString("u", CultureInfo.InvariantCulture)),
+                        line.GrossTotal.ToString("F2", CultureInfo.InvariantCulture),
+                        line.CommissionTotal.ToString("F2", CultureInfo.InvariantCulture),
+                        line.PayoutTotal.ToString("F2", CultureInfo.InvariantCulture),
+                        CsvEscape(line.PayoutStatus),
+                        line.IsAdjustment ? "Adjustment" : string.Empty
+                    }));
+                }
+
+                return Encoding.UTF8.GetBytes(builder.ToString());
+            }
+
+            var summaries = await GetMonthlySettlementsAsync(year, month, null, cancellationToken);
+            var summaryBuilder = new StringBuilder();
+            summaryBuilder.AppendLine("Seller,Orders,Gross,Commission,Payout,Adjustments,AdjustmentTotal,PeriodStart,PeriodEnd");
+            foreach (var summary in summaries.OrderBy(s => s.SellerName))
+            {
+                summaryBuilder.AppendLine(string.Join(",", new[]
+                {
+                    CsvEscape(summary.SellerName),
+                    summary.OrderCount.ToString(CultureInfo.InvariantCulture),
+                    summary.GrossTotal.ToString("F2", CultureInfo.InvariantCulture),
+                    summary.CommissionTotal.ToString("F2", CultureInfo.InvariantCulture),
+                    summary.PayoutTotal.ToString("F2", CultureInfo.InvariantCulture),
+                    summary.AdjustmentCount.ToString(CultureInfo.InvariantCulture),
+                    summary.AdjustmentTotal.ToString("F2", CultureInfo.InvariantCulture),
+                    CsvEscape(summary.PeriodStart.ToString("u", CultureInfo.InvariantCulture)),
+                    CsvEscape(summary.PeriodEnd.ToString("u", CultureInfo.InvariantCulture))
+                }));
+            }
+
+            return Encoding.UTF8.GetBytes(summaryBuilder.ToString());
         }
 
         public async Task<List<SellerFilterOption>> GetSellerFiltersForBuyerAsync(string buyerId, CancellationToken cancellationToken = default)
@@ -2061,6 +2333,35 @@ namespace SD.ProjectName.WebApp.Services
                 return string.Equals(status, OrderStatuses.New, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(status, OrderStatuses.Failed, StringComparison.OrdinalIgnoreCase);
             });
+        }
+
+        private TimeZoneInfo ResolveSettlementTimeZone(string? timeZone)
+        {
+            if (string.IsNullOrWhiteSpace(timeZone))
+            {
+                return TimeZoneInfo.Utc;
+            }
+
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(timeZone);
+            }
+            catch
+            {
+                _logger.LogWarning("Unknown settlement timezone {TimeZoneId}, falling back to UTC.", timeZone);
+                return TimeZoneInfo.Utc;
+            }
+        }
+
+        private (DateTimeOffset Start, DateTimeOffset End) ResolveSettlementWindow(int year, int month)
+        {
+            var closeDay = Math.Clamp(_settlementOptions.CloseDay, 1, 28);
+            var normalizedMonth = Math.Clamp(month, 1, 12);
+            var normalizedYear = Math.Max(1, year);
+            var anchorLocal = new DateTime(normalizedYear, normalizedMonth, closeDay, 0, 0, 0, DateTimeKind.Unspecified);
+            var anchor = new DateTimeOffset(anchorLocal, _settlementTimeZone.GetUtcOffset(anchorLocal));
+            var start = anchor.AddMonths(-1);
+            return (start, anchor);
         }
 
         private static string ResolvePaymentStatusForSubOrder(OrderDetailsPayload details, OrderSubOrder subOrder)
