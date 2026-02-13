@@ -190,6 +190,7 @@ else
                                         <thead>
                                             <tr>
                                                 <th scope="col">Item</th>
+                                                <th scope="col">Status</th>
                                                 <th scope="col" class="text-end">Qty</th>
                                                 <th scope="col" class="text-end">Unit</th>
                                                 <th scope="col" class="text-end">Total</th>
@@ -198,6 +199,28 @@ else
                                         <tbody>
                                             @foreach (var item in sub.Items)
                                             {
+                                                var itemStatus = OrderStatuses.Normalize(item.Status);
+                                                var badgeClass = "bg-secondary";
+                                                if (itemStatus.Equals("Delivered", StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    badgeClass = "bg-success";
+                                                }
+                                                else if (itemStatus.Equals("Shipped", StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    badgeClass = "bg-primary";
+                                                }
+                                                else if (itemStatus.Equals("Preparing", StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    badgeClass = "bg-info text-dark";
+                                                }
+                                                else if (itemStatus.Equals("Cancelled", StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    badgeClass = "bg-warning text-dark";
+                                                }
+                                                else if (itemStatus.Equals("Refunded", StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    badgeClass = "bg-light text-dark border";
+                                                }
                                                 <tr>
                                                     <td>
                                                         <div class="fw-semibold">@item.Name</div>
@@ -205,6 +228,9 @@ else
                                                         {
                                                             <div class="text-muted small">@item.Variant</div>
                                                         }
+                                                    </td>
+                                                    <td>
+                                                        <span class="badge @badgeClass">@itemStatus</span>
                                                     </td>
                                                     <td class="text-end">@item.Quantity</td>
                                                     <td class="text-end">@item.UnitPrice.ToString("C")</td>
@@ -224,6 +250,7 @@ else
                                 <thead>
                                     <tr>
                                         <th scope="col">Item</th>
+                                        <th scope="col">Status</th>
                                         <th scope="col">Seller</th>
                                         <th scope="col" class="text-end">Qty</th>
                                         <th scope="col" class="text-end">Unit</th>
@@ -233,6 +260,28 @@ else
                                 <tbody>
                                     @foreach (var item in order.Items)
                                     {
+                                        var itemStatus = OrderStatuses.Normalize(item.Status);
+                                        var badgeClass = "bg-secondary";
+                                        if (itemStatus.Equals("Delivered", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            badgeClass = "bg-success";
+                                        }
+                                        else if (itemStatus.Equals("Shipped", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            badgeClass = "bg-primary";
+                                        }
+                                        else if (itemStatus.Equals("Preparing", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            badgeClass = "bg-info text-dark";
+                                        }
+                                        else if (itemStatus.Equals("Cancelled", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            badgeClass = "bg-warning text-dark";
+                                        }
+                                        else if (itemStatus.Equals("Refunded", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            badgeClass = "bg-light text-dark border";
+                                        }
                                         <tr>
                                             <td>
                                                 <div class="fw-semibold">@item.Name</div>
@@ -240,6 +289,9 @@ else
                                                 {
                                                     <div class="text-muted small">@item.Variant</div>
                                                 }
+                                            </td>
+                                            <td>
+                                                <span class="badge @badgeClass">@itemStatus</span>
                                             </td>
                                             <td>@item.SellerName</td>
                                             <td class="text-end">@item.Quantity</td>

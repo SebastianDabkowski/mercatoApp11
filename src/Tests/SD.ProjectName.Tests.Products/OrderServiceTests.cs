@@ -165,6 +165,58 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task UpdateSubOrderStatusAsync_ShouldUpdateSelectedItemsWithoutAffectingOthers()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildMultiItemQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-partial-1", "sig-partial-1");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-partial-1", "partial1@example.com", "Partial Buyer", "Card", "card");
+
+            var partial = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Shipped, null, null, null, new[] { 1 });
+            Assert.True(partial.Success);
+            Assert.Equal(OrderStatuses.Shipped, partial.UpdatedSubOrder!.Status);
+            var shippedItem = partial.UpdatedSubOrder.Items.First(i => i.ProductId == 1);
+            var pendingItem = partial.UpdatedSubOrder.Items.First(i => i.ProductId == 2);
+            Assert.Equal(OrderStatuses.Shipped, shippedItem.Status);
+            Assert.Equal(OrderStatuses.Paid, pendingItem.Status);
+
+            var sellerOrder = await service.GetSellerOrderAsync(result.Order.Id, "seller-1");
+            Assert.NotNull(sellerOrder);
+            Assert.Equal(OrderStatuses.Paid, sellerOrder!.Items.First(i => i.ProductId == 2).Status);
+        }
+
+        [Fact]
+        public async Task UpdateSubOrderStatusAsync_ShouldCalculateRefundForCancelledItems()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildMultiItemQuote(4);
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-partial-2", "sig-partial-2");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-partial-2", "partial2@example.com", "Partial Buyer Two", "Card", "card");
+
+            var cancel = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Cancelled, null, null, null, new[] { 2 });
+            Assert.True(cancel.Success);
+            Assert.Equal(OrderStatuses.Paid, cancel.UpdatedSubOrder!.Status);
+
+            var refund = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Refunded, null, null, null, new[] { 2 });
+            Assert.True(refund.Success);
+            var updated = refund.UpdatedSubOrder!;
+            var refundedItem = updated.Items.First(i => i.ProductId == 2);
+            Assert.Equal(OrderStatuses.Refunded, refundedItem.Status);
+
+            var totalLines = updated.Items.Sum(i => i.LineTotal);
+            var targetLine = refundedItem.LineTotal;
+            var discountShare = totalLines <= 0 ? 0 : Math.Min(targetLine, updated.DiscountTotal * (targetLine / totalLines));
+            var expectedRefund = Math.Round(Math.Max(0, targetLine - discountShare), 2, MidpointRounding.AwayFromZero);
+            Assert.Equal(expectedRefund, updated.RefundedAmount);
+        }
+
+        [Fact]
         public async Task CreateReturnRequestAsync_ShouldCreateRequestForDeliveredSubOrder()
         {
             await using var context = CreateContext();
@@ -504,6 +556,22 @@ namespace SD.ProjectName.Tests.Products
                 new("seller-2", "Seller Two", sellerTwoOptions)
             };
             var selections = new Dictionary<string, string> { ["seller-1"] = "express", ["seller-2"] = "standard" };
+
+            return new ShippingQuote(summary, sellerOptions, selections);
+        }
+
+        private static ShippingQuote BuildMultiItemQuote(decimal discountTotal = 0)
+        {
+            var productOne = new ProductModel { Id = 1, Title = "Item One", Price = 12, Stock = 5, SellerId = "seller-1" };
+            var productTwo = new ProductModel { Id = 2, Title = "Item Two", Price = 8, Stock = 5, SellerId = "seller-1" };
+            var itemOne = new CartDisplayItem(productOne, 1, "Default", 12, 12, true, 5, new Dictionary<string, string>());
+            var itemTwo = new CartDisplayItem(productTwo, 2, "Default", 8, 16, true, 5, new Dictionary<string, string>());
+
+            var sellerGroup = new CartSellerGroup("seller-1", "Seller One", 28, 5, 33, new List<CartDisplayItem> { itemOne, itemTwo });
+            var summary = new CartSummary(new List<CartSellerGroup> { sellerGroup }, 28, 5, Math.Max(0, 33 - discountTotal), 3, CartSettlementSummary.Empty, discountTotal);
+            var options = new List<ShippingMethodOption> { new("standard", "Standard", 5, "Standard delivery", true) };
+            var sellerOptions = new List<SellerShippingOptions> { new("seller-1", "Seller One", options) };
+            var selections = new Dictionary<string, string> { ["seller-1"] = "standard" };
 
             return new ShippingQuote(summary, sellerOptions, selections);
         }

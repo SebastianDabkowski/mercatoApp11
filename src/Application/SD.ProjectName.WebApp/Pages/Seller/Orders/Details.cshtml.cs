@@ -25,6 +25,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
         [BindProperty]
         public decimal? RefundedAmount { get; set; }
 
+        [BindProperty]
+        public List<int> SelectedItems { get; set; } = new();
+
         public DetailsModel(OrderService orderService, UserManager<ApplicationUser> userManager)
         {
             _orderService = orderService;
@@ -60,6 +63,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
                 TrackingNumber,
                 RefundedAmount,
                 TrackingCarrier,
+                SelectedItems,
                 HttpContext.RequestAborted);
 
             if (!result.Success)

@@ -1,5 +1,6 @@
 @page "/Seller/Orders/Details/{orderId:int}"
 @model SD.ProjectName.WebApp.Pages.Seller.Orders.DetailsModel
+@using SD.ProjectName.WebApp.Services
 @{
     ViewData["Title"] = "Order details";
 }
@@ -53,10 +54,12 @@ else
                             <thead>
                                 <tr>
                                     <th scope="col">Item</th>
+                                    <th scope="col">Status</th>
                                     <th scope="col" class="text-end">Qty</th>
                                     <th scope="col" class="text-end">Unit</th>
                                     <th scope="col" class="text-end">Tax</th>
                                     <th scope="col" class="text-end">Total</th>
+                                    <th scope="col" class="text-center">Update?</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -64,6 +67,28 @@ else
                                 {
                                     var lineBase = item.UnitPrice * item.Quantity;
                                     var taxes = Math.Max(0, item.LineTotal - lineBase);
+                                    var itemStatus = OrderStatuses.Normalize(item.Status);
+                                    var badgeClass = "bg-secondary";
+                                    if (itemStatus.Equals("Delivered", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        badgeClass = "bg-success";
+                                    }
+                                    else if (itemStatus.Equals("Shipped", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        badgeClass = "bg-primary";
+                                    }
+                                    else if (itemStatus.Equals("Preparing", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        badgeClass = "bg-info text-dark";
+                                    }
+                                    else if (itemStatus.Equals("Cancelled", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        badgeClass = "bg-warning text-dark";
+                                    }
+                                    else if (itemStatus.Equals("Refunded", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        badgeClass = "bg-light text-dark border";
+                                    }
                                     <tr>
                                         <td>
                                             <div class="fw-semibold">@item.Name</div>
@@ -72,10 +97,16 @@ else
                                                 <div class="text-muted small">@item.Variant</div>
                                             }
                                         </td>
+                                        <td>
+                                            <span class="badge @badgeClass">@itemStatus</span>
+                                        </td>
                                         <td class="text-end">@item.Quantity</td>
                                         <td class="text-end">@item.UnitPrice.ToString("C")</td>
                                         <td class="text-end">@taxes.ToString("C")</td>
                                         <td class="text-end">@item.LineTotal.ToString("C")</td>
+                                        <td class="text-center">
+                                            <input class="form-check-input" type="checkbox" name="SelectedItems" value="@item.ProductId" form="status-form" @(Model.SelectedItems != null && Model.SelectedItems.Contains(item.ProductId) ? "checked" : string.Empty) />
+                                        </td>
                                     </tr>
                                 }
                             </tbody>
@@ -151,7 +182,7 @@ else
                     }
                     else
                     {
-                        <form method="post" asp-page-handler="Status" asp-route-orderId="@Model.Order.Id">
+                        <form id="status-form" method="post" asp-page-handler="Status" asp-route-orderId="@Model.Order.Id">
                             <div asp-validation-summary="ModelOnly" class="text-danger small"></div>
                             <div class="mb-2">
                                 <label class="form-label form-label-sm" asp-for="NewStatus">Next status</label>
@@ -167,6 +198,7 @@ else
                                     }
                                 </select>
                                 <span asp-validation-for="NewStatus" class="text-danger small"></span>
+                                <div class="form-text">Select items in the table to apply the status; leave unchecked to update all items.</div>
                             </div>
                             <div class="mb-2">
                                 <label class="form-label form-label-sm" asp-for="TrackingNumber">Tracking (optional)</label>
