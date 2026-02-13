@@ -189,3 +189,136 @@
 
   form.addEventListener("submit", hidePanel);
 })();
+
+(() => {
+  const settings = document.querySelector("[data-push-settings]");
+  if (!settings) {
+    return;
+  }
+
+  const status = settings.querySelector("[data-push-status]");
+  const enableButton = settings.querySelector("[data-push-enable]");
+  const disableButton = settings.querySelector("[data-push-disable]");
+  const apiUrl = settings.dataset.apiUrl;
+  const publicKey = settings.dataset.publicKey;
+  const isEnabled = settings.dataset.enabled === "True" || settings.dataset.enabled === "true";
+  let isSubscribed = settings.dataset.subscribed === "True" || settings.dataset.subscribed === "true";
+
+  const setStatus = (text) => {
+    if (status) {
+      status.textContent = text;
+    }
+  };
+
+  const setButtons = () => {
+    if (!enableButton || !disableButton) {
+      return;
+    }
+
+    enableButton.disabled = !isEnabled || isSubscribed;
+    disableButton.disabled = !isEnabled || !isSubscribed;
+  };
+
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+    setStatus("Push notifications are not supported in this browser.");
+    setButtons();
+    return;
+  }
+
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
+  const ensureServiceWorker = async () => {
+    const registration = await navigator.serviceWorker.register("/service-worker.js");
+    return registration;
+  };
+
+  const ensurePermission = async () => {
+    if (Notification.permission === "granted") {
+      return true;
+    }
+
+    if (Notification.permission === "denied") {
+      return false;
+    }
+
+    const result = await Notification.requestPermission();
+    return result === "granted";
+  };
+
+  const subscribe = async () => {
+    if (!isEnabled || !apiUrl || !publicKey) {
+      setStatus("Push notifications are unavailable right now.");
+      return;
+    }
+
+    const granted = await ensurePermission();
+    if (!granted) {
+      setStatus("Permission denied. Please allow notifications in your browser.");
+      return;
+    }
+
+    const registration = await ensureServiceWorker();
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+
+    await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        endpoint: subscription.endpoint,
+        keys: subscription.toJSON().keys,
+      }),
+    });
+
+    isSubscribed = true;
+    setButtons();
+    setStatus("Push notifications enabled. You will receive alerts for key events.");
+  };
+
+  const unsubscribe = async () => {
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (registration) {
+      const existing = await registration.pushManager.getSubscription();
+      if (existing) {
+        await fetch(apiUrl, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ endpoint: existing.endpoint }),
+        });
+
+        await existing.unsubscribe();
+      }
+    }
+
+    isSubscribed = false;
+    setButtons();
+    setStatus("Push notifications disabled. You can enable them again anytime.");
+  };
+
+  setButtons();
+
+  if (enableButton) {
+    enableButton.addEventListener("click", () => {
+      subscribe().catch(() => setStatus("Unable to enable push notifications right now."));
+    });
+  }
+
+  if (disableButton) {
+    disableButton.addEventListener("click", () => {
+      unsubscribe().catch(() => setStatus("Unable to disable push notifications right now."));
+    });
+  }
+})();

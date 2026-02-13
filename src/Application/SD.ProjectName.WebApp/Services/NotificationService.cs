@@ -69,11 +69,13 @@ namespace SD.ProjectName.WebApp.Services
     {
         private const int MaxPageSize = 50;
         private readonly TimeProvider _timeProvider;
+        private readonly IPushNotificationDispatcher? _pushDispatcher;
         private readonly ConcurrentDictionary<string, List<NotificationItem>> _store = new(StringComparer.OrdinalIgnoreCase);
 
-        public NotificationService(TimeProvider timeProvider)
+        public NotificationService(TimeProvider timeProvider, IPushNotificationDispatcher? pushDispatcher = null)
         {
             _timeProvider = timeProvider;
+            _pushDispatcher = pushDispatcher;
         }
 
         public Task<NotificationFeed> GetFeedAsync(
@@ -201,6 +203,11 @@ namespace SD.ProjectName.WebApp.Services
             lock (all)
             {
                 all.Add(notification);
+            }
+
+            if (_pushDispatcher != null)
+            {
+                _ = _pushDispatcher.DispatchAsync(userId, Clone(notification), cancellationToken);
             }
 
             return Task.FromResult(notification);

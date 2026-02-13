@@ -12,6 +12,7 @@ using SD.ProjectName.Modules.Products.Infrastructure;
 using SD.ProjectName.WebApp.Data;
 using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Services;
+using WebPush;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -108,8 +109,26 @@ builder.Services.AddOptions<EmailOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<EmailOptions>(sp => sp.GetRequiredService<IOptions<EmailOptions>>().Value);
+builder.Services.AddSingleton(sp =>
+{
+    var options = new PushNotificationOptions();
+    builder.Configuration.GetSection(PushNotificationOptions.SectionName).Bind(options);
+    options.Subject ??= "mailto:support@mercato.test";
+
+    if (string.IsNullOrWhiteSpace(options.PublicKey) || string.IsNullOrWhiteSpace(options.PrivateKey))
+    {
+        var keys = VapidHelper.GenerateVapidKeys();
+        options.PublicKey ??= keys.PublicKey;
+        options.PrivateKey ??= keys.PrivateKey;
+    }
+
+    return options;
+});
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<NotificationService>();
+builder.Services.AddSingleton<PushSubscriptionStore>();
+builder.Services.AddSingleton<WebPushClient>();
+builder.Services.AddSingleton<IPushNotificationDispatcher, PushNotificationDispatcher>();
 builder.Services.AddScoped<ISessionTokenService, DistributedSessionTokenService>();
 builder.Services.AddScoped<ILoginAuditService, LoginAuditService>();
 builder.Services.AddScoped<SessionCookieEvents>();
