@@ -103,6 +103,7 @@
             const shippingTotal = document.getElementById('cart-shipping-total');
             const grandTotal = document.getElementById('cart-grand-total');
             const totalQuantity = document.getElementById('cart-total-quantity');
+            const checkoutButton = document.getElementById('checkout-button');
 
             const formatMoney = (value) => new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(value || 0);
 
@@ -259,6 +260,10 @@
                 sendUpdate(payload, itemRow, true).finally(() => {
                     button.disabled = false;
                 });
+            });
+
+            checkoutButton?.addEventListener('click', () => {
+                window.location.href = '/Checkout/Address';
             });
 
             ensureVisibility();
