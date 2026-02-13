@@ -48,20 +48,22 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
 
             SavedAddresses = await LoadSavedAddressesAsync();
             var state = _checkoutStateService.Get(HttpContext);
-            if (state?.Address != null)
+            if (SavedAddresses.Count > 0)
+            {
+                var selected = FindSavedAddress(state)
+                    ?? SavedAddresses.FirstOrDefault(a => a.IsDefault && IsAddressComplete(a.Address))
+                    ?? SavedAddresses.FirstOrDefault(a => IsAddressComplete(a.Address));
+                if (selected != null)
+                {
+                    Input.SavedAddressKey = selected.Key;
+                    Input.NewAddress = AddressForm.From(selected.Address);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(Input.SavedAddressKey) && state?.Address != null)
             {
                 Input.SavedAddressKey = state.SavedAddressKey;
                 Input.NewAddress = AddressForm.From(state.Address);
-            }
-            else if (SavedAddresses.Count > 0)
-            {
-                var firstComplete = SavedAddresses.FirstOrDefault(a => a.IsDefault && IsAddressComplete(a.Address))
-                    ?? SavedAddresses.FirstOrDefault(a => IsAddressComplete(a.Address));
-                if (firstComplete != null)
-                {
-                    Input.SavedAddressKey = firstComplete.Key;
-                    Input.NewAddress = AddressForm.From(firstComplete.Address);
-                }
             }
 
             return Page();
@@ -184,6 +186,18 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 .ToList();
         }
 
+        private SavedAddressOption? FindSavedAddress(CheckoutState? state)
+        {
+            if (state?.Address == null || SavedAddresses.Count == 0)
+            {
+                return null;
+            }
+
+            return SavedAddresses.FirstOrDefault(a =>
+                (!string.IsNullOrWhiteSpace(state.SavedAddressKey) && string.Equals(a.Key, state.SavedAddressKey, StringComparison.OrdinalIgnoreCase))
+                || AddressesEqual(a.Address, state.Address));
+        }
+
         private async Task<List<string>> FindBlockedSellersAsync(string country)
         {
             if (string.IsNullOrWhiteSpace(country) || Summary.IsEmpty)
@@ -238,6 +252,20 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 && !string.IsNullOrWhiteSpace(address.PostalCode)
                 && !string.IsNullOrWhiteSpace(address.Country)
                 && !string.IsNullOrWhiteSpace(address.Phone);
+        }
+
+        private static bool AddressesEqual(DeliveryAddress first, DeliveryAddress second)
+        {
+            static bool Same(string? left, string? right) => string.Equals((left ?? string.Empty).Trim(), (right ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase);
+
+            return Same(first.Recipient, second.Recipient)
+                && Same(first.Line1, second.Line1)
+                && Same(first.Line2, second.Line2)
+                && Same(first.City, second.City)
+                && Same(first.State, second.State)
+                && Same(first.PostalCode, second.PostalCode)
+                && Same(first.Country, second.Country)
+                && Same(first.Phone, second.Phone);
         }
 
         private static string BuildProfileAddress(DeliveryAddress address)
