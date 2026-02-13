@@ -906,6 +906,7 @@ namespace SD.ProjectName.WebApp.Services
         private readonly CaseSlaOptions _caseSlaOptions;
         private readonly CommissionCalculator _commissionCalculator;
         private readonly ShippingProviderService _shippingProviderService;
+        private readonly EmailOptions _emailOptions;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -923,7 +924,8 @@ namespace SD.ProjectName.WebApp.Services
             SettlementOptions? settlementOptions = null,
             InvoiceOptions? invoiceOptions = null,
             ShippingProviderService? shippingProviderService = null,
-            CaseSlaOptions? caseSlaOptions = null)
+            CaseSlaOptions? caseSlaOptions = null,
+            EmailOptions? emailOptions = null)
         {
             _dbContext = dbContext;
             _emailSender = emailSender;
@@ -936,6 +938,7 @@ namespace SD.ProjectName.WebApp.Services
             _caseSlaOptions = caseSlaOptions ?? new CaseSlaOptions();
             _commissionCalculator = new CommissionCalculator(_cartOptions);
             _shippingProviderService = shippingProviderService ?? new ShippingProviderService(new ShippingProviderOptions(), TimeProvider.System, NullLogger<ShippingProviderService>.Instance);
+            _emailOptions = emailOptions ?? new EmailOptions();
         }
 
         public async Task<OrderCreationResult> EnsureOrderAsync(
@@ -1045,6 +1048,8 @@ namespace SD.ProjectName.WebApp.Services
             CancellationToken cancellationToken)
         {
             var details = DeserializeDetails(order.DetailsJson);
+            var previousRefunded = details.PaymentRefundedAmount;
+            var previousPaymentStatus = details.PaymentStatus;
             var normalizedMessage = string.IsNullOrWhiteSpace(paymentMessage)
                 ? PaymentStatusMapper.BuildBuyerMessage(normalizedPaymentStatus)
                 : paymentMessage.Trim();
@@ -1107,6 +1112,13 @@ namespace SD.ProjectName.WebApp.Services
             {
                 order.DetailsJson = JsonSerializer.Serialize(updatedDetails, _serializerOptions);
                 await _dbContext.SaveChangesAsync(cancellationToken);
+                var refundIncreased = updatedDetails.PaymentRefundedAmount > previousRefunded;
+                var changedToRefunded = !string.Equals(previousPaymentStatus, PaymentStatuses.Refunded, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(updatedDetails.PaymentStatus, PaymentStatuses.Refunded, StringComparison.OrdinalIgnoreCase);
+                if (refundIncreased || changedToRefunded)
+                {
+                    await SendRefundEmailAsync(order, updatedDetails.PaymentRefundedAmount, normalizedMessage);
+                }
             }
 
             return order;
@@ -4507,6 +4519,8 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             var details = DeserializeDetails(order.DetailsJson);
+            var previousRefunded = details.PaymentRefundedAmount;
+            var previousPaymentStatus = details.PaymentStatus;
             var subOrder = details.SubOrders.FirstOrDefault(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
             if (subOrder == null)
             {
@@ -4697,6 +4711,14 @@ namespace SD.ProjectName.WebApp.Services
             order.Status = CalculateOrderStatus(details.SubOrders, order.Status);
             order.DetailsJson = JsonSerializer.Serialize(details, _serializerOptions);
             await _dbContext.SaveChangesAsync(cancellationToken);
+
+            var refundIncreased = details.PaymentRefundedAmount > previousRefunded;
+            var changedToRefunded = !string.Equals(previousPaymentStatus, PaymentStatuses.Refunded, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(details.PaymentStatus, PaymentStatuses.Refunded, StringComparison.OrdinalIgnoreCase);
+            if (refundIncreased || changedToRefunded)
+            {
+                await SendRefundEmailAsync(order, details.PaymentRefundedAmount, details.PaymentStatusMessage);
+            }
 
             if (statusChanged && string.Equals(updatedStatus, OrderStatuses.Shipped, StringComparison.OrdinalIgnoreCase))
             {
@@ -5654,6 +5676,51 @@ namespace SD.ProjectName.WebApp.Services
             return Math.Round(refund, 2, MidpointRounding.AwayFromZero);
         }
 
+        private async Task SendBuyerEmailAsync(string to, string subject, string bodyHtml, string category, CultureInfo? culture = null)
+        {
+            if (string.IsNullOrWhiteSpace(to))
+            {
+                return;
+            }
+
+            var wrappedBody = EmailTemplateBuilder.Wrap(subject, bodyHtml, _emailOptions, culture);
+            _logger.LogInformation("Sending {Category} email to {Recipient} from {Sender}", category, to, _emailOptions.FromAddress);
+            try
+            {
+                await _emailSender.SendEmailAsync(to, subject, wrappedBody);
+                _logger.LogInformation("{Category} email sent to {Recipient}", category, to);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send {Category} email to {Recipient}", category, to);
+            }
+        }
+
+        private async Task SendRefundEmailAsync(OrderRecord order, decimal refundedAmount, string? message)
+        {
+            if (refundedAmount <= 0 || string.IsNullOrWhiteSpace(order.BuyerEmail))
+            {
+                return;
+            }
+
+            var culture = CultureInfo.CurrentCulture;
+            var builder = new StringBuilder();
+            builder.Append($"<p>We processed your refund for order {order.OrderNumber}.</p>");
+            builder.Append($"<p>Amount: {EmailTemplateBuilder.FormatCurrency(refundedAmount, culture)}.");
+            if (!string.IsNullOrWhiteSpace(order.PaymentReference))
+            {
+                builder.Append($" Payment reference: {order.PaymentReference}.");
+            }
+
+            builder.Append("</p>");
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                builder.Append($"<p>{message}</p>");
+            }
+
+            await SendBuyerEmailAsync(order.BuyerEmail, $"Refund processed for order {order.OrderNumber}", builder.ToString(), "refund", culture);
+        }
+
         private async Task SendConfirmationEmailAsync(OrderRecord order, DeliveryAddress address, OrderDetailsPayload details, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(order.BuyerEmail))
@@ -5664,7 +5731,7 @@ namespace SD.ProjectName.WebApp.Services
             try
             {
                 var body = BuildEmailBody(order, address, details);
-                await _emailSender.SendEmailAsync(order.BuyerEmail, $"Order confirmation {order.OrderNumber}", body);
+                await SendBuyerEmailAsync(order.BuyerEmail, $"Order confirmation {order.OrderNumber}", body, "order_confirmation", CultureInfo.CurrentCulture);
             }
             catch (Exception ex)
             {
@@ -5687,7 +5754,6 @@ namespace SD.ProjectName.WebApp.Services
             try
             {
                 var builder = new StringBuilder();
-                builder.Append($"<h2>Your order {order.OrderNumber} has shipped</h2>");
                 builder.Append($"<p>{subOrder.SellerName} marked sub-order {subOrder.SubOrderNumber} as shipped.</p>");
 
                 if (!string.IsNullOrWhiteSpace(subOrder.ShippingDetail.MethodLabel))
@@ -5720,7 +5786,7 @@ namespace SD.ProjectName.WebApp.Services
                     builder.Append($"<p><a href=\"{subOrder.TrackingUrl}\" target=\"_blank\" rel=\"noopener\">Track your shipment</a></p>");
                 }
 
-                await _emailSender.SendEmailAsync(order.BuyerEmail, $"Order {order.OrderNumber} shipped", builder.ToString());
+                await SendBuyerEmailAsync(order.BuyerEmail, $"Order {order.OrderNumber} shipped", builder.ToString(), "shipping_update", CultureInfo.CurrentCulture);
             }
             catch (Exception ex)
             {
@@ -5782,21 +5848,22 @@ namespace SD.ProjectName.WebApp.Services
 
         private static string BuildEmailBody(OrderRecord order, DeliveryAddress address, OrderDetailsPayload details)
         {
+            var culture = CultureInfo.CurrentCulture;
             var builder = new StringBuilder();
-            builder.Append($"<h2>Thank you for your order {order.OrderNumber}</h2>");
-            builder.Append($"<p>We confirmed your payment. Total: {order.GrandTotal:C}. Payment reference: {order.PaymentReference ?? "n/a"}.</p>");
+            builder.Append($"<p>We confirmed your payment for order {order.OrderNumber}.</p>");
+            builder.Append($"<p>Total: {EmailTemplateBuilder.FormatCurrency(order.GrandTotal, culture)}. Payment reference: {order.PaymentReference ?? "n/a"}.</p>");
             builder.Append("<h3>Items</h3><ul>");
             foreach (var item in details.Items)
             {
                 var variant = string.IsNullOrWhiteSpace(item.Variant) ? string.Empty : $" ({item.Variant})";
-                builder.Append($"<li>{item.Name}{variant} &times; {item.Quantity} — {item.LineTotal:C}</li>");
+                builder.Append($"<li>{item.Name}{variant} &times; {item.Quantity} — {EmailTemplateBuilder.FormatCurrency(item.LineTotal, culture)}</li>");
             }
 
             builder.Append("</ul>");
             builder.Append("<h3>Shipping</h3><ul>");
             foreach (var ship in details.Shipping)
             {
-                builder.Append($"<li>{ship.SellerName}: {ship.MethodLabel} — {ship.Cost:C}");
+                builder.Append($"<li>{ship.SellerName}: {ship.MethodLabel} — {EmailTemplateBuilder.FormatCurrency(ship.Cost, culture)}");
                 if (!string.IsNullOrWhiteSpace(ship.Description))
                 {
                     builder.Append($" <span style='color: #666;'>{ship.Description}</span>");
