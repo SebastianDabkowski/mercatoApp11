@@ -44,6 +44,11 @@ namespace SD.ProjectName.Modules.Products.Application
             return await _repository.SearchActiveProducts(search, cancellationToken);
         }
 
+        public async Task<List<ProductModel>> SearchActiveLimited(string search, int limit, CancellationToken cancellationToken = default)
+        {
+            return await _repository.SearchActiveProductsLimited(search, limit, cancellationToken);
+        }
+
         public async Task<List<ProductModel>> FilterActive(ProductFilterOptions filters, CancellationToken cancellationToken = default)
         {
             return await _repository.FilterActiveProducts(filters, cancellationToken);

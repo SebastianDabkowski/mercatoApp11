@@ -27,8 +27,20 @@
                             <a class="nav-link text-dark" asp-area="" asp-page="/Privacy">Privacy</a>
                         </li>
                     </ul>
-                    <form class="d-flex me-3" method="get" asp-page="/Products/Search" role="search">
-                        <input class="form-control me-2" type="search" name="q" value="@Context.Request.Query["q"]" placeholder="Search products..." maxlength="200" />
+                    <form class="d-flex align-items-stretch me-3" method="get" asp-page="/Products/Search" role="search" data-search-form>
+                        <div class="position-relative flex-grow-1 me-2">
+                            <input class="form-control"
+                                   type="search"
+                                   name="q"
+                                   value="@Context.Request.Query["q"]"
+                                   placeholder="Search products..."
+                                   maxlength="200"
+                                   autocomplete="off"
+                                   data-search-input
+                                   data-suggestions-url="@Url.Page("/Api/SearchSuggestions")"
+                                   data-suggestions-min="2" />
+                            <div class="search-suggestions shadow-sm" data-search-suggestions hidden></div>
+                        </div>
                         <button class="btn btn-outline-primary" type="submit">Search</button>
                     </form>
                     <partial name="_LoginPartial" />

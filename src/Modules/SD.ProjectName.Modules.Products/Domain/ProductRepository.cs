@@ -78,6 +78,24 @@ namespace SD.ProjectName.Modules.Products.Domain
             return await FilterActiveProducts(new ProductFilterOptions { Search = search }, cancellationToken);
         }
 
+        public async Task<List<ProductModel>> SearchActiveProductsLimited(string search, int limit, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(search) || limit <= 0)
+            {
+                return new List<ProductModel>();
+            }
+
+            var normalizedLimit = Math.Max(1, Math.Min(limit, 20));
+            var query = BuildFilteredQuery(
+                new ProductFilterOptions { Search = search, SortBy = ProductSortOptions.Relevance },
+                out _,
+                out _);
+
+            return await query
+                .Take(normalizedLimit)
+                .ToListAsync(cancellationToken);
+        }
+
         public async Task<List<ProductModel>> FilterActiveProducts(ProductFilterOptions filters, CancellationToken cancellationToken = default)
         {
             var query = BuildFilteredQuery(filters, out _, out _);

@@ -153,6 +153,44 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task SearchActiveProductsLimited_ShouldReturnUpToRequestedMatches()
+        {
+            await using var context = CreateContext();
+            context.Products.AddRange(
+                new ProductModel { Title = "Red Camera", Description = "DSLR", MerchantSku = "SKU-LIM-1", Price = 550, Stock = 3, Category = "Electronics", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Camera Bag", Description = "Red padded bag", MerchantSku = "SKU-LIM-2", Price = 50, Stock = 5, Category = "Accessories", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Tripod", Description = "Compact red tripod", MerchantSku = "SKU-LIM-3", Price = 40, Stock = 2, Category = "Accessories", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Blue Lens", Description = "Wide angle", MerchantSku = "SKU-LIM-4", Price = 120, Stock = 1, Category = "Electronics", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" });
+            await context.SaveChangesAsync();
+
+            var repository = new ProductRepository(context);
+
+            var results = await repository.SearchActiveProductsLimited("red", limit: 2);
+
+            Assert.Equal(2, results.Count);
+            Assert.All(results, p => Assert.Equal(ProductWorkflowStates.Active, p.WorkflowState));
+            Assert.All(results, p => Assert.True(
+                p.Title.Contains("red", StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(p.Description) && p.Description.Contains("red", StringComparison.OrdinalIgnoreCase))));
+        }
+
+        [Fact]
+        public async Task SearchActiveProductsLimited_ShouldReturnEmpty_WhenLimitInvalidOrQueryBlank()
+        {
+            await using var context = CreateContext();
+            context.Products.Add(new ProductModel { Title = "Anything", MerchantSku = "SKU-LIM-5", Price = 10, Stock = 1, Category = "Misc", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" });
+            await context.SaveChangesAsync();
+
+            var repository = new ProductRepository(context);
+
+            var noQuery = await repository.SearchActiveProductsLimited("   ", limit: 5);
+            var zeroLimit = await repository.SearchActiveProductsLimited("anything", limit: 0);
+
+            Assert.Empty(noQuery);
+            Assert.Empty(zeroLimit);
+        }
+
+        [Fact]
         public async Task FilterActiveProducts_ShouldApplyAllCriteria()
         {
             await using var context = CreateContext();
