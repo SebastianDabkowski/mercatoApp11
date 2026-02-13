@@ -5,11 +5,13 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.Modules.Products.Domain.Interfaces;
 using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Services;
+using System.Text.Json;
 
 namespace SD.ProjectName.WebApp.Pages.Seller.Products
 {
@@ -22,6 +24,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
         private readonly IProductRepository _productRepository;
         private readonly ProductImageService _productImageService;
         private readonly ProductPhotoModerationService _photoModerationService;
+        private readonly ManageCategoryAttributes _categoryAttributes;
 
         public AddModel(
             CreateProduct createProduct,
@@ -29,7 +32,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             ManageCategories categories,
             IProductRepository productRepository,
             ProductImageService productImageService,
-            ProductPhotoModerationService photoModerationService)
+            ProductPhotoModerationService photoModerationService,
+            ManageCategoryAttributes categoryAttributes)
         {
             _createProduct = createProduct;
             _userManager = userManager;
@@ -37,6 +41,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             _productRepository = productRepository;
             _productImageService = productImageService;
             _photoModerationService = photoModerationService;
+            _categoryAttributes = categoryAttributes;
         }
 
         [BindProperty]
@@ -44,6 +49,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
         public List<SelectListItem> CategoryOptions { get; private set; } = new();
         public List<string> ImagePreviews { get; private set; } = new();
+        public string AttributeTemplatesJson { get; private set; } = "[]";
+        private Dictionary<int, List<CategoryAttributeDefinition>> _templatesByCategory = new();
 
         public async Task<IActionResult> OnGet()
         {
@@ -98,6 +105,14 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Page();
             }
 
+            var templates = await _categoryAttributes.GetForCategoryAsync(Input.CategoryId.Value);
+            var attributes = ValidateAndBuildAttributes(templates, Input.AttributeValues, ModelState);
+            if (!ModelState.IsValid)
+            {
+                ImagePreviews = BuildImagesFromFields();
+                return Page();
+            }
+
             var savedImages = await SaveUploadsAsync(user.Id);
             var allImages = savedImages.ToList();
             foreach (var existing in BuildImagesFromFields())
@@ -129,6 +144,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 ShippingMethods = string.IsNullOrWhiteSpace(Input.ShippingMethods) ? null : Input.ShippingMethods.Trim(),
                 HasVariants = Input.HasVariants && variants.Any(),
                 VariantData = ProductVariantSerializer.Serialize(variants),
+                Attributes = attributes,
                 WorkflowState = ProductWorkflowStates.Draft,
                 SellerId = user.Id
             };
@@ -209,6 +225,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
             [Display(Name = "Main image")]
             public string? SelectedMainImage { get; set; }
+
+            [Display(Name = "Attributes")]
+            public Dictionary<int, string> AttributeValues { get; set; } = new();
         }
 
         private async Task LoadCategoriesAsync()
@@ -222,6 +241,18 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                     Selected = Input.CategoryId.HasValue && Input.CategoryId.Value == c.Id
                 })
                 .ToList();
+
+            _templatesByCategory = await _categoryAttributes.GetForCategoriesAsync(tree.Select(c => c.Id), includeDeprecated: false);
+            AttributeTemplatesJson = JsonSerializer.Serialize(_templatesByCategory.ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value.Select(v => new
+                {
+                    v.Id,
+                    v.Name,
+                    v.Type,
+                    v.IsRequired,
+                    v.Options
+                })));
         }
 
         private void ValidateUploads(IEnumerable<IFormFile> files)
@@ -293,6 +324,61 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
             ImagePreviews = images.Distinct().ToList();
             return ImagePreviews;
+        }
+
+        private static Dictionary<string, string> ValidateAndBuildAttributes(IEnumerable<CategoryAttributeDefinition> templates, Dictionary<int, string> values, ModelStateDictionary modelState)
+        {
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var provided = values ?? new Dictionary<int, string>();
+
+            foreach (var template in templates)
+            {
+                provided.TryGetValue(template.Id, out var rawValue);
+                var value = rawValue?.Trim();
+
+                if (template.IsRequired && string.IsNullOrWhiteSpace(value))
+                {
+                    modelState.AddModelError($"{nameof(Input)}.{nameof(Input.AttributeValues)}", $"{template.Name} is required.");
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    continue;
+                }
+
+                if (template.Type == CategoryAttributeTypes.Number && !decimal.TryParse(value, out _))
+                {
+                    modelState.AddModelError($"{nameof(Input)}.{nameof(Input.AttributeValues)}", $"{template.Name} must be a number.");
+                    continue;
+                }
+
+                if (template.Type == CategoryAttributeTypes.List)
+                {
+                    var allowed = ParseOptions(template.Options);
+                    if (allowed.Any() && !allowed.Contains(value))
+                    {
+                        modelState.AddModelError($"{nameof(Input)}.{nameof(Input.AttributeValues)}", $"{template.Name} must use an allowed option.");
+                        continue;
+                    }
+                }
+
+                result[template.Name] = value;
+            }
+
+            return result;
+        }
+
+        private static HashSet<string> ParseOptions(string? options)
+        {
+            if (string.IsNullOrWhiteSpace(options))
+            {
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            return options
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
 
         private static List<ProductVariant> BuildVariants(InputModel input)

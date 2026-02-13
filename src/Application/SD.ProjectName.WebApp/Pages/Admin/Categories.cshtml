@@ -71,6 +71,7 @@
                         <td>@category.ProductCount</td>
                         <td>
                             <div class="d-flex flex-wrap">
+                                <a asp-page="CategoryAttributes" asp-route-id="@category.Id" class="btn btn-sm btn-outline-primary mr-2 mb-2">Attributes</a>
                                 <form method="post" asp-page-handler="Rename" class="form-inline mr-2 mb-2">
                                     <input type="hidden" asp-for="RenameInput.Id" value="@category.Id" />
                                     <input name="RenameInput.Name" class="form-control form-control-sm mr-2" value="@category.Name" />

@@ -22,6 +22,8 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
         public DbSet<ProductModerationAudit> ProductModerationAudits { get; set; }
         public DbSet<ProductPhoto> ProductPhotos { get; set; }
         public DbSet<ProductPhotoModerationAudit> ProductPhotoModerationAudits { get; set; }
+        public DbSet<CategoryAttributeDefinition> CategoryAttributeDefinitions { get; set; }
+        public DbSet<CategoryAttributeUsage> CategoryAttributeUsages { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -40,6 +42,7 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                 entity.Property(p => p.WidthCm).HasColumnType("decimal(18,3)");
                 entity.Property(p => p.HeightCm).HasColumnType("decimal(18,3)");
                 entity.Property(p => p.ShippingMethods).HasMaxLength(200);
+                entity.Property(p => p.AttributeData).HasMaxLength(4000);
                 entity.Property(p => p.HasVariants).HasDefaultValue(false);
                 entity.Property(p => p.VariantData).HasMaxLength(8000);
                 entity.Property(p => p.IsSellerBlocked)
@@ -89,6 +92,29 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                       .OnDelete(DeleteBehavior.Restrict);
                 entity.HasIndex(c => new { c.ParentId, c.SortOrder });
                 entity.HasIndex(c => new { c.ParentId, c.Slug }).IsUnique();
+            });
+
+            modelBuilder.Entity<CategoryAttributeDefinition>(entity =>
+            {
+                entity.ToTable("CategoryAttributeDefinition");
+                entity.Property(a => a.Name).HasMaxLength(120).IsRequired();
+                entity.Property(a => a.Type).HasMaxLength(32).IsRequired();
+                entity.Property(a => a.Options).HasMaxLength(1000);
+                entity.HasIndex(a => new { a.Name, a.Type });
+            });
+
+            modelBuilder.Entity<CategoryAttributeUsage>(entity =>
+            {
+                entity.ToTable("CategoryAttributeUsage");
+                entity.HasOne(u => u.Category)
+                      .WithMany()
+                      .HasForeignKey(u => u.CategoryId)
+                      .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(u => u.Definition)
+                      .WithMany(d => d.Usages)
+                      .HasForeignKey(u => u.DefinitionId)
+                      .OnDelete(DeleteBehavior.Cascade);
+                entity.HasIndex(u => new { u.CategoryId, u.DefinitionId }).IsUnique();
             });
 
             modelBuilder.Entity<ProductImportJob>(entity =>

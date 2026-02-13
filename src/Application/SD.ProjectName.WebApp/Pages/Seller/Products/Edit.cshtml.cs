@@ -6,11 +6,14 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.Modules.Products.Domain.Interfaces;
 using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Services;
+using System.Text.Json;
+using System.Collections.Generic;
 
 namespace SD.ProjectName.WebApp.Pages.Seller.Products
 {
@@ -25,6 +28,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
         private readonly IProductRepository _productRepository;
         private readonly ProductImageService _productImageService;
         private readonly ProductPhotoModerationService _photoModerationService;
+        private readonly ManageCategoryAttributes _categoryAttributes;
 
         public EditModel(
             GetProducts getProducts,
@@ -34,7 +38,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             ILogger<EditModel> logger,
             IProductRepository productRepository,
             ProductImageService productImageService,
-            ProductPhotoModerationService photoModerationService)
+            ProductPhotoModerationService photoModerationService,
+            ManageCategoryAttributes categoryAttributes)
         {
             _getProducts = getProducts;
             _updateProduct = updateProduct;
@@ -44,6 +49,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             _productRepository = productRepository;
             _productImageService = productImageService;
             _photoModerationService = photoModerationService;
+            _categoryAttributes = categoryAttributes;
         }
 
         [BindProperty]
@@ -51,6 +57,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
         public List<SelectListItem> CategoryOptions { get; private set; } = new();
         public List<string> ImagePreviews { get; private set; } = new();
+        public string AttributeTemplatesJson { get; private set; } = "[]";
+        public Dictionary<string, string> LegacyAttributes { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<int, List<CategoryAttributeDefinition>> _templatesByCategory = new();
 
         public async Task<IActionResult> OnGetAsync(int id)
         {
@@ -92,6 +101,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             };
 
             await LoadCategoriesAsync(product.CategoryId);
+            await LoadAttributeTemplatesAsync(CategoryOptions.Select(o => int.Parse(o.Value)), product.CategoryId, includeDeprecatedForSelected: true);
+            MapExistingAttributes(product);
             ImagePreviews = BuildImages(product.MainImageUrl, product.GalleryImageUrls);
             Input.SelectedMainImage = product.MainImageUrl;
             return Page();
@@ -100,6 +111,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
         public async Task<IActionResult> OnPostAsync()
         {
             await LoadCategoriesAsync(Input.CategoryId);
+            var categoryIds = CategoryOptions.Select(o => int.Parse(o.Value)).ToList();
+            await LoadAttributeTemplatesAsync(categoryIds, Input.CategoryId, includeDeprecatedForSelected: true);
 
             var user = await _userManager.GetUserAsync(User);
             if (user == null)
@@ -117,6 +130,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             {
                 return Forbid();
             }
+
+            MapExistingAttributes(product);
 
             var currentImages = BuildImages(product.MainImageUrl, product.GalleryImageUrls);
             currentImages.AddRange(BuildImages(Input.MainImageUrl, Input.GalleryImageUrls));
@@ -164,6 +179,15 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Page();
             }
 
+            var templates = await _categoryAttributes.GetForCategoryAsync(Input.CategoryId.Value, includeDeprecated: true);
+            var attributes = ValidateAndBuildAttributes(templates, Input.AttributeValues, ModelState, product.Attributes ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+            if (!ModelState.IsValid)
+            {
+                ImagePreviews = currentImages;
+                Input.SelectedMainImage ??= Input.MainImageUrl ?? product.MainImageUrl;
+                return Page();
+            }
+
             var savedImages = await SaveUploadsAsync(user.Id);
             var allImages = currentImages.Concat(savedImages).Distinct().ToList();
             var mainImage = SelectMainImage(Input.SelectedMainImage ?? product.MainImageUrl, allImages);
@@ -185,6 +209,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             product.ShippingMethods = string.IsNullOrWhiteSpace(Input.ShippingMethods) ? null : Input.ShippingMethods.Trim();
             product.HasVariants = Input.HasVariants && variants.Any();
             product.VariantData = ProductVariantSerializer.Serialize(variants);
+            product.Attributes = attributes;
 
             await _updateProduct.UpdateAsync(product);
             _logger.LogInformation("Product {ProductId} updated by seller {SellerId}", product.Id, user.Id);
@@ -265,6 +290,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
             [Display(Name = "Main image")]
             public string? SelectedMainImage { get; set; }
+
+            [Display(Name = "Attributes")]
+            public Dictionary<int, string> AttributeValues { get; set; } = new();
         }
 
         private async Task LoadCategoriesAsync(int? selectedCategoryId)
@@ -290,6 +318,52 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                         Text = $"{inactive.FullPath} (inactive)",
                         Selected = true
                     });
+                }
+            }
+        }
+
+        private async Task LoadAttributeTemplatesAsync(IEnumerable<int> categoryIds, int? selectedCategoryId, bool includeDeprecatedForSelected)
+        {
+            _templatesByCategory = await _categoryAttributes.GetForCategoriesAsync(categoryIds, includeDeprecated: false);
+            if (selectedCategoryId.HasValue && includeDeprecatedForSelected)
+            {
+                var selectedTemplates = await _categoryAttributes.GetForCategoryAsync(selectedCategoryId.Value, includeDeprecated: true);
+                _templatesByCategory[selectedCategoryId.Value] = selectedTemplates;
+            }
+
+            AttributeTemplatesJson = JsonSerializer.Serialize(_templatesByCategory.ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value.Select(v => new
+                {
+                    v.Id,
+                    v.Name,
+                    v.Type,
+                    v.IsRequired,
+                    v.Options
+                })));
+        }
+
+        private void MapExistingAttributes(ProductModel product)
+        {
+            var existing = product.Attributes ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var selectedCategoryId = product.CategoryId ?? 0;
+            var templates = _templatesByCategory.TryGetValue(selectedCategoryId, out var list)
+                ? list
+                : new List<CategoryAttributeDefinition>();
+
+            foreach (var pair in existing)
+            {
+                var match = templates.FirstOrDefault(t => string.Equals(t.Name, pair.Key, StringComparison.OrdinalIgnoreCase));
+                if (match != null)
+                {
+                    if (!Input.AttributeValues.ContainsKey(match.Id))
+                    {
+                        Input.AttributeValues[match.Id] = pair.Value;
+                    }
+                }
+                else
+                {
+                    LegacyAttributes[pair.Key] = pair.Value;
                 }
             }
         }
@@ -333,6 +407,65 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             }
 
             return images.Distinct().ToList();
+        }
+
+        private static Dictionary<string, string> ValidateAndBuildAttributes(IEnumerable<CategoryAttributeDefinition> templates, Dictionary<int, string> values, ModelStateDictionary modelState, Dictionary<string, string> startingValues)
+        {
+            var result = new Dictionary<string, string>(startingValues, StringComparer.OrdinalIgnoreCase);
+            var provided = values ?? new Dictionary<int, string>();
+
+            foreach (var template in templates)
+            {
+                provided.TryGetValue(template.Id, out var rawValue);
+                var value = rawValue?.Trim();
+
+                if (template.IsRequired && !template.IsDeprecated && string.IsNullOrWhiteSpace(value))
+                {
+                    modelState.AddModelError($"{nameof(Input)}.{nameof(Input.AttributeValues)}", $"{template.Name} is required.");
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    if (result.ContainsKey(template.Name))
+                    {
+                        result.Remove(template.Name);
+                    }
+                    continue;
+                }
+
+                if (template.Type == CategoryAttributeTypes.Number && !decimal.TryParse(value, out _))
+                {
+                    modelState.AddModelError($"{nameof(Input)}.{nameof(Input.AttributeValues)}", $"{template.Name} must be a number.");
+                    continue;
+                }
+
+                if (template.Type == CategoryAttributeTypes.List)
+                {
+                    var allowed = ParseOptions(template.Options);
+                    if (allowed.Any() && !allowed.Contains(value))
+                    {
+                        modelState.AddModelError($"{nameof(Input)}.{nameof(Input.AttributeValues)}", $"{template.Name} must use an allowed option.");
+                        continue;
+                    }
+                }
+
+                result[template.Name] = value;
+            }
+
+            return result;
+        }
+
+        private static HashSet<string> ParseOptions(string? options)
+        {
+            if (string.IsNullOrWhiteSpace(options))
+            {
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            return options
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
 
         private static string? SelectMainImage(string? selectedMain, List<string> images)
