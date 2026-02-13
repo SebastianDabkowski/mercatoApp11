@@ -942,6 +942,18 @@ namespace SD.ProjectName.WebApp.Services
 
     public record SellerMonthlySettlementDetail(SellerMonthlySettlementSummary Summary, List<SellerMonthlySettlementLine> Orders);
 
+    public record CommissionSummaryRow(
+        string SellerId,
+        string SellerName,
+        int OrderCount,
+        decimal GrossTotal,
+        decimal CommissionTotal,
+        decimal PayoutTotal,
+        int AdjustmentCount,
+        decimal AdjustmentTotal);
+
+    public record CommissionSummaryDetail(CommissionSummaryRow Summary, List<SellerMonthlySettlementLine> Orders);
+
     public record SellerOrderExportResult(byte[] Content, int RowCount, int TotalMatching, bool Truncated);
 
     public record SellerOrderReportFilterOptions
@@ -4651,6 +4663,233 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             return Encoding.UTF8.GetBytes(summaryBuilder.ToString());
+        }
+
+        public async Task<List<CommissionSummaryRow>> GetCommissionSummaryAsync(
+            DateTimeOffset from,
+            DateTimeOffset to,
+            string? sellerId = null,
+            CancellationToken cancellationToken = default)
+        {
+            var (start, endInclusive) = NormalizeRange(from, to);
+            var endExclusive = endInclusive.AddTicks(1);
+            var normalizedSeller = string.IsNullOrWhiteSpace(sellerId) ? null : sellerId.Trim();
+            var sellerToken = normalizedSeller == null ? null : $"\"sellerId\":\"{normalizedSeller}\"";
+
+            var ordersQuery = _dbContext.Orders.AsNoTracking().Where(o => o.CreatedOn <= endExclusive);
+            if (!string.IsNullOrWhiteSpace(sellerToken))
+            {
+                ordersQuery = ordersQuery.Where(o => o.DetailsJson.Contains(sellerToken));
+            }
+
+            var orders = await ordersQuery
+                .OrderBy(o => o.CreatedOn)
+                .ToListAsync(cancellationToken);
+
+            var summaries = BuildCommissionSummaries(orders, start, endExclusive, normalizedSeller);
+
+            return summaries
+                .Select(s => new CommissionSummaryRow(
+                    s.Key,
+                    string.IsNullOrWhiteSpace(s.Value.SellerName) ? s.Key : s.Value.SellerName,
+                    s.Value.Count,
+                    RoundAmount(s.Value.Gross),
+                    RoundAmount(s.Value.Commission),
+                    RoundAmount(s.Value.Payout),
+                    s.Value.Adjustments,
+                    RoundAmount(s.Value.AdjustmentTotal)))
+                .OrderBy(s => s.SellerName)
+                .ToList();
+        }
+
+        public async Task<CommissionSummaryDetail?> GetCommissionSummaryDetailAsync(
+            DateTimeOffset from,
+            DateTimeOffset to,
+            string sellerId,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return null;
+            }
+
+            var normalizedSeller = sellerId.Trim();
+            var (start, endInclusive) = NormalizeRange(from, to);
+            var endExclusive = endInclusive.AddTicks(1);
+            var sellerToken = $"\"sellerId\":\"{normalizedSeller}\"";
+
+            var orders = await _dbContext.Orders.AsNoTracking()
+                .Where(o => o.CreatedOn <= endExclusive && o.DetailsJson.Contains(sellerToken))
+                .OrderBy(o => o.CreatedOn)
+                .ToListAsync(cancellationToken);
+
+            var summaryLookup = BuildCommissionSummaries(orders, start, endExclusive, normalizedSeller);
+            summaryLookup.TryGetValue(normalizedSeller, out var summaryAcc);
+            var summary = summaryAcc == null
+                ? new CommissionSummaryRow(normalizedSeller, normalizedSeller, 0, 0, 0, 0, 0, 0)
+                : new CommissionSummaryRow(
+                    normalizedSeller,
+                    string.IsNullOrWhiteSpace(summaryAcc.SellerName) ? normalizedSeller : summaryAcc.SellerName,
+                    summaryAcc.Count,
+                    RoundAmount(summaryAcc.Gross),
+                    RoundAmount(summaryAcc.Commission),
+                    RoundAmount(summaryAcc.Payout),
+                    summaryAcc.Adjustments,
+                    RoundAmount(summaryAcc.AdjustmentTotal));
+
+            var lines = new List<SellerMonthlySettlementLine>();
+            var sellerName = summary.SellerName;
+
+            foreach (var order in orders)
+            {
+                var details = DeserializeDetails(order.DetailsJson);
+                var subOrder = (details.SubOrders ?? new List<OrderSubOrder>())
+                    .FirstOrDefault(s => string.Equals(s.SellerId, normalizedSeller, StringComparison.OrdinalIgnoreCase));
+                if (subOrder == null)
+                {
+                    continue;
+                }
+
+                var allocations = details.Escrow ?? new List<EscrowAllocation>();
+                var allocation = ResolveAllocationForSubOrder(allocations, subOrder);
+                var payoutOn = allocation == null ? order.CreatedOn : ResolvePayoutDate(allocation, order.CreatedOn);
+                if (payoutOn < start || payoutOn >= endExclusive)
+                {
+                    continue;
+                }
+
+                sellerName = string.IsNullOrWhiteSpace(subOrder.SellerName) ? sellerName : subOrder.SellerName;
+                var gross = allocation?.HeldAmount ?? subOrder.GrandTotal;
+                var commission = allocation?.CommissionAmount ?? 0;
+                var payout = allocation?.ReleasedToSeller > 0
+                    ? allocation.ReleasedToSeller
+                    : allocation?.SellerPayoutAmount ?? Math.Max(0, gross - commission);
+                var status = PayoutStatuses.Normalize(allocation?.PayoutStatus);
+                var isAdjustment = order.CreatedOn < start;
+
+                lines.Add(new SellerMonthlySettlementLine(
+                    order.Id,
+                    order.OrderNumber,
+                    subOrder.SubOrderNumber,
+                    payoutOn,
+                    order.CreatedOn,
+                    gross,
+                    commission,
+                    payout,
+                    status,
+                    isAdjustment));
+            }
+
+            var finalizedSummary = summary with { SellerName = sellerName };
+            return new CommissionSummaryDetail(finalizedSummary, lines.OrderByDescending(l => l.PayoutOn).ToList());
+        }
+
+        public async Task<byte[]> ExportCommissionSummaryAsync(
+            DateTimeOffset from,
+            DateTimeOffset to,
+            CancellationToken cancellationToken = default)
+        {
+            var summaries = await GetCommissionSummaryAsync(from, to, null, cancellationToken);
+            var builder = new StringBuilder();
+            builder.AppendLine("SellerId,SellerName,Orders,Gross,Commission,Payout,Adjustments,AdjustmentTotal,PeriodStart,PeriodEnd");
+
+            foreach (var summary in summaries)
+            {
+                builder.AppendLine(string.Join(",", new[]
+                {
+                    CsvEscape(summary.SellerId),
+                    CsvEscape(summary.SellerName),
+                    summary.OrderCount.ToString(CultureInfo.InvariantCulture),
+                    summary.GrossTotal.ToString("F2", CultureInfo.InvariantCulture),
+                    summary.CommissionTotal.ToString("F2", CultureInfo.InvariantCulture),
+                    summary.PayoutTotal.ToString("F2", CultureInfo.InvariantCulture),
+                    summary.AdjustmentCount.ToString(CultureInfo.InvariantCulture),
+                    summary.AdjustmentTotal.ToString("F2", CultureInfo.InvariantCulture),
+                    CsvEscape(from.ToString("u", CultureInfo.InvariantCulture)),
+                    CsvEscape(to.ToString("u", CultureInfo.InvariantCulture))
+                }));
+            }
+
+            return Encoding.UTF8.GetBytes(builder.ToString());
+        }
+
+        private record CommissionAccumulator(
+            string SellerName,
+            int Count,
+            decimal Gross,
+            decimal Commission,
+            decimal Payout,
+            int Adjustments,
+            decimal AdjustmentTotal);
+
+        private static (DateTimeOffset Start, DateTimeOffset End) NormalizeRange(DateTimeOffset from, DateTimeOffset to)
+        {
+            if (from > to)
+            {
+                (from, to) = (to, from);
+            }
+
+            return (from, to);
+        }
+
+        private Dictionary<string, CommissionAccumulator> BuildCommissionSummaries(
+            List<OrderRecord> orders,
+            DateTimeOffset startInclusive,
+            DateTimeOffset endExclusive,
+            string? normalizedSeller)
+        {
+            var summaries = new Dictionary<string, CommissionAccumulator>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var order in orders)
+            {
+                var details = DeserializeDetails(order.DetailsJson);
+                var subOrders = details.SubOrders ?? new List<OrderSubOrder>();
+                var allocations = details.Escrow ?? new List<EscrowAllocation>();
+
+                foreach (var subOrder in subOrders)
+                {
+                    if (normalizedSeller != null && !string.Equals(subOrder.SellerId, normalizedSeller, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    var allocation = ResolveAllocationForSubOrder(allocations, subOrder);
+                    var payoutOn = allocation == null ? order.CreatedOn : ResolvePayoutDate(allocation, order.CreatedOn);
+                    if (payoutOn < startInclusive || payoutOn >= endExclusive)
+                    {
+                        continue;
+                    }
+
+                    var key = subOrder.SellerId ?? string.Empty;
+                    var sellerName = string.IsNullOrWhiteSpace(subOrder.SellerName) ? key : subOrder.SellerName;
+                    var gross = allocation?.HeldAmount ?? subOrder.GrandTotal;
+                    var commission = allocation?.CommissionAmount ?? 0;
+                    var payout = allocation?.ReleasedToSeller > 0
+                        ? allocation.ReleasedToSeller
+                        : allocation?.SellerPayoutAmount ?? Math.Max(0, gross - commission);
+                    var isAdjustment = order.CreatedOn < startInclusive;
+
+                    if (!summaries.TryGetValue(key, out var acc))
+                    {
+                        acc = new CommissionAccumulator(sellerName, 0, 0, 0, 0, 0, 0);
+                    }
+
+                    acc = acc with
+                    {
+                        SellerName = string.IsNullOrWhiteSpace(acc.SellerName) ? sellerName : acc.SellerName,
+                        Count = acc.Count + 1,
+                        Gross = acc.Gross + gross,
+                        Commission = acc.Commission + commission,
+                        Payout = acc.Payout + payout,
+                        Adjustments = acc.Adjustments + (isAdjustment ? 1 : 0),
+                        AdjustmentTotal = acc.AdjustmentTotal + (isAdjustment ? payout : 0)
+                    };
+
+                    summaries[key] = acc;
+                }
+            }
+
+            return summaries;
         }
 
         public async Task<List<CommissionInvoiceSummaryView>> GetCommissionInvoicesForSellerAsync(
