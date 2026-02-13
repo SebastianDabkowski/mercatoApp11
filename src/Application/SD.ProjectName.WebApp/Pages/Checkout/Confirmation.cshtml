@@ -2,6 +2,15 @@
 @model SD.ProjectName.WebApp.Pages.Checkout.ConfirmationModel
 @{
     ViewData["Title"] = "Order confirmed";
+    var alertClass = "alert-success";
+    if (Model.Order?.Status != null && Model.Order.Status.Equals("Cancelled", StringComparison.OrdinalIgnoreCase))
+    {
+        alertClass = "alert-warning";
+    }
+    else if (Model.Order?.Status != null && Model.Order.Status.Equals("Refunded", StringComparison.OrdinalIgnoreCase))
+    {
+        alertClass = "alert-info";
+    }
 }
 
 <h1 class="mb-3">Order confirmed</h1>
@@ -10,8 +19,8 @@
     <div class="text-muted mb-2">Order #@Model.Order.OrderNumber · placed @Model.Order.CreatedOn.ToLocalTime().ToString("d")</div>
 }
 
-<div class="alert alert-success">
-    <strong>Payment confirmed.</strong> Your order is being prepared.
+<div class="alert @alertClass">
+    <strong>Order status: @(Model.Order?.Status ?? "Processing").</strong> We’ll keep you posted as it updates.
     @if (!string.IsNullOrWhiteSpace(Model.PaymentReference))
     {
         <div class="small text-muted">Reference: @Model.PaymentReference</div>
@@ -41,6 +50,15 @@
                                     <div class="fw-semibold">@sub.SellerName</div>
                                     <div class="text-muted small">Sub-order @sub.SubOrderNumber</div>
                                     <div class="text-muted small">Shipping: @sub.ShippingDetail.MethodLabel (@sub.ShippingDetail.Cost.ToString("C"))</div>
+                                    <div class="text-muted small">Status: @sub.Status</div>
+                                    @if (!string.IsNullOrWhiteSpace(sub.TrackingNumber))
+                                    {
+                                        <div class="text-muted small">Tracking: @sub.TrackingNumber</div>
+                                    }
+                                    @if (sub.RefundedAmount > 0)
+                                    {
+                                        <div class="text-danger small">Refunded: @sub.RefundedAmount.ToString("C")</div>
+                                    }
                                 </div>
                                 <div class="text-end">
                                     <div class="fw-semibold">@sub.GrandTotal.ToString("C")</div>
@@ -137,6 +155,15 @@
                                 @if (!string.IsNullOrWhiteSpace(sub.ShippingDetail.Description))
                                 {
                                     <div class="text-muted small">Estimated: @sub.ShippingDetail.Description</div>
+                                }
+                                <div class="text-muted small">Status: @sub.Status</div>
+                                @if (!string.IsNullOrWhiteSpace(sub.TrackingNumber))
+                                {
+                                    <div class="text-muted small">Tracking: @sub.TrackingNumber</div>
+                                }
+                                @if (sub.RefundedAmount > 0)
+                                {
+                                    <div class="text-danger small">Refunded: @sub.RefundedAmount.ToString("C")</div>
                                 }
                             </li>
                         }
