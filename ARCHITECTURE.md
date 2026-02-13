@@ -115,6 +115,7 @@ Keep this list updated whenever ADRs are added or changed so this document mirro
 ## Documentation Sync Rules
 - Update this file in the same PR when module boundaries, data flows, or infrastructure change; add relevant ADR ids to the ADR Traceability section.
 - When an ADR is added or its status changes, add it to ADR Traceability and ensure the record exists in `docs/adr`.
+- Run ADR validation before merge; when a decision lacks an ADR, create it and update ADR Traceability/AGENT.md in the same PR.
 - If agent ownership or responsibilities shift, update `AGENT.md` alongside architecture updates.
 
 # Useful Paths

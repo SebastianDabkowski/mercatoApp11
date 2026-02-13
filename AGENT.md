@@ -334,15 +334,15 @@ PRs affecting architecture require:
 
 If behavior or responsibilities change:
 
-\- Update Architecture.md in the same PR when module boundaries, cross-cutting flows, or infrastructure change, and reference the relevant ADR id.
+\- Auto-update Architecture.md in the same PR when module boundaries, cross-cutting flows, or infrastructure change, and reference the relevant ADR id.
 
-\- Update AGENT.md whenever an agent is added, removed, or its responsibilities shift.
+\- Auto-update AGENT.md whenever an agent is added, removed, or its responsibilities shift.
 
 \- Update PRD if scope changes.
 
 \- Add or update an ADR in `docs/adr` for every architectural decision and keep status current (Proposed / Accepted).
 
-\- Run an ADR validation pass before merge: confirm architecture changes are covered by an ADR and Architecture.md/AGENT.md are synchronized.
+\- Run an ADR validation pass before merge: confirm architecture changes are covered by an ADR, Architecture.md/AGENT.md are synchronized, and create the missing ADR immediately when gaps are found.
 
 
 
@@ -387,4 +387,3 @@ The multi-agent setup is successful when:
 \- Backend is clean, tested, and modular.
 
 \- MVP scope remains controlled and achievable.
-
