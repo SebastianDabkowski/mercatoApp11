@@ -268,7 +268,12 @@ namespace SD.ProjectName.WebApp.Pages.Api
 
         private static CartTotalsDto ToTotals(CartSummary summary)
         {
-            return new CartTotalsDto(summary.GrandTotal, summary.TotalQuantity, summary.SellerGroups.Select(g => new CartSellerTotalsDto(g.SellerId, g.Subtotal)).ToList());
+            return new CartTotalsDto(
+                summary.ItemsSubtotal,
+                summary.ShippingTotal,
+                summary.GrandTotal,
+                summary.TotalQuantity,
+                summary.SellerGroups.Select(g => new CartSellerTotalsDto(g.SellerId, g.Subtotal, g.Shipping, g.Total)).ToList());
         }
     }
 
@@ -299,9 +304,9 @@ namespace SD.ProjectName.WebApp.Pages.Api
         public Dictionary<string, string>? VariantAttributes { get; init; }
     }
 
-    public record CartTotalsDto(decimal GrandTotal, int TotalQuantity, List<CartSellerTotalsDto> Sellers);
+    public record CartTotalsDto(decimal ItemsSubtotal, decimal ShippingTotal, decimal GrandTotal, int TotalQuantity, List<CartSellerTotalsDto> Sellers);
 
-    public record CartSellerTotalsDto(string SellerId, decimal Subtotal);
+    public record CartSellerTotalsDto(string SellerId, decimal Subtotal, decimal Shipping, decimal Total);
 
     public record CartUpdateResponse(bool Success, string Message, bool Removed, int Quantity, decimal LineTotal, int AvailableStock, CartTotalsDto Totals);
 }

@@ -22,6 +22,7 @@
                         <div class="text-muted small d-flex align-items-center gap-3">
                             <span><span class="seller-item-count">@group.Items.Count</span> item(s)</span>
                             <span>Subtotal: <span class="seller-subtotal">@group.Subtotal.ToString("C")</span></span>
+                            <span>Shipping: <span class="seller-shipping">@group.Shipping.ToString("C")</span></span>
                         </div>
                     </div>
                     <ul class="list-group list-group-flush">
@@ -71,8 +72,17 @@
                 <div class="card-body">
                     <h5 class="card-title">Order summary</h5>
                     <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span>Items total</span>
-                        <span id="cart-grand-total">@Model.GrandTotal.ToString("C")</span>
+                        <span>Items subtotal</span>
+                        <span id="cart-items-subtotal">@Model.ItemsSubtotal.ToString("C")</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>Shipping</span>
+                        <span id="cart-shipping-total">@Model.ShippingTotal.ToString("C")</span>
+                    </div>
+                    <hr class="my-2" />
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>Total</strong>
+                        <strong id="cart-grand-total">@Model.GrandTotal.ToString("C")</strong>
                     </div>
                     <div class="text-muted small mb-3">Items: <span id="cart-total-quantity">@Model.TotalQuantity</span></div>
                     <button type="button" class="btn btn-primary w-100" id="checkout-button">Proceed to checkout</button>
@@ -89,6 +99,8 @@
             const summaryCard = document.getElementById('cart-summary');
             const emptyState = document.getElementById('cart-empty');
             const feedback = document.getElementById('cart-feedback');
+            const itemsSubtotal = document.getElementById('cart-items-subtotal');
+            const shippingTotal = document.getElementById('cart-shipping-total');
             const grandTotal = document.getElementById('cart-grand-total');
             const totalQuantity = document.getElementById('cart-total-quantity');
 
@@ -112,6 +124,12 @@
 
             const updateSummary = (totals) => {
                 if (!totals) return;
+                if (itemsSubtotal) {
+                    itemsSubtotal.textContent = formatMoney(totals.itemsSubtotal ?? 0);
+                }
+                if (shippingTotal) {
+                    shippingTotal.textContent = formatMoney(totals.shippingTotal ?? 0);
+                }
                 if (grandTotal) {
                     grandTotal.textContent = formatMoney(totals.grandTotal || 0);
                 }
@@ -122,8 +140,12 @@
                     totals.sellers.forEach(seller => {
                         const card = document.querySelector(`[data-seller-id="${seller.sellerId}"]`);
                         const subtotalEl = card?.querySelector('.seller-subtotal');
+                        const shippingEl = card?.querySelector('.seller-shipping');
                         if (subtotalEl) {
                             subtotalEl.textContent = formatMoney(seller.subtotal);
+                        }
+                        if (shippingEl && typeof seller.shipping === 'number') {
+                            shippingEl.textContent = formatMoney(seller.shipping);
                         }
                     });
                 }

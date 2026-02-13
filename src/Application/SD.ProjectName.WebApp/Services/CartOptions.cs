@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace SD.ProjectName.WebApp.Services
@@ -15,5 +16,27 @@ namespace SD.ProjectName.WebApp.Services
 
         [Range(1, 365)]
         public int CookieLifespanDays { get; set; } = 30;
+
+        public decimal DefaultShippingBase { get; set; } = 0;
+
+        public decimal DefaultShippingPerItem { get; set; } = 0;
+
+        public decimal? DefaultFreeShippingThreshold { get; set; }
+
+        [Range(0, 1)]
+        public decimal PlatformCommissionRate { get; set; } = 0.1m;
+
+        public List<CartShippingRule> ShippingRules { get; set; } = new();
+    }
+
+    public class CartShippingRule
+    {
+        public string SellerId { get; set; } = string.Empty;
+
+        public decimal BaseRate { get; set; }
+
+        public decimal PerItemRate { get; set; }
+
+        public decimal? FreeShippingThreshold { get; set; }
     }
 }
