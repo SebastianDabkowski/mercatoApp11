@@ -14,12 +14,18 @@ namespace SD.ProjectName.WebApp.Pages.Seller
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IOptions<KycOptions> _kycOptions;
         private readonly IPayoutEncryptionService _payoutEncryption;
+        private readonly IOptions<SellerInternalUserOptions> _internalUserOptions;
 
-        public DashboardModel(UserManager<ApplicationUser> userManager, IOptions<KycOptions> kycOptions, IPayoutEncryptionService payoutEncryption)
+        public DashboardModel(
+            UserManager<ApplicationUser> userManager,
+            IOptions<KycOptions> kycOptions,
+            IPayoutEncryptionService payoutEncryption,
+            IOptions<SellerInternalUserOptions> internalUserOptions)
         {
             _userManager = userManager;
             _kycOptions = kycOptions;
             _payoutEncryption = payoutEncryption;
+            _internalUserOptions = internalUserOptions;
         }
 
         public string AccountStatus { get; private set; } = AccountStatuses.Unverified;
@@ -57,6 +63,10 @@ namespace SD.ProjectName.WebApp.Pages.Seller
 
         public bool HasValidPayoutSettings { get; private set; }
 
+        public bool InternalUsersEnabled => _internalUserOptions.Value.Enabled;
+
+        public bool IsStoreOwner { get; private set; }
+
         public string? PayoutMethod { get; private set; }
 
         public string? MaskedBankAccount { get; private set; }
@@ -82,6 +92,10 @@ namespace SD.ProjectName.WebApp.Pages.Seller
             ContactWebsite = user.ContactWebsite;
             StoreLogoPath = user.StoreLogoPath;
             PopulatePayout(user);
+            if (InternalUsersEnabled)
+            {
+                IsStoreOwner = await _userManager.IsInRoleAsync(user, SellerInternalRoles.StoreOwner);
+            }
             return Page();
         }
 

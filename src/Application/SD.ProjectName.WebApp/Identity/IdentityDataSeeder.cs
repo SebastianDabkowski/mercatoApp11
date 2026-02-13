@@ -8,7 +8,7 @@ namespace SD.ProjectName.WebApp.Identity
         {
             var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
 
-            foreach (var role in AccountTypes.Allowed)
+            foreach (var role in AccountTypes.Allowed.Concat(SellerInternalRoles.Allowed))
             {
                 if (!await roleManager.RoleExistsAsync(role))
                 {

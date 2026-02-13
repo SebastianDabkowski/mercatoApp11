@@ -10,6 +10,13 @@
 <h1 class="display-6">Seller dashboard</h1>
 <p class="lead">Manage your listings and track buyer activity.</p>
 
+@if (Model.InternalUsersEnabled && Model.IsStoreOwner)
+{
+    <div class="alert alert-info">
+        Manage internal users for your store: <a class="alert-link" href="~/Seller/Team">Open team management</a>.
+    </div>
+}
+
 @if (!string.Equals(Model.AccountStatus, AccountStatuses.Verified, StringComparison.OrdinalIgnoreCase))
 {
     <div class="alert alert-warning">

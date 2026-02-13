@@ -166,6 +166,12 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                     _logger.LogInformation("User created a new account with password.");
 
                     await _userManager.AddToRoleAsync(user, user.AccountType);
+                    if (normalizedAccountType == AccountTypes.Seller)
+                    {
+                        await _userManager.AddToRoleAsync(user, SellerInternalRoles.StoreOwner);
+                        user.StoreOwnerId = user.Id;
+                        await _userManager.UpdateAsync(user);
+                    }
 
                     var userId = await _userManager.GetUserIdAsync(user);
                     var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);

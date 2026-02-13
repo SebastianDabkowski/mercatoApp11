@@ -8,6 +8,7 @@ namespace SD.ProjectName.WebApp.Data
     public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     {
         public DbSet<LoginAudit> LoginAudits => Set<LoginAudit>();
+        public DbSet<SellerTeamMember> SellerTeamMembers => Set<SellerTeamMember>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -27,6 +28,9 @@ namespace SD.ProjectName.WebApp.Data
                 entity.Property(u => u.AccountType)
                     .HasMaxLength(32)
                     .IsRequired();
+
+                entity.Property(u => u.StoreOwnerId)
+                    .HasMaxLength(450);
 
                 entity.Property(u => u.SellerType)
                     .HasMaxLength(32)
@@ -125,6 +129,33 @@ namespace SD.ProjectName.WebApp.Data
                 entity.Property(u => u.OnboardingStartedOn);
 
                 entity.Property(u => u.OnboardingCompletedOn);
+
+                entity.HasIndex(u => u.StoreOwnerId);
+            });
+
+            builder.Entity<SellerTeamMember>(entity =>
+            {
+                entity.HasKey(m => m.Id);
+                entity.Property(m => m.StoreOwnerId)
+                    .IsRequired()
+                    .HasMaxLength(450);
+                entity.Property(m => m.Email)
+                    .IsRequired()
+                    .HasMaxLength(256);
+                entity.Property(m => m.Role)
+                    .IsRequired()
+                    .HasMaxLength(64);
+                entity.Property(m => m.Status)
+                    .IsRequired()
+                    .HasMaxLength(32);
+                entity.Property(m => m.InvitationCode)
+                    .IsRequired()
+                    .HasMaxLength(64);
+                entity.Property(m => m.InvitedOn)
+                    .IsRequired();
+                entity.HasIndex(m => m.InvitationCode)
+                    .IsUnique();
+                entity.HasIndex(m => new { m.StoreOwnerId, m.Email });
             });
 
             builder.Entity<LoginAudit>(entity =>

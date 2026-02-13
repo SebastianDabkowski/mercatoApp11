@@ -42,6 +42,7 @@ builder.Services.AddSingleton<IEmailSender, ConsoleEmailSender>();
 builder.Services.Configure<DataProtectionTokenProviderOptions>(o => o.TokenLifespan = TimeSpan.FromHours(24));
 builder.Services.Configure<KycOptions>(builder.Configuration.GetSection("Kyc"));
 builder.Services.Configure<SecurityOptions>(builder.Configuration.GetSection("Security"));
+builder.Services.Configure<SellerInternalUserOptions>(builder.Configuration.GetSection("SellerInternalUsers"));
 builder.Services.AddOptions<SessionTokenOptions>()
     .Bind(builder.Configuration.GetSection("Session"))
     .ValidateDataAnnotations()

@@ -1,0 +1,125 @@
+@page
+@using SD.ProjectName.WebApp.Identity
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = AccountTypes.Seller)]
+@model SD.ProjectName.WebApp.Pages.Seller.TeamModel
+@{
+    ViewData["Title"] = "Team management";
+}
+
+@if (!Model.FeatureEnabled)
+{
+    <div class="alert alert-warning mt-3">
+        Internal user management is currently disabled for your store.
+    </div>
+    return;
+}
+
+<h1 class="display-6">Team management</h1>
+<p class="lead">Invite teammates to manage products, orders, or reporting.</p>
+
+@if (!string.IsNullOrEmpty(Model.AlertMessage))
+{
+    <div class="alert alert-info">@Model.AlertMessage</div>
+}
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h2 class="h5 mb-3">Invite a teammate</h2>
+        <form method="post" asp-page-handler="Invite" class="row g-3">
+            <div class="col-md-6">
+                <label asp-for="Invite.Email" class="form-label"></label>
+                <input asp-for="Invite.Email" class="form-control" />
+                <span asp-validation-for="Invite.Email" class="text-danger"></span>
+            </div>
+            <div class="col-md-4">
+                <label asp-for="Invite.Role" class="form-label">Role</label>
+                <select asp-for="Invite.Role" class="form-select">
+                    @foreach (var role in SellerInternalRoles.Allowed)
+                    {
+                        <option value="@role">@role</option>
+                    }
+                </select>
+                <span asp-validation-for="Invite.Role" class="text-danger"></span>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">Send invite</button>
+            </div>
+        </form>
+        <p class="text-muted small mt-2 mb-0">Invitees will receive an email with a link to complete registration.</p>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center">
+            <h2 class="h5 mb-0">Team members</h2>
+            <span class="text-muted small">@Model.Members.Count member(s)</span>
+        </div>
+
+        @if (!Model.Members.Any())
+        {
+            <p class="text-muted mt-3 mb-0">No teammates yet. Invite someone to get started.</p>
+        }
+        else
+        {
+            <div class="table-responsive mt-3">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Status</th>
+                            <th>Invited</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var member in Model.Members)
+                        {
+                            <tr>
+                                <td>@member.Email</td>
+                                <td>@member.Role</td>
+                                <td>
+                                    @member.Status
+                                    @if (!string.IsNullOrEmpty(member.AcceptedUserId) && member.Status != SellerInternalUserStatuses.Deactivated)
+                                    {
+                                        <span class="badge text-bg-success ms-2">Registered</span>
+                                    }
+                                </td>
+                                <td>@member.InvitedOn.ToLocalTime().ToString("g")</td>
+                                <td class="text-end">
+                                    @if (member.Status != SellerInternalUserStatuses.Deactivated)
+                                    {
+                                        <form method="post" asp-page-handler="ChangeRole" class="d-inline-flex align-items-center gap-2">
+                                            <input type="hidden" name="memberId" value="@member.Id" />
+                                            <select name="role" class="form-select form-select-sm">
+                                                @foreach (var role in SellerInternalRoles.Allowed)
+                                                {
+                                                    <option value="@role" selected="@(role == member.Role)">@role</option>
+                                                }
+                                            </select>
+                                            <button type="submit" class="btn btn-outline-secondary btn-sm">Update role</button>
+                                        </form>
+                                        <form method="post" asp-page-handler="Deactivate" class="d-inline ms-2" onsubmit="return confirm('Deactivate this user?');">
+                                            <input type="hidden" name="memberId" value="@member.Id" />
+                                            <button type="submit" class="btn btn-outline-danger btn-sm">Deactivate</button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">Deactivated @member.DeactivatedOn?.ToLocalTime().ToString("g")</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
