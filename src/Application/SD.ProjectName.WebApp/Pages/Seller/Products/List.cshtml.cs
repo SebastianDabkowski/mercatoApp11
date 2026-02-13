@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Logging;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
+using SD.ProjectName.WebApp.Services;
 using SD.ProjectName.WebApp.Identity;
 
 namespace SD.ProjectName.WebApp.Pages.Seller.Products
@@ -18,8 +19,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly ILogger<ListModel> _logger;
         private readonly ProductCatalogExportService _exportService;
+        private readonly ProductModerationService _moderationService;
 
-        public ListModel(GetProducts getProducts, ArchiveProduct archiveProduct, ChangeProductWorkflowState changeWorkflowState, UserManager<ApplicationUser> userManager, ILogger<ListModel> logger, ProductCatalogExportService exportService)
+        public ListModel(GetProducts getProducts, ArchiveProduct archiveProduct, ChangeProductWorkflowState changeWorkflowState, UserManager<ApplicationUser> userManager, ILogger<ListModel> logger, ProductCatalogExportService exportService, ProductModerationService moderationService)
         {
             _getProducts = getProducts;
             _archiveProduct = archiveProduct;
@@ -27,6 +29,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             _userManager = userManager;
             _logger = logger;
             _exportService = exportService;
+            _moderationService = moderationService;
         }
 
         public List<ProductModel> Products { get; private set; } = new();
@@ -76,14 +79,15 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Forbid();
             }
 
-            var result = await _changeWorkflowState.SetStateAsync(product, ProductWorkflowStates.Active);
-            if (!result.Succeeded)
+            var actor = string.IsNullOrWhiteSpace(user.FullName) ? user.Email ?? user.UserName ?? "Seller" : user.FullName;
+            var result = await _moderationService.QueueForReviewAsync(product.Id, actor);
+            if (!result.Success)
             {
-                TempData["ErrorMessage"] = string.Join(" ", result.Errors);
+                TempData["ErrorMessage"] = result.Error ?? "Unable to submit product for review.";
                 return RedirectToPage();
             }
 
-            TempData["StatusMessage"] = "Product published.";
+            TempData["StatusMessage"] = "Product submitted for moderation.";
             return RedirectToPage();
         }
 

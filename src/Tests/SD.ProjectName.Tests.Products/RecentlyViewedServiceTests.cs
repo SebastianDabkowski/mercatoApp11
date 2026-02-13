@@ -49,7 +49,7 @@ namespace SD.ProjectName.Tests.Products
                             Stock = 1,
                             Category = "Cat",
                             MerchantSku = $"SKU-{id}",
-                            WorkflowState = ProductWorkflowStates.Active,
+                            WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved,
                             SellerId = "seller-1"
                         })
                         .ToList();

@@ -29,7 +29,7 @@ namespace SD.ProjectName.Tests.Products
             var user = CreateSeller(AccountStatuses.Verified, OnboardingStatuses.Completed, "Active Store");
             var model = CreateModel(
                 new[] { user },
-                new List<ProductModel> { new() { Id = 1, Title = "Product", Description = "Desc", Price = 10, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = user.Id } });
+                new List<ProductModel> { new() { Id = 1, Title = "Product", Description = "Desc", Price = 10, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = user.Id } });
 
             var result = await model.OnGetAsync("active-store");
 

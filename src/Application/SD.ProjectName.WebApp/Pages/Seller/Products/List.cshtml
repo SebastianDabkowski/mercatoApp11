@@ -24,8 +24,10 @@
     <div class="col-sm-3">
         <label class="form-label" for="workflowFilter">Status</label>
         <select id="workflowFilter" name="WorkflowStateFilter" class="form-select">
-            <option value="" selected="@(string.IsNullOrEmpty(Model.WorkflowStateFilter) ? "selected" : null)">All (active, draft, suspended)</option>
-            <option value="@ProductWorkflowStates.Active" selected="@(Model.WorkflowStateFilter == ProductWorkflowStates.Active ? "selected" : null)">Active</option>
+            <option value="" selected="@(string.IsNullOrEmpty(Model.WorkflowStateFilter) ? "selected" : null)">All statuses</option>
+            <option value="@ProductWorkflowStates.Pending" selected="@(Model.WorkflowStateFilter == ProductWorkflowStates.Pending ? "selected" : null)">Pending review</option>
+            <option value="@ProductWorkflowStates.Active" selected="@(Model.WorkflowStateFilter == ProductWorkflowStates.Active ? "selected" : null)">Approved</option>
+            <option value="@ProductWorkflowStates.Rejected" selected="@(Model.WorkflowStateFilter == ProductWorkflowStates.Rejected ? "selected" : null)">Rejected</option>
             <option value="@ProductWorkflowStates.Draft" selected="@(Model.WorkflowStateFilter == ProductWorkflowStates.Draft ? "selected" : null)">Draft</option>
             <option value="@ProductWorkflowStates.Suspended" selected="@(Model.WorkflowStateFilter == ProductWorkflowStates.Suspended ? "selected" : null)">Suspended</option>
         </select>
@@ -98,7 +100,21 @@
                     <td>@product.Price.ToString("C")</td>
                     <td>@product.Stock</td>
                     <td>@product.Category</td>
-                    <td class="text-capitalize">@product.WorkflowState</td>
+                    <td>
+                        @{
+                            var moderationClass = product.ModerationStatus == ProductModerationStatuses.Approved
+                                ? "text-bg-success"
+                                : product.ModerationStatus == ProductModerationStatuses.Rejected
+                                    ? "text-bg-danger"
+                                    : "text-bg-warning text-dark";
+                        }
+                        <div class="badge @moderationClass text-capitalize">@product.ModerationStatus</div>
+                        <div class="text-muted small text-capitalize">Workflow: @product.WorkflowState</div>
+                        @if (product.ModerationStatus == ProductModerationStatuses.Rejected && !string.IsNullOrWhiteSpace(product.ModerationNote))
+                        {
+                            <div class="small mt-1">Reason: @product.ModerationNote</div>
+                        }
+                    </td>
                     <td>
                         <a class="btn btn-sm btn-outline-primary" asp-page="Edit" asp-route-id="@product.Id">Edit</a>
                         @if (product.WorkflowState == ProductWorkflowStates.Active)
@@ -107,10 +123,14 @@
                                 <button type="submit" class="btn btn-sm btn-outline-warning" onclick="return confirm('Suspend this product?')">Suspend</button>
                             </form>
                         }
-                        else if (product.WorkflowState == ProductWorkflowStates.Draft || product.WorkflowState == ProductWorkflowStates.Suspended)
+                        else if (product.WorkflowState == ProductWorkflowStates.Pending)
+                        {
+                            <span class="badge text-bg-secondary">Awaiting review</span>
+                        }
+                        else
                         {
                             <form method="post" asp-page-handler="Activate" asp-route-id="@product.Id" class="d-inline">
-                                <button type="submit" class="btn btn-sm btn-outline-success" onclick="return confirm('Publish this product?')">Publish</button>
+                                <button type="submit" class="btn btn-sm btn-outline-success" onclick="return confirm('Submit this product for moderation?')">Submit for review</button>
                             </form>
                         }
                         <form method="post" asp-page-handler="Delete" asp-route-id="@product.Id" class="d-inline">

@@ -48,7 +48,7 @@ namespace SD.ProjectName.Tests.Products
                 Stock = 3,
                 Category = "Default",
                 SellerId = "seller-1",
-                WorkflowState = ProductWorkflowStates.Active
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved
             };
 
             var repository = new Mock<IProductRepository>(MockBehavior.Strict);

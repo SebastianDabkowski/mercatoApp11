@@ -47,7 +47,7 @@ namespace SD.ProjectName.Tests.Products
                 Price = 10,
                 Stock = 2,
                 Category = "General",
-                WorkflowState = ProductWorkflowStates.Active
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved
             };
 
             var context = BuildContextWithCart(cartService, cartOptions.CookieName, new List<CartItem>

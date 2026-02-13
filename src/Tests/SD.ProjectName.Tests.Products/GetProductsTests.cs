@@ -13,9 +13,9 @@ namespace SD.ProjectName.Tests.Products
             // Arrange
             var expectedProducts = new List<ProductModel>
             {
-                new ProductModel { Id = 1, Title = "Product 1", MerchantSku = "SKU-1", Price = 10.99m, Description = "Description 1", Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
-                new ProductModel { Id = 2, Title = "Product 2", MerchantSku = "SKU-2", Price = 20.99m, Description = "Description 2", Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-2" },
-                new ProductModel { Id = 3, Title = "Product 3", MerchantSku = "SKU-3", Price = 30.99m, Description = "Description 3", Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-3" }
+                new ProductModel { Id = 1, Title = "Product 1", MerchantSku = "SKU-1", Price = 10.99m, Description = "Description 1", Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
+                new ProductModel { Id = 2, Title = "Product 2", MerchantSku = "SKU-2", Price = 20.99m, Description = "Description 2", Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-2" },
+                new ProductModel { Id = 3, Title = "Product 3", MerchantSku = "SKU-3", Price = 30.99m, Description = "Description 3", Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-3" }
             };
 
             var mockRepository = new Mock<IProductRepository>(MockBehavior.Strict);
@@ -59,7 +59,7 @@ namespace SD.ProjectName.Tests.Products
             // Arrange
             var expectedProducts = new List<ProductModel>
             {
-                new ProductModel { Id = 1, Title = "Test Product", MerchantSku = "SKU-10", Price = 15.50m, Description = "Test", Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" }
+                new ProductModel { Id = 1, Title = "Test Product", MerchantSku = "SKU-10", Price = 15.50m, Description = "Test", Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" }
             };
 
             var mockRepository = new Mock<IProductRepository>(MockBehavior.Strict);
@@ -117,7 +117,7 @@ namespace SD.ProjectName.Tests.Products
             var categories = new[] { 1, 2, 3 };
             var expectedProducts = new List<ProductModel>
             {
-                new ProductModel { Id = 10, Title = "Category Product", MerchantSku = "SKU-30", Price = 25, Stock = 10, Category = "Cat", CategoryId = 2, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" }
+                new ProductModel { Id = 10, Title = "Category Product", MerchantSku = "SKU-30", Price = 25, Stock = 10, Category = "Cat", CategoryId = 2, WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" }
             };
 
             var mockRepository = new Mock<IProductRepository>(MockBehavior.Strict);

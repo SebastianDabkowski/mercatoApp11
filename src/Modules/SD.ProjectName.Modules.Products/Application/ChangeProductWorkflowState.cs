@@ -55,7 +55,7 @@ namespace SD.ProjectName.Modules.Products.Application
                 errors.Add("Only active products can be suspended.");
             }
 
-            if (targetState == ProductWorkflowStates.Active)
+            if (targetState == ProductWorkflowStates.Active || targetState == ProductWorkflowStates.Pending)
             {
                 errors.AddRange(ValidateActivation(product));
             }
