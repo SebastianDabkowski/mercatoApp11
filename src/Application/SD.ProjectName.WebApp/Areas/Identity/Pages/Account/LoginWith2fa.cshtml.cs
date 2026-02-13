@@ -19,6 +19,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
         private readonly IEmailSender _emailSender;
         private readonly IOptions<SecurityOptions> _securityOptions;
         private readonly ILoginAuditService _loginAuditService;
+        private readonly IUserCartService _userCartService;
 
         public LoginWith2faModel(
             SignInManager<ApplicationUser> signInManager,
@@ -26,7 +27,8 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             ILogger<LoginWith2faModel> logger,
             IEmailSender emailSender,
             IOptions<SecurityOptions> securityOptions,
-            ILoginAuditService loginAuditService)
+            ILoginAuditService loginAuditService,
+            IUserCartService userCartService)
         {
             _signInManager = signInManager;
             _userManager = userManager;
@@ -34,6 +36,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             _emailSender = emailSender;
             _securityOptions = securityOptions;
             _loginAuditService = loginAuditService;
+            _userCartService = userCartService;
         }
 
         [BindProperty]
@@ -101,6 +104,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             {
                 _logger.LogInformation("User logged in with 2fa.");
                 await LogAuditAsync(user, LoginEventTypes.TwoFactorSuccess, true);
+                await _userCartService.MergeOnSignInAsync(HttpContext, user, HttpContext.RequestAborted);
                 return LocalRedirect(returnUrl);
             }
 

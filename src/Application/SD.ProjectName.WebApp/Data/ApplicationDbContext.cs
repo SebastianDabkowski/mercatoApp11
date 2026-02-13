@@ -131,6 +131,9 @@ namespace SD.ProjectName.WebApp.Data
                 entity.Property(u => u.OnboardingCompletedOn);
 
                 entity.HasIndex(u => u.StoreOwnerId);
+
+                entity.Property(u => u.CartData)
+                    .HasColumnType("nvarchar(max)");
             });
 
             builder.Entity<SellerTeamMember>(entity =>

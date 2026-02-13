@@ -12,12 +12,14 @@ namespace SD.ProjectName.WebApp.Pages.Api
         private readonly GetProducts _getProducts;
         private readonly CartService _cartService;
         private readonly CartViewService _cartViewService;
+        private readonly IUserCartService _userCartService;
 
-        public CartModel(GetProducts getProducts, CartService cartService, CartViewService cartViewService)
+        public CartModel(GetProducts getProducts, CartService cartService, CartViewService cartViewService, IUserCartService userCartService)
         {
             _getProducts = getProducts;
             _cartService = cartService;
             _cartViewService = cartViewService;
+            _userCartService = userCartService;
         }
 
         public async Task<IActionResult> OnPostAddAsync([FromBody] AddToCartRequest request)
@@ -26,6 +28,8 @@ namespace SD.ProjectName.WebApp.Pages.Api
             {
                 return BadRequest(new { message = "Invalid product." });
             }
+
+            await _userCartService.EnsureUserCartAsync(HttpContext, HttpContext.RequestAborted);
 
             var product = await _getProducts.GetById(request.ProductId);
             if (product == null)
@@ -86,6 +90,7 @@ namespace SD.ProjectName.WebApp.Pages.Api
                     ? "Added to cart."
                     : "Quantity updated.";
 
+            await _userCartService.PersistAuthenticatedCartAsync(HttpContext, HttpContext.RequestAborted);
             return new JsonResult(new AddToCartResponse(true, message, result.Quantity, result.Status.ToString().ToLowerInvariant()));
         }
 
@@ -95,6 +100,8 @@ namespace SD.ProjectName.WebApp.Pages.Api
             {
                 return BadRequest(new { message = "Invalid request." });
             }
+
+            await _userCartService.EnsureUserCartAsync(HttpContext, HttpContext.RequestAborted);
 
             var normalizedAttributes = NormalizeAttributes(request.VariantAttributes);
             var items = _cartService.GetItems(HttpContext);
@@ -110,6 +117,7 @@ namespace SD.ProjectName.WebApp.Pages.Api
                 items.Remove(existing);
                 _cartService.ReplaceCart(HttpContext, items);
                 var removedSummary = await _cartViewService.BuildAsync(HttpContext, items);
+                await _userCartService.PersistAuthenticatedCartAsync(HttpContext, HttpContext.RequestAborted);
                 return new JsonResult(new CartUpdateResponse(true, "Item removed.", true, 0, 0, 0, ToTotals(removedSummary)));
             }
 
@@ -119,6 +127,7 @@ namespace SD.ProjectName.WebApp.Pages.Api
                 items.Remove(existing);
                 _cartService.ReplaceCart(HttpContext, items);
                 var missingSummary = await _cartViewService.BuildAsync(HttpContext, items);
+                await _userCartService.PersistAuthenticatedCartAsync(HttpContext, HttpContext.RequestAborted);
                 return NotFound(new CartUpdateResponse(false, "This product is unavailable.", true, 0, 0, 0, ToTotals(missingSummary)));
             }
 
@@ -128,6 +137,7 @@ namespace SD.ProjectName.WebApp.Pages.Api
                 items.Remove(existing);
                 _cartService.ReplaceCart(HttpContext, items);
                 var missingSummary = await _cartViewService.BuildAsync(HttpContext, items);
+                await _userCartService.PersistAuthenticatedCartAsync(HttpContext, HttpContext.RequestAborted);
                 return new JsonResult(new CartUpdateResponse(true, "Selected variant is unavailable and was removed.", true, 0, 0, 0, ToTotals(missingSummary)));
             }
 
@@ -136,6 +146,7 @@ namespace SD.ProjectName.WebApp.Pages.Api
                 items.Remove(existing);
                 _cartService.ReplaceCart(HttpContext, items);
                 var removedSummary = await _cartViewService.BuildAsync(HttpContext, items);
+                await _userCartService.PersistAuthenticatedCartAsync(HttpContext, HttpContext.RequestAborted);
                 return new JsonResult(new CartUpdateResponse(true, "Item is out of stock and was removed.", true, 0, 0, 0, ToTotals(removedSummary)));
             }
 
@@ -149,6 +160,7 @@ namespace SD.ProjectName.WebApp.Pages.Api
                 : "Quantity updated.";
             var lineTotal = stockCheck.UnitPrice * clampedQuantity;
 
+            await _userCartService.PersistAuthenticatedCartAsync(HttpContext, HttpContext.RequestAborted);
             return new JsonResult(new CartUpdateResponse(true, message, false, clampedQuantity, lineTotal, stockCheck.AvailableStock, ToTotals(summary)));
         }
 
@@ -158,6 +170,8 @@ namespace SD.ProjectName.WebApp.Pages.Api
             {
                 return BadRequest(new { message = "Invalid request." });
             }
+
+            await _userCartService.EnsureUserCartAsync(HttpContext, HttpContext.RequestAborted);
 
             var normalizedAttributes = NormalizeAttributes(request.VariantAttributes);
             var items = _cartService.GetItems(HttpContext);
@@ -173,6 +187,7 @@ namespace SD.ProjectName.WebApp.Pages.Api
                 return NotFound(new CartUpdateResponse(false, "Item not found in cart.", false, 0, 0, 0, ToTotals(summary)));
             }
 
+            await _userCartService.PersistAuthenticatedCartAsync(HttpContext, HttpContext.RequestAborted);
             return new JsonResult(new CartUpdateResponse(true, "Item removed.", true, 0, 0, 0, ToTotals(summary)));
         }
 

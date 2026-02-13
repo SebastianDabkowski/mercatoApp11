@@ -68,6 +68,7 @@ builder.Services.AddScoped<RecentlyViewedService>();
 builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<CartTotalsCalculator>();
 builder.Services.AddScoped<CartViewService>();
+builder.Services.AddScoped<IUserCartService, UserCartService>();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {

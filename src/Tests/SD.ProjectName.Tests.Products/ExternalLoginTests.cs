@@ -14,6 +14,7 @@ using Microsoft.Extensions.Options;
 using Moq;
 using SD.ProjectName.WebApp.Areas.Identity.Pages.Account;
 using SD.ProjectName.WebApp.Identity;
+using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.Tests.Identity
 {
@@ -83,7 +84,8 @@ namespace SD.ProjectName.Tests.Identity
 
         private static ExternalLoginModel CreateExternalLoginModel(
             Mock<UserManager<ApplicationUser>> userManager,
-            Mock<SignInManager<ApplicationUser>> signInManager)
+            Mock<SignInManager<ApplicationUser>> signInManager,
+            IUserCartService? userCartService = null)
         {
             var httpContext = new DefaultHttpContext();
             httpContext.Request.Scheme = "https";
@@ -95,7 +97,11 @@ namespace SD.ProjectName.Tests.Identity
                 ViewData = new ViewDataDictionary(new EmptyModelMetadataProvider(), modelState)
             };
 
-            return new ExternalLoginModel(signInManager.Object, userManager.Object, Mock.Of<ILogger<ExternalLoginModel>>())
+            return new ExternalLoginModel(
+                signInManager.Object,
+                userManager.Object,
+                Mock.Of<ILogger<ExternalLoginModel>>(),
+                userCartService ?? Mock.Of<IUserCartService>())
             {
                 PageContext = pageContext,
                 Url = new TestUrlHelper(actionContext),
