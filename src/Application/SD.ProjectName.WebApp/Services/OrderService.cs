@@ -159,6 +159,8 @@ namespace SD.ProjectName.WebApp.Services
 
         public DateTimeOffset CreatedOn { get; set; }
 
+        public string? SavedAddressKey { get; set; }
+
         public string DeliveryAddressJson { get; set; } = string.Empty;
 
         public string DetailsJson { get; set; } = string.Empty;
@@ -576,6 +578,7 @@ namespace SD.ProjectName.WebApp.Services
                 PaymentMethodLabel = paymentMethodLabel ?? paymentMethodId ?? string.Empty,
                 PaymentReference = normalizedReference,
                 CartSignature = normalizedSignature,
+                SavedAddressKey = string.IsNullOrWhiteSpace(state.SavedAddressKey) ? null : state.SavedAddressKey.Trim(),
                 ItemsSubtotal = quote.Summary.ItemsSubtotal,
                 ShippingTotal = quote.Summary.ShippingTotal,
                 GrandTotal = quote.Summary.GrandTotal,

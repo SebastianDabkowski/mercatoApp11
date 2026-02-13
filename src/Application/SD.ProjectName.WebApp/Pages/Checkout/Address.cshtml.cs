@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -12,6 +13,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         private readonly CartViewService _cartViewService;
         private readonly IUserCartService _userCartService;
         private readonly CheckoutStateService _checkoutStateService;
+        private readonly ShippingAddressService _shippingAddressService;
         private readonly UserManager<ApplicationUser> _userManager;
 
         public CartSummary Summary { get; private set; } = CartSummary.Empty;
@@ -25,11 +27,13 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             CartViewService cartViewService,
             IUserCartService userCartService,
             CheckoutStateService checkoutStateService,
+            ShippingAddressService shippingAddressService,
             UserManager<ApplicationUser> userManager)
         {
             _cartViewService = cartViewService;
             _userCartService = userCartService;
             _checkoutStateService = checkoutStateService;
+            _shippingAddressService = shippingAddressService;
             _userManager = userManager;
         }
 
@@ -51,7 +55,8 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             }
             else if (SavedAddresses.Count > 0)
             {
-                var firstComplete = SavedAddresses.FirstOrDefault(a => IsAddressComplete(a.Address));
+                var firstComplete = SavedAddresses.FirstOrDefault(a => a.IsDefault && IsAddressComplete(a.Address))
+                    ?? SavedAddresses.FirstOrDefault(a => IsAddressComplete(a.Address));
                 if (firstComplete != null)
                 {
                     Input.SavedAddressKey = firstComplete.Key;
@@ -79,6 +84,12 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 return Page();
             }
 
+            if (!_shippingAddressService.IsCountrySupported(address.Country))
+            {
+                ModelState.AddModelError($"{nameof(Input)}.{nameof(Input.NewAddress)}.{nameof(Input.NewAddress.Country)}", "We don't currently ship to this country.");
+                return Page();
+            }
+
             var blockedSellers = await FindBlockedSellersAsync(address.Country);
             if (blockedSellers.Count > 0)
             {
@@ -86,12 +97,16 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 return Page();
             }
 
-            _checkoutStateService.Save(HttpContext, Input.SavedAddressKey, address);
-
             if (Input.SaveToProfile && User?.Identity?.IsAuthenticated == true)
             {
-                await SaveAddressToProfileAsync(address);
+                var savedKey = await SaveAddressToProfileAsync(address);
+                if (!string.IsNullOrWhiteSpace(savedKey))
+                {
+                    Input.SavedAddressKey = savedKey;
+                }
             }
+
+            _checkoutStateService.Save(HttpContext, Input.SavedAddressKey, address);
 
             TempData["CheckoutAddressSaved"] = true;
             return RedirectToPage("/Checkout/Shipping");
@@ -136,7 +151,19 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 return addresses;
             }
 
-            if (!string.IsNullOrWhiteSpace(user.Address) && !string.IsNullOrWhiteSpace(user.Country))
+            var saved = await _shippingAddressService.GetAddressesAsync(user.Id, HttpContext.RequestAborted);
+            foreach (var savedAddress in saved)
+            {
+                var delivery = _shippingAddressService.ToDeliveryAddress(savedAddress);
+                addresses.Add(new SavedAddressOption(
+                    savedAddress.Id.ToString(CultureInfo.InvariantCulture),
+                    savedAddress.Recipient,
+                    delivery,
+                    false,
+                    savedAddress.IsDefault));
+            }
+
+            if (addresses.Count == 0 && !string.IsNullOrWhiteSpace(user.Address) && !string.IsNullOrWhiteSpace(user.Country))
             {
                 var address = new DeliveryAddress(
                     string.IsNullOrWhiteSpace(user.FullName) ? "Saved recipient" : user.FullName,
@@ -148,10 +175,13 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                     user.Country,
                     null);
 
-                addresses.Add(new SavedAddressOption("profile", "Saved address", address, true));
+                addresses.Add(new SavedAddressOption("profile", "Saved address", address, true, true));
             }
 
-            return addresses;
+            return addresses
+                .OrderByDescending(a => a.IsDefault)
+                .ThenBy(a => a.Label, StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         private async Task<List<string>> FindBlockedSellersAsync(string country)
@@ -180,12 +210,12 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             return ShippingRegionHelper.FindBlockedSellers(Summary.SellerGroups, sellerCountries, country);
         }
 
-        private async Task SaveAddressToProfileAsync(DeliveryAddress address)
+        private async Task<string?> SaveAddressToProfileAsync(DeliveryAddress address)
         {
             var user = await _userManager.GetUserAsync(User);
             if (user == null)
             {
-                return;
+                return null;
             }
 
             user.Address = BuildProfileAddress(address);
@@ -196,14 +226,18 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             }
 
             await _userManager.UpdateAsync(user);
+            var saved = await _shippingAddressService.UpsertAsync(user.Id, AddressForm.From(address), true, HttpContext.RequestAborted);
+            return saved.Id.ToString(CultureInfo.InvariantCulture);
         }
 
         private static bool IsAddressComplete(DeliveryAddress address)
         {
             return !string.IsNullOrWhiteSpace(address.Recipient)
                 && !string.IsNullOrWhiteSpace(address.Line1)
+                && !string.IsNullOrWhiteSpace(address.City)
                 && !string.IsNullOrWhiteSpace(address.PostalCode)
-                && !string.IsNullOrWhiteSpace(address.Country);
+                && !string.IsNullOrWhiteSpace(address.Country)
+                && !string.IsNullOrWhiteSpace(address.Phone);
         }
 
         private static string BuildProfileAddress(DeliveryAddress address)
@@ -260,6 +294,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         [StringLength(256)]
         public string? Line2 { get; set; }
 
+        [Required]
         [StringLength(128)]
         public string City { get; set; } = string.Empty;
 
@@ -274,6 +309,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         [StringLength(120)]
         public string Country { get; set; } = string.Empty;
 
+        [Required]
         [StringLength(32)]
         public string? Phone { get; set; }
 
@@ -298,7 +334,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         }
     }
 
-    public record SavedAddressOption(string Key, string Label, DeliveryAddress Address, bool IsProfileAddress);
+    public record SavedAddressOption(string Key, string Label, DeliveryAddress Address, bool IsProfileAddress, bool IsDefault);
 
     public static class ShippingRegionHelper
     {
