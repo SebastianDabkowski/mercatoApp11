@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -116,6 +117,29 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal(5, secondSeller.Shipping);
             Assert.True(secondSeller.Items.All(i => i.SellerId == "seller-2"));
             Assert.Equal(OrderStatuses.Paid, secondSeller.Status);
+        }
+
+        [Fact]
+        public async Task EnsureOrderAsync_ShouldEmailSellerWithLoginRedirect()
+        {
+            await using var context = CreateContext();
+            context.Users.Add(new ApplicationUser { Id = "seller-1", Email = "seller@example.com", ContactEmail = "contact@example.com" });
+            await context.SaveChangesAsync();
+
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, emailOptions: new EmailOptions());
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-seller-email-1", "sig-seller-email-1");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-seller-email", "buyer@example.com", "Buyer Seller Email", "Card", "card");
+            var subOrderNumber = $"{result.Order.OrderNumber}-01";
+            var expectedLink = $"/Identity/Account/Login?returnUrl={Uri.EscapeDataString($"/Seller/Orders/Details/{result.Order.Id}")}";
+
+            emailSender.Verify(e => e.SendEmailAsync(
+                "contact@example.com",
+                It.Is<string>(s => s.Contains(subOrderNumber, StringComparison.OrdinalIgnoreCase)),
+                It.Is<string>(body => body.Contains(expectedLink, StringComparison.OrdinalIgnoreCase))),
+                Times.Once);
         }
 
         [Fact]
@@ -1033,6 +1057,39 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task RunSellerPayoutsAsync_ShouldEmailSellerWithPayoutLink()
+        {
+            await using var context = CreateContext();
+            context.Users.Add(new ApplicationUser { Id = "seller-1", Email = "sellerpay@example.com", ContactEmail = "sellerpay@example.com", PayoutUpdatedOn = DateTimeOffset.UtcNow });
+            await context.SaveChangesAsync();
+
+            var emailSender = new Mock<IEmailSender>();
+            var escrowOptions = new EscrowOptions
+            {
+                PayoutEligibleStatuses = new List<string> { OrderStatuses.Delivered },
+                DefaultPayoutSchedule = PayoutSchedules.Weekly,
+                MinimumPayoutAmount = 0,
+                PayoutBatchSize = 10
+            };
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, escrowOptions, emailOptions: new EmailOptions());
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-payout-email", "sig-payout-email");
+
+            var creation = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-payout-email", "payoutbuyer@example.com", "Payout Buyer Email", "Card", "card", OrderStatuses.Delivered, PaymentStatuses.Paid);
+            emailSender.Invocations.Clear();
+
+            var payout = await service.RunSellerPayoutsAsync("seller-1");
+
+            Assert.True(payout.Success);
+            var expectedLink = $"/Identity/Account/Login?returnUrl={Uri.EscapeDataString($"/Seller/Payouts/Details/{creation.Order.Id}")}";
+            emailSender.Verify(e => e.SendEmailAsync(
+                "sellerpay@example.com",
+                It.Is<string>(s => s.Contains("Payout processed", StringComparison.OrdinalIgnoreCase)),
+                It.Is<string>(body => body.Contains(expectedLink, StringComparison.OrdinalIgnoreCase))),
+                Times.Once);
+        }
+
+        [Fact]
         public async Task RunSellerPayoutsAsync_ShouldRolloverBelowThreshold()
         {
             await using var context = CreateContext();
@@ -1796,6 +1853,43 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal(ReturnRequestTypes.Complaint, summary.Type);
             Assert.Equal(ReturnRequestStatuses.PendingSellerReview, summary.Status);
             Assert.False(string.IsNullOrWhiteSpace(summary.BuyerName));
+        }
+
+        [Fact]
+        public async Task CreateReturnRequestAsync_ShouldEmailSellerWithCaseLink()
+        {
+            await using var context = CreateContext();
+            context.Users.Add(new ApplicationUser { Id = "seller-1", Email = "seller@example.com", ContactEmail = "sellercase@example.com", PayoutUpdatedOn = DateTimeOffset.UtcNow });
+            await context.SaveChangesAsync();
+
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, emailOptions: new EmailOptions());
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-case-email-1", "sig-case-email-1");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-return-email", "buyerreturn@example.com", "Buyer Return Email", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-return-email");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+            emailSender.Invocations.Clear();
+
+            var request = await service.CreateReturnRequestAsync(
+                result.Order.Id,
+                "buyer-return-email",
+                subOrderNumber,
+                new List<int> { 1 },
+                "Damaged",
+                ReturnRequestTypes.Return,
+                "Screen cracked");
+
+            Assert.True(request.Success);
+            var expectedLink = $"/Identity/Account/Login?returnUrl={Uri.EscapeDataString($"/Seller/Cases/Details/{request.Request!.CaseId}")}";
+            emailSender.Verify(e => e.SendEmailAsync(
+                "sellercase@example.com",
+                It.Is<string>(s => s.Contains(request.Request!.CaseId!, StringComparison.OrdinalIgnoreCase)),
+                It.Is<string>(body => body.Contains(expectedLink, StringComparison.OrdinalIgnoreCase))),
+                Times.Once);
         }
 
         [Fact]
