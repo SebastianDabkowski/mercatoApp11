@@ -93,6 +93,11 @@ builder.Services.AddOptions<InvoiceOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<InvoiceOptions>(sp => sp.GetRequiredService<IOptions<InvoiceOptions>>().Value);
+builder.Services.AddOptions<CaseSlaOptions>()
+    .Bind(builder.Configuration.GetSection(CaseSlaOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<CaseSlaOptions>(sp => sp.GetRequiredService<IOptions<CaseSlaOptions>>().Value);
 builder.Services.AddOptions<PaymentProviderOptions>()
     .Bind(builder.Configuration.GetSection(PaymentProviderOptions.SectionName))
     .ValidateDataAnnotations()
