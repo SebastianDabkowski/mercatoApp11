@@ -1108,14 +1108,19 @@ namespace SD.ProjectName.Tests.Products
 
             await context.SaveChangesAsync();
 
-            var csvBytes = await service.ExportSellerOrdersAsync("seller-1", new SellerOrderFilterOptions
+            var export = await service.ExportSellerOrdersAsync("seller-1", new SellerOrderFilterOptions
             {
                 Statuses = new List<string> { OrderStatuses.Preparing },
                 FromDate = now.AddDays(-2),
                 ToDate = now.AddDays(1)
             });
 
-            var csv = Encoding.UTF8.GetString(csvBytes);
+            Assert.NotNull(export);
+            Assert.False(export!.Truncated);
+            Assert.Equal(1, export.RowCount);
+            Assert.Equal(1, export.TotalMatching);
+
+            var csv = Encoding.UTF8.GetString(export.Content);
             var lines = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
             Assert.Equal(2, lines.Length);
             var dataLine = lines[1].TrimEnd('\r');
@@ -1123,6 +1128,70 @@ namespace SD.ProjectName.Tests.Products
             Assert.Contains(second.Order.OrderNumber, dataLine);
             Assert.Contains("export-two@example.com", dataLine);
             Assert.Contains("Standard", dataLine);
+            Assert.Contains(TestAddress.Line1, dataLine);
+            Assert.Contains(TestAddress.PostalCode, dataLine);
+            Assert.Contains(TestAddress.Phone!, dataLine);
+            Assert.Contains("ref-se2", dataLine);
+        }
+
+        [Fact]
+        public async Task ExportSellerOrdersAsync_ShouldReturnNullWhenNoMatchingOrders()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+
+            var export = await service.ExportSellerOrdersAsync("seller-1", new SellerOrderFilterOptions
+            {
+                Statuses = new List<string> { OrderStatuses.Delivered },
+                FromDate = DateTimeOffset.UtcNow.AddDays(-1),
+                ToDate = DateTimeOffset.UtcNow
+            });
+
+            Assert.Null(export);
+        }
+
+        [Fact]
+        public async Task ExportSellerOrdersAsync_ShouldFilterMissingTrackingOnly()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var now = DateTimeOffset.UtcNow;
+
+            var untracked = await service.EnsureOrderAsync(
+                new CheckoutState("profile", TestAddress, now, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-no-track", "sig-no-track"),
+                BuildQuote(),
+                TestAddress,
+                "buyer-no-track",
+                "untracked@example.com",
+                "No Tracking",
+                "Card",
+                "card");
+
+            var tracked = await service.EnsureOrderAsync(
+                new CheckoutState("profile", TestAddress, now, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-track", "sig-track"),
+                BuildQuote(),
+                TestAddress,
+                "buyer-track",
+                "tracked@example.com",
+                "Tracked Buyer",
+                "Card",
+                "card");
+            await service.UpdateSubOrderStatusAsync(tracked.Order.Id, "seller-1", OrderStatuses.Shipped, "TRACK-123", trackingCarrier: "UPS");
+
+            await context.SaveChangesAsync();
+
+            var export = await service.ExportSellerOrdersAsync("seller-1", new SellerOrderFilterOptions
+            {
+                MissingTrackingOnly = true
+            });
+
+            Assert.NotNull(export);
+            Assert.Equal(1, export!.RowCount);
+            var csv = Encoding.UTF8.GetString(export.Content);
+            Assert.Contains(untracked.Order.OrderNumber, csv);
+            Assert.DoesNotContain(tracked.Order.OrderNumber, csv);
         }
 
         private static ShippingQuote BuildQuote()

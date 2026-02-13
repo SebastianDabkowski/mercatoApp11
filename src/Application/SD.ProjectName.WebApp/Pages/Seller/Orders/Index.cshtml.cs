@@ -26,6 +26,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
         [BindProperty(SupportsGet = true)]
         public string? Buyer { get; set; }
 
+        [BindProperty(SupportsGet = true)]
+        public bool MissingTrackingOnly { get; set; }
+
         [BindProperty(SupportsGet = true, Name = "page")]
         public int PageNumber { get; set; } = 1;
 
@@ -38,7 +41,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
         public int PageSize => DefaultPageSize;
 
         public bool HasFilters =>
-            StatusFilters.Count > 0 || FromDate.HasValue || ToDate.HasValue || !string.IsNullOrWhiteSpace(Buyer);
+            StatusFilters.Count > 0 || FromDate.HasValue || ToDate.HasValue || !string.IsNullOrWhiteSpace(Buyer) || MissingTrackingOnly;
 
         public List<string> AvailableStatuses { get; } = OrderStatuses.All.ToList();
 
@@ -77,9 +80,20 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
             }
 
             var filters = BuildFilters();
-            var csv = await _orderService.ExportSellerOrdersAsync(sellerId, filters, HttpContext.RequestAborted);
+            var export = await _orderService.ExportSellerOrdersAsync(sellerId, filters, HttpContext.RequestAborted);
+            if (export == null || export.RowCount == 0)
+            {
+                TempData["ErrorMessage"] = "No orders match these filters. Nothing to export.";
+                return RedirectToPage(new { status = StatusFilters, FromDate, ToDate, Buyer, MissingTrackingOnly });
+            }
+
+            if (export.Truncated)
+            {
+                TempData["StatusMessage"] = $"Exported first {export.RowCount} of {export.TotalMatching} matching orders. Narrow filters to export all.";
+            }
+
             var fileName = $"orders-{DateTime.UtcNow:yyyyMMddHHmmss}.csv";
-            return File(csv, "text/csv", fileName);
+            return File(export.Content, "text/csv", fileName);
         }
 
         private SellerOrderFilterOptions BuildFilters()
@@ -102,7 +116,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
                 Statuses = normalizedStatuses,
                 FromDate = from,
                 ToDate = to,
-                BuyerQuery = string.IsNullOrWhiteSpace(Buyer) ? null : Buyer.Trim()
+                BuyerQuery = string.IsNullOrWhiteSpace(Buyer) ? null : Buyer.Trim(),
+                MissingTrackingOnly = MissingTrackingOnly
             };
         }
 
