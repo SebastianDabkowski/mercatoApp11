@@ -1,4 +1,5 @@
 ﻿@page "/Seller/Products"
+@using SD.ProjectName.Modules.Products.Domain
 @model SD.ProjectName.WebApp.Pages.Seller.Products.ListModel
 @{
     ViewData["Title"] = "My products";
@@ -9,6 +10,10 @@
 @if (TempData["StatusMessage"] is string statusMessage)
 {
     <div class="alert alert-success">@statusMessage</div>
+}
+@if (TempData["ErrorMessage"] is string errorMessage)
+{
+    <div class="alert alert-danger">@errorMessage</div>
 }
 
 <p>
@@ -39,6 +44,18 @@
                     <td class="text-capitalize">@product.WorkflowState</td>
                     <td>
                         <a class="btn btn-sm btn-outline-primary" asp-page="Edit" asp-route-id="@product.Id">Edit</a>
+                        @if (product.WorkflowState == ProductWorkflowStates.Active)
+                        {
+                            <form method="post" asp-page-handler="Suspend" asp-route-id="@product.Id" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-warning" onclick="return confirm('Suspend this product?')">Suspend</button>
+                            </form>
+                        }
+                        else if (product.WorkflowState == ProductWorkflowStates.Draft || product.WorkflowState == ProductWorkflowStates.Suspended)
+                        {
+                            <form method="post" asp-page-handler="Activate" asp-route-id="@product.Id" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-success" onclick="return confirm('Publish this product?')">Publish</button>
+                            </form>
+                        }
                         <form method="post" asp-page-handler="Delete" asp-route-id="@product.Id" class="d-inline">
                             <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this product?')">Delete</button>
                         </form>

@@ -14,13 +14,15 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
     {
         private readonly GetProducts _getProducts;
         private readonly ArchiveProduct _archiveProduct;
+        private readonly ChangeProductWorkflowState _changeWorkflowState;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly ILogger<ListModel> _logger;
 
-        public ListModel(GetProducts getProducts, ArchiveProduct archiveProduct, UserManager<ApplicationUser> userManager, ILogger<ListModel> logger)
+        public ListModel(GetProducts getProducts, ArchiveProduct archiveProduct, ChangeProductWorkflowState changeWorkflowState, UserManager<ApplicationUser> userManager, ILogger<ListModel> logger)
         {
             _getProducts = getProducts;
             _archiveProduct = archiveProduct;
+            _changeWorkflowState = changeWorkflowState;
             _userManager = userManager;
             _logger = logger;
         }
@@ -37,6 +39,66 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
             Products = await _getProducts.GetList(user.Id, includeDrafts: true);
             return Page();
+        }
+
+        public async Task<IActionResult> OnPostActivateAsync(int id)
+        {
+            var user = await _userManager.GetUserAsync(User);
+            if (user == null)
+            {
+                return Challenge();
+            }
+
+            var product = await _getProducts.GetById(id, includeDrafts: true);
+            if (product == null)
+            {
+                return NotFound();
+            }
+
+            if (product.SellerId != user.Id)
+            {
+                return Forbid();
+            }
+
+            var result = await _changeWorkflowState.SetStateAsync(product, ProductWorkflowStates.Active);
+            if (!result.Succeeded)
+            {
+                TempData["ErrorMessage"] = string.Join(" ", result.Errors);
+                return RedirectToPage();
+            }
+
+            TempData["StatusMessage"] = "Product published.";
+            return RedirectToPage();
+        }
+
+        public async Task<IActionResult> OnPostSuspendAsync(int id)
+        {
+            var user = await _userManager.GetUserAsync(User);
+            if (user == null)
+            {
+                return Challenge();
+            }
+
+            var product = await _getProducts.GetById(id, includeDrafts: true);
+            if (product == null)
+            {
+                return NotFound();
+            }
+
+            if (product.SellerId != user.Id)
+            {
+                return Forbid();
+            }
+
+            var result = await _changeWorkflowState.SetStateAsync(product, ProductWorkflowStates.Suspended);
+            if (!result.Succeeded)
+            {
+                TempData["ErrorMessage"] = string.Join(" ", result.Errors);
+                return RedirectToPage();
+            }
+
+            TempData["StatusMessage"] = "Product suspended.";
+            return RedirectToPage();
         }
 
         public async Task<IActionResult> OnPostDeleteAsync(int id)
