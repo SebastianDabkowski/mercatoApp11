@@ -20,6 +20,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
         public string? TrackingNumber { get; set; }
 
         [BindProperty]
+        public string? TrackingCarrier { get; set; }
+
+        [BindProperty]
         public decimal? RefundedAmount { get; set; }
 
         public DetailsModel(OrderService orderService, UserManager<ApplicationUser> userManager)
@@ -56,6 +59,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
                 NewStatus!,
                 TrackingNumber,
                 RefundedAmount,
+                TrackingCarrier,
                 HttpContext.RequestAborted);
 
             if (!result.Success)
@@ -84,6 +88,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
 
             Order = order;
             NextStatuses = OrderStatuses.NextStatuses(order.Status);
+            TrackingNumber = order.TrackingNumber;
+            TrackingCarrier = order.TrackingCarrier;
             return Page();
         }
     }

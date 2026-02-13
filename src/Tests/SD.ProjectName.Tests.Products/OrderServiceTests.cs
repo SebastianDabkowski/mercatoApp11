@@ -139,12 +139,19 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal(OrderStatuses.Preparing, preparing.UpdatedSubOrder!.Status);
             Assert.Equal(OrderStatuses.Preparing, preparing.OrderStatus);
 
-            var shipped = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Shipped, "TRACK123", null);
+            var shipped = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Shipped, "TRACK123", null, "Carrier A");
             Assert.True(shipped.Success);
             Assert.Equal("TRACK123", shipped.UpdatedSubOrder!.TrackingNumber);
+            Assert.Equal("Carrier A", shipped.UpdatedSubOrder!.TrackingCarrier);
             Assert.Equal(OrderStatuses.Shipped, shipped.OrderStatus);
 
-            var delivered = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered, "TRACK123", null);
+            var updatedTracking = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Shipped, "TRACK456", null, "Carrier B");
+            Assert.True(updatedTracking.Success);
+            Assert.Equal(OrderStatuses.Shipped, updatedTracking.OrderStatus);
+            Assert.Equal("TRACK456", updatedTracking.UpdatedSubOrder!.TrackingNumber);
+            Assert.Equal("Carrier B", updatedTracking.UpdatedSubOrder!.TrackingCarrier);
+
+            var delivered = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered, "TRACK456", null);
             Assert.True(delivered.Success);
             Assert.Equal(OrderStatuses.Delivered, delivered.UpdatedSubOrder!.Status);
             Assert.Equal(OrderStatuses.Delivered, delivered.OrderStatus);
@@ -152,7 +159,8 @@ namespace SD.ProjectName.Tests.Products
             var sellerOrder = await service.GetSellerOrderAsync(result.Order.Id, "seller-1");
             Assert.NotNull(sellerOrder);
             Assert.Equal(OrderStatuses.Delivered, sellerOrder!.Status);
-            Assert.Equal("TRACK123", sellerOrder.TrackingNumber);
+            Assert.Equal("TRACK456", sellerOrder.TrackingNumber);
+            Assert.Equal("Carrier B", sellerOrder.TrackingCarrier);
         }
 
         [Fact]

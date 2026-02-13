@@ -76,12 +76,28 @@ else
                                         {
                                             if (!string.IsNullOrWhiteSpace(trackingLink))
                                             {
-                                                <div class="small"><a href="@trackingLink" target="_blank" rel="noopener">Tracking: @sub.TrackingNumber</a></div>
+                                                <div class="small">
+                                                    <a href="@trackingLink" target="_blank" rel="noopener">Tracking: @sub.TrackingNumber</a>
+                                                    @if (!string.IsNullOrWhiteSpace(sub.TrackingCarrier))
+                                                    {
+                                                        <span class="text-muted"> • @sub.TrackingCarrier</span>
+                                                    }
+                                                </div>
                                             }
                                             else
                                             {
-                                                <div class="text-muted small">Tracking: @sub.TrackingNumber</div>
+                                                <div class="text-muted small">
+                                                    Tracking: @sub.TrackingNumber
+                                                    @if (!string.IsNullOrWhiteSpace(sub.TrackingCarrier))
+                                                    {
+                                                        <span> • @sub.TrackingCarrier</span>
+                                                    }
+                                                </div>
                                             }
+                                        }
+                                        else if (!string.IsNullOrWhiteSpace(sub.TrackingCarrier))
+                                        {
+                                            <div class="text-muted small">Carrier: @sub.TrackingCarrier</div>
                                         }
                                         @if (sub.RefundedAmount > 0 || sub.Status.Equals("Cancelled", StringComparison.OrdinalIgnoreCase) || sub.Status.Equals("Refunded", StringComparison.OrdinalIgnoreCase))
                                         {

@@ -144,6 +144,7 @@ namespace SD.ProjectName.WebApp.Services
         OrderShippingDetail ShippingDetail,
         string Status,
         string? TrackingNumber = null,
+        string? TrackingCarrier = null,
         decimal RefundedAmount = 0);
 
     public record OrderDetailsPayload(List<OrderItemDetail> Items, List<OrderShippingDetail> Shipping, int TotalQuantity, decimal DiscountTotal = 0, string? PromoCode = null, List<OrderSubOrder> SubOrders = null!);
@@ -187,6 +188,7 @@ namespace SD.ProjectName.WebApp.Services
         string SubOrderNumber,
         string Status,
         string? TrackingNumber,
+        string? TrackingCarrier,
         decimal RefundedAmount,
         DateTimeOffset CreatedOn,
         string PaymentMethodLabel,
@@ -650,6 +652,7 @@ namespace SD.ProjectName.WebApp.Services
                 subOrder.SubOrderNumber,
                 subOrder.Status,
                 subOrder.TrackingNumber,
+                subOrder.TrackingCarrier,
                 subOrder.RefundedAmount,
                 order.CreatedOn,
                 string.IsNullOrWhiteSpace(order.PaymentMethodLabel) ? order.PaymentMethodId : order.PaymentMethodLabel,
@@ -671,20 +674,15 @@ namespace SD.ProjectName.WebApp.Services
         public async Task<SubOrderStatusUpdateResult> UpdateSubOrderStatusAsync(
             int orderId,
             string sellerId,
-            string newStatus,
+            string? newStatus,
             string? trackingNumber = null,
             decimal? refundedAmount = null,
+            string? trackingCarrier = null,
             CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(sellerId))
             {
                 return new SubOrderStatusUpdateResult(false, "Seller is required.");
-            }
-
-            var normalizedStatus = OrderStatuses.Normalize(newStatus);
-            if (string.IsNullOrWhiteSpace(normalizedStatus))
-            {
-                return new SubOrderStatusUpdateResult(false, "Status is required.");
             }
 
             var sellerToken = $"\"sellerId\":\"{sellerId}\"";
@@ -703,6 +701,12 @@ namespace SD.ProjectName.WebApp.Services
                 return new SubOrderStatusUpdateResult(false, "Sub-order not found.");
             }
 
+            var normalizedStatus = string.IsNullOrWhiteSpace(newStatus) ? subOrder.Status : OrderStatuses.Normalize(newStatus);
+            if (string.IsNullOrWhiteSpace(normalizedStatus))
+            {
+                return new SubOrderStatusUpdateResult(false, "Status is required.");
+            }
+
             if (!OrderStatuses.CanTransition(subOrder.Status, normalizedStatus))
             {
                 return new SubOrderStatusUpdateResult(false, $"Cannot change status from {subOrder.Status} to {normalizedStatus}.");
@@ -712,6 +716,7 @@ namespace SD.ProjectName.WebApp.Services
             {
                 Status = normalizedStatus,
                 TrackingNumber = string.IsNullOrWhiteSpace(trackingNumber) ? subOrder.TrackingNumber : trackingNumber.Trim(),
+                TrackingCarrier = string.IsNullOrWhiteSpace(trackingCarrier) ? subOrder.TrackingCarrier : trackingCarrier.Trim(),
                 RefundedAmount = string.Equals(normalizedStatus, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase)
                     ? Math.Max(0, refundedAmount ?? subOrder.GrandTotal)
                     : subOrder.RefundedAmount
@@ -937,6 +942,7 @@ namespace SD.ProjectName.WebApp.Services
             var items = subOrder.Items ?? new List<OrderItemDetail>();
             var status = OrderStatuses.Normalize(subOrder.Status);
             var tracking = string.IsNullOrWhiteSpace(subOrder.TrackingNumber) ? null : subOrder.TrackingNumber.Trim();
+            var carrier = string.IsNullOrWhiteSpace(subOrder.TrackingCarrier) ? null : subOrder.TrackingCarrier.Trim();
             var refunded = Math.Max(0, subOrder.RefundedAmount);
 
             return subOrder with
@@ -944,6 +950,7 @@ namespace SD.ProjectName.WebApp.Services
                 Items = items,
                 Status = string.IsNullOrWhiteSpace(status) ? OrderStatuses.Paid : status,
                 TrackingNumber = tracking,
+                TrackingCarrier = carrier,
                 RefundedAmount = refunded
             };
         }
