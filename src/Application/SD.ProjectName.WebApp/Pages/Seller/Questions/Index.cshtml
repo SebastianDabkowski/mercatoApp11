@@ -1,0 +1,58 @@
+@page "/Seller/Questions"
+@model SD.ProjectName.WebApp.Pages.Seller.Questions.IndexModel
+@using SD.ProjectName.WebApp.Services
+@{
+    ViewData["Title"] = "Product questions";
+}
+
+<h1 class="mb-3">Product questions</h1>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+
+<div asp-validation-summary="ModelOnly" class="text-danger small"></div>
+
+@if (Model.Questions.Any())
+{
+    <div class="list-group">
+        @foreach (var question in Model.Questions)
+        {
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="fw-semibold">Product #@question.ProductId</div>
+                        <div class="small text-muted">Buyer: @question.BuyerName</div>
+                    </div>
+                    <div class="text-muted small">@question.CreatedOn.ToLocalTime().ToString("g")</div>
+                </div>
+                <div class="mt-2">@question.Question</div>
+                @if (!string.IsNullOrWhiteSpace(question.Answer))
+                {
+                    <div class="mt-2 p-2 bg-light rounded">
+                        <div class="fw-semibold small">Your reply</div>
+                        <div>@question.Answer</div>
+                    </div>
+                }
+                else
+                {
+                    <form method="post" asp-page-handler="Answer" class="mt-2">
+                        <input type="hidden" asp-for="QuestionId" value="@question.Id" />
+                        <div class="mb-2">
+                            <label class="form-label small" asp-for="Answer">Reply to buyer</label>
+                            <textarea class="form-control" asp-for="Answer" rows="2" maxlength="2000"></textarea>
+                            <span class="text-danger small" asp-validation-for="Answer"></span>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-primary">Send answer</button>
+                    </form>
+                }
+                <div class="small text-muted mt-1">Status: @question.Status</div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div class="alert alert-light border">No questions yet.</div>
+}

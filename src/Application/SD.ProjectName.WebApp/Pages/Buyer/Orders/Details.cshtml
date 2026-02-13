@@ -285,6 +285,40 @@ else
                                         }
                                     </div>
                                 </div>
+                                <div class="mt-3">
+                                    <div class="fw-semibold mb-1">Messages</div>
+                                    @{
+                                        var thread = order.Messages?
+                                            .Where(m => string.Equals(m.SubOrderNumber, sub.SubOrderNumber, StringComparison.OrdinalIgnoreCase))
+                                            .OrderBy(m => m.SentOn)
+                                            .ToList() ?? new List<OrderMessage>();
+                                    }
+                                    <div class="border rounded p-2 bg-light">
+                                        @if (thread.Any())
+                                        {
+                                            foreach (var msg in thread)
+                                            {
+                                                <div class="mb-2">
+                                                    <div class="small text-muted">@msg.SentOn.ToLocalTime().ToString("g") • @msg.SenderRole</div>
+                                                    <div>@msg.Message</div>
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div class="text-muted small">No messages yet.</div>
+                                        }
+                                        <form method="post" asp-page-handler="Message" asp-route-orderId="@order.Id">
+                                            <input type="hidden" asp-for="MessageSubOrder" value="@sub.SubOrderNumber" />
+                                            <div class="mt-2">
+                                                <label class="form-label small" for="message-content-@sub.SubOrderNumber">Send a message</label>
+                                                <textarea class="form-control form-control-sm" id="message-content-@sub.SubOrderNumber" asp-for="MessageContent" rows="2" placeholder="Ask the seller about this sub-order"></textarea>
+                                                <span class="text-danger small" asp-validation-for="MessageContent"></span>
+                                            </div>
+                                            <button type="submit" class="btn btn-sm btn-outline-primary mt-2">Send</button>
+                                        </form>
+                                    </div>
+                                </div>
                                 @if (sub.Return != null)
                                 {
                                     var returnItems = sub.Return.Items.Select(i =>

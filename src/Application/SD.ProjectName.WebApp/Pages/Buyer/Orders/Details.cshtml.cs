@@ -44,6 +44,12 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
         [BindProperty]
         public int SellerRatingValue { get; set; } = 5;
 
+        [BindProperty]
+        public string? MessageSubOrder { get; set; }
+
+        [BindProperty]
+        public string? MessageContent { get; set; }
+
         [TempData]
         public string? StatusMessage { get; set; }
 
@@ -307,6 +313,53 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
             return RedirectToPage(new { orderId });
         }
 
+        public async Task<IActionResult> OnPostMessageAsync(int orderId)
+        {
+            var buyerId = _userManager.GetUserId(User);
+            if (string.IsNullOrWhiteSpace(buyerId))
+            {
+                return Challenge();
+            }
+
+            var loadResult = await LoadAsync(orderId, buyerId);
+            if (loadResult is not PageResult)
+            {
+                return loadResult;
+            }
+
+            if (string.IsNullOrWhiteSpace(MessageSubOrder))
+            {
+                ModelState.AddModelError(nameof(MessageSubOrder), "Select a seller to message.");
+            }
+
+            if (string.IsNullOrWhiteSpace(MessageContent))
+            {
+                ModelState.AddModelError(nameof(MessageContent), "Enter a message.");
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return Page();
+            }
+
+            var result = await _orderService.AddOrderMessageAsync(
+                orderId,
+                MessageSubOrder!,
+                OrderMessageRoles.Buyer,
+                buyerId,
+                MessageContent!,
+                HttpContext.RequestAborted);
+
+            if (!result.Success)
+            {
+                ModelState.AddModelError(string.Empty, result.Error ?? "Unable to send your message.");
+                return Page();
+            }
+
+            StatusMessage = "Message sent to the seller.";
+            return RedirectToPage(new { orderId });
+        }
+
         private async Task<IActionResult> LoadAsync(int orderId, string buyerId)
         {
             Order = await _orderService.GetOrderAsync(orderId, buyerId, HttpContext.RequestAborted);
@@ -340,6 +393,11 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
             if (ReviewProductId <= 0 && Order.Items.Count > 0)
             {
                 ReviewProductId = Order.Items[0].ProductId;
+            }
+
+            if (string.IsNullOrWhiteSpace(MessageSubOrder))
+            {
+                MessageSubOrder = Order.SubOrders.FirstOrDefault()?.SubOrderNumber;
             }
 
             return Page();

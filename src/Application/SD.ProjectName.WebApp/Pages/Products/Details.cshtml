@@ -1,6 +1,7 @@
 ﻿@page "/Products/Details/{id:int}"
 @using System.Text.Json
 @using System.Text.Json.Serialization
+@using SD.ProjectName.WebApp.Identity
 @model SD.ProjectName.WebApp.Pages.Products.DetailsModel
 @{
     ViewData["Title"] = Model.Product?.Title ?? "Product unavailable";
@@ -193,6 +194,59 @@ else
         {
             <span class="text-muted ms-2">Select a variant to see availability.</span>
         }
+    </div>
+    <div class="card mt-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Questions about this product</span>
+            <span class="text-muted small">Buyer to seller</span>
+        </div>
+        <div class="card-body">
+            <div asp-validation-summary="ModelOnly" class="text-danger small"></div>
+            @if (Model.Questions.Any())
+            {
+                <div class="mb-3">
+                    @foreach (var question in Model.Questions)
+                    {
+                        <div class="border-bottom pb-2 mb-2">
+                            <div class="fw-semibold">@question.BuyerName</div>
+                            <div class="text-muted small">@question.CreatedOn.ToLocalTime().ToString("g")</div>
+                            <div class="mt-1">@question.Question</div>
+                            @if (!string.IsNullOrWhiteSpace(question.Answer))
+                            {
+                                <div class="mt-2 p-2 bg-light rounded">
+                                    <div class="fw-semibold small">Seller reply</div>
+                                    <div>@question.Answer</div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="text-muted small mt-1">Awaiting seller response.</div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-light border">No questions yet. Be the first to ask.</div>
+            }
+
+            @if (User?.Identity?.IsAuthenticated == true && User.IsInRole(AccountTypes.Buyer))
+            {
+                <form method="post" asp-page-handler="Question" asp-route-id="@Model.Product!.Id" asp-route-returnUrl="@Model.ReturnUrl">
+                    <div class="mb-2">
+                        <label class="form-label" asp-for="QuestionContent">Ask the seller</label>
+                        <textarea class="form-control" asp-for="QuestionContent" rows="3" maxlength="2000" placeholder="Ask about sizing, shipping, or other details."></textarea>
+                        <span class="text-danger small" asp-validation-for="QuestionContent"></span>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-outline-primary">Send question</button>
+                </form>
+            }
+            else
+            {
+                <div class="text-muted small">Sign in as a buyer to ask a question.</div>
+            }
+        </div>
     </div>
     @if (Model.Reviews.Any())
     {

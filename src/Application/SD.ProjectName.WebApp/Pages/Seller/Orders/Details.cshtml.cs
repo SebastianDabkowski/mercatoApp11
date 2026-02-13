@@ -28,6 +28,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
         [BindProperty]
         public List<int> SelectedItems { get; set; } = new();
 
+        [BindProperty]
+        public string? MessageContent { get; set; }
+
         public DetailsModel(OrderService orderService, UserManager<ApplicationUser> userManager)
         {
             _orderService = orderService;
@@ -88,6 +91,48 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
             {
                 ModelState.AddModelError(string.Empty, result.Error ?? "Unable to update status.");
                 return await LoadAsync(orderId);
+            }
+
+            return RedirectToPage(new { orderId });
+        }
+
+        public async Task<IActionResult> OnPostMessageAsync(int orderId)
+        {
+            var sellerId = _userManager.GetUserId(User);
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return Challenge();
+            }
+
+            var loadResult = await LoadAsync(orderId);
+            if (loadResult is not PageResult)
+            {
+                return loadResult;
+            }
+
+            if (string.IsNullOrWhiteSpace(MessageContent))
+            {
+                ModelState.AddModelError(nameof(MessageContent), "Enter a message.");
+                return Page();
+            }
+
+            if (Order == null)
+            {
+                return NotFound();
+            }
+
+            var result = await _orderService.AddOrderMessageAsync(
+                orderId,
+                Order.SubOrderNumber,
+                OrderMessageRoles.Seller,
+                sellerId,
+                MessageContent!,
+                HttpContext.RequestAborted);
+
+            if (!result.Success)
+            {
+                ModelState.AddModelError(string.Empty, result.Error ?? "Unable to send message.");
+                return Page();
             }
 
             return RedirectToPage(new { orderId });
