@@ -68,6 +68,52 @@ else
 
     <div asp-validation-summary="ModelOnly" class="text-danger small"></div>
 
+    @if (Model.CanSubmitReview)
+    {
+        <div class="card mb-3">
+            <div class="card-header">Share your review</div>
+            <div class="card-body">
+                <form method="post" asp-page-handler="Review" asp-route-orderId="@order.Id">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label" asp-for="ReviewProductId">Product</label>
+                            <select class="form-select" asp-for="ReviewProductId">
+                                @foreach (var item in order.Items)
+                                {
+                                    <option value="@item.ProductId">@item.Name</option>
+                                }
+                            </select>
+                            <span class="text-danger small" asp-validation-for="ReviewProductId"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" asp-for="ReviewRating">Rating</label>
+                            <select class="form-select" asp-for="ReviewRating">
+                                @for (var i = 5; i >= 1; i--)
+                                {
+                                    <option value="@i">@i</option>
+                                }
+                            </select>
+                            <span class="text-danger small" asp-validation-for="ReviewRating"></span>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label" asp-for="ReviewContent">Feedback</label>
+                        <textarea class="form-control" asp-for="ReviewContent" rows="3" placeholder="Share details that help other buyers."></textarea>
+                        <span class="text-danger small" asp-validation-for="ReviewContent"></span>
+                        <div class="form-text">Reviews are rate limited to prevent spam. Keep feedback constructive.</div>
+                    </div>
+                    <div class="mt-3">
+                        <button type="submit" class="btn btn-primary btn-sm">Submit review</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    }
+    else if (order.Status.Equals(OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase) == false)
+    {
+        <div class="alert alert-info">You can leave a review after this order is marked delivered.</div>
+    }
+
     <div class="row">
         <div class="col-lg-8">
             <div class="card mb-3">

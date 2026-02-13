@@ -1,14 +1,18 @@
+using System;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.Modules.Products.Domain.Interfaces;
+using SD.ProjectName.WebApp.Data;
 using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Pages.Products;
 using SD.ProjectName.WebApp.Services;
@@ -64,11 +68,12 @@ namespace SD.ProjectName.Tests.Products
             var recentlyViewed = new RecentlyViewedService(getProducts, new RecentlyViewedOptions(), Mock.Of<ILogger<RecentlyViewedService>>());
             var logger = Mock.Of<ILogger<DetailsModel>>();
             var userManager = CreateUserManager();
+            var orderService = new OrderService(CreateContext(), Mock.Of<IEmailSender>(), Mock.Of<ILogger<OrderService>>());
             var httpContext = new DefaultHttpContext();
             var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
             var pageContext = new PageContext(actionContext);
 
-            var model = new DetailsModel(getProducts, recentlyViewed, userManager, logger)
+            var model = new DetailsModel(getProducts, recentlyViewed, userManager, orderService, logger)
             {
                 PageContext = pageContext
             };
@@ -80,6 +85,15 @@ namespace SD.ProjectName.Tests.Products
         {
             var store = new Mock<IUserStore<ApplicationUser>>();
             return new Mock<UserManager<ApplicationUser>>(store.Object, null!, null!, null!, null!, null!, null!, null!, null!).Object;
+        }
+
+        private static ApplicationDbContext CreateContext()
+        {
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            return new ApplicationDbContext(options);
         }
     }
 }

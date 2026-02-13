@@ -168,6 +168,31 @@ namespace SD.ProjectName.WebApp.Services
         public static readonly TimeSpan ReturnWindow = TimeSpan.FromDays(ReturnWindowDays);
     }
 
+    public static class ReviewStatuses
+    {
+        public const string Pending = "Pending";
+        public const string Published = "Published";
+        public const string Rejected = "Rejected";
+
+        private static readonly IReadOnlyList<string> Ordered = new[] { Pending, Published, Rejected };
+
+        public static string Normalize(string? status)
+        {
+            if (string.IsNullOrWhiteSpace(status))
+            {
+                return Pending;
+            }
+
+            var match = Ordered.FirstOrDefault(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+            return match ?? Pending;
+        }
+
+        public static bool IsVisible(string? status)
+        {
+            return string.Equals(Normalize(status), Published, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
     public class OrderRecord
     {
         public int Id { get; set; }
@@ -205,6 +230,27 @@ namespace SD.ProjectName.WebApp.Services
         public string DeliveryAddressJson { get; set; } = string.Empty;
 
         public string DetailsJson { get; set; } = string.Empty;
+    }
+
+    public class ProductReview
+    {
+        public int Id { get; set; }
+
+        public int OrderId { get; set; }
+
+        public int ProductId { get; set; }
+
+        public string BuyerId { get; set; } = string.Empty;
+
+        public string BuyerName { get; set; } = string.Empty;
+
+        public int Rating { get; set; }
+
+        public string Comment { get; set; } = string.Empty;
+
+        public DateTimeOffset CreatedOn { get; set; }
+
+        public string Status { get; set; } = ReviewStatuses.Pending;
     }
 
     public record OrderItemDetail(int ProductId, string Name, string Variant, int Quantity, decimal UnitPrice, decimal LineTotal, string SellerId, string SellerName, string Status = OrderStatuses.Paid, string Category = "", decimal? CommissionRate = null);
@@ -349,6 +395,8 @@ namespace SD.ProjectName.WebApp.Services
         List<OrderSubOrder> SubOrders,
         List<EscrowAllocation> Escrow);
 
+    public record ProductReviewView(int ProductId, int Rating, string Comment, string BuyerName, DateTimeOffset CreatedOn);
+
     public record OrderSummaryView(int Id, string OrderNumber, DateTimeOffset CreatedOn, string Status, decimal GrandTotal, int TotalQuantity);
 
     public record SellerOrderSummaryView(
@@ -436,6 +484,8 @@ namespace SD.ProjectName.WebApp.Services
     public record SubOrderStatusUpdateResult(bool Success, string? Error, OrderSubOrder? UpdatedSubOrder = null, string? OrderStatus = null);
 
     public record ReturnRequestResult(bool Success, string? Error, ReturnRequest? Request = null);
+
+    public record ProductReviewResult(bool Success, string? Error, ProductReview? Review = null);
 
     public record CaseMessageView(string Actor, string Message, DateTimeOffset SentOn);
 
@@ -953,6 +1003,129 @@ namespace SD.ProjectName.WebApp.Services
                 details.Shipping,
                 details.SubOrders,
                 details.Escrow ?? new List<EscrowAllocation>());
+        }
+
+        public async Task<ProductReviewResult> SubmitProductReviewAsync(
+            int orderId,
+            int productId,
+            string? buyerId,
+            string? buyerName,
+            int rating,
+            string? comment,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(buyerId))
+            {
+                return new ProductReviewResult(false, "Buyer is required.");
+            }
+
+            if (productId <= 0)
+            {
+                return new ProductReviewResult(false, "Select a product to review.");
+            }
+
+            if (rating < 1 || rating > 5)
+            {
+                return new ProductReviewResult(false, "Rating must be between 1 and 5.");
+            }
+
+            var normalizedComment = string.IsNullOrWhiteSpace(comment) ? string.Empty : comment.Trim();
+            if (normalizedComment.Length == 0)
+            {
+                return new ProductReviewResult(false, "Provide feedback for your review.");
+            }
+
+            if (normalizedComment.Length > 2000)
+            {
+                normalizedComment = normalizedComment[..2000];
+            }
+
+            var order = await _dbContext.Orders.FirstOrDefaultAsync(
+                o => o.Id == orderId && o.BuyerId == buyerId,
+                cancellationToken);
+            if (order == null)
+            {
+                return new ProductReviewResult(false, "Order not found.");
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            var orderStatus = OrderStatuses.Normalize(CalculateOrderStatus(details.SubOrders, order.Status));
+            if (!string.Equals(orderStatus, OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase))
+            {
+                return new ProductReviewResult(false, "Reviews are available after delivery.");
+            }
+
+            var purchasedItem = details.Items.FirstOrDefault(i => i.ProductId == productId);
+            if (purchasedItem == null)
+            {
+                return new ProductReviewResult(false, "Product not found in this order.");
+            }
+
+            var subOrder = details.SubOrders.FirstOrDefault(s => s.Items.Any(i => i.ProductId == productId));
+            if (subOrder != null && !string.Equals(OrderStatuses.Normalize(subOrder.Status), OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase))
+            {
+                return new ProductReviewResult(false, "Reviews are available after delivery.");
+            }
+
+            var existing = await _dbContext.ProductReviews.FirstOrDefaultAsync(
+                r => r.OrderId == orderId && r.ProductId == productId && r.BuyerId == buyerId,
+                cancellationToken);
+            if (existing != null)
+            {
+                return new ProductReviewResult(false, "You already reviewed this product for this order.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var recent = await _dbContext.ProductReviews
+                .Where(r => r.BuyerId == buyerId)
+                .OrderByDescending(r => r.CreatedOn)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (recent != null && now - recent.CreatedOn < TimeSpan.FromMinutes(1))
+            {
+                return new ProductReviewResult(false, "Please wait before submitting another review.");
+            }
+
+            var reviewerName = string.IsNullOrWhiteSpace(buyerName)
+                ? order.BuyerName
+                : buyerName.Trim();
+            var review = new ProductReview
+            {
+                OrderId = order.Id,
+                ProductId = productId,
+                BuyerId = buyerId,
+                BuyerName = string.IsNullOrWhiteSpace(reviewerName) ? "Buyer" : reviewerName,
+                Rating = rating,
+                Comment = normalizedComment,
+                CreatedOn = now,
+                Status = ReviewStatuses.Published
+            };
+
+            _dbContext.ProductReviews.Add(review);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            return new ProductReviewResult(true, null, review);
+        }
+
+        public async Task<List<ProductReviewView>> GetPublishedReviewsAsync(
+            int productId,
+            int take = 20,
+            CancellationToken cancellationToken = default)
+        {
+            if (productId <= 0)
+            {
+                return new List<ProductReviewView>();
+            }
+
+            var limit = take <= 0 ? 20 : Math.Min(take, 100);
+            var reviews = await _dbContext.ProductReviews.AsNoTracking()
+                .Where(r => r.ProductId == productId && ReviewStatuses.IsVisible(r.Status))
+                .OrderByDescending(r => r.CreatedOn)
+                .Take(limit)
+                .ToListAsync(cancellationToken);
+
+            return reviews
+                .Select(r => new ProductReviewView(r.ProductId, r.Rating, r.Comment, r.BuyerName, r.CreatedOn))
+                .ToList();
         }
 
         public async Task<PaymentStatusUpdateResult> UpdatePaymentStatusAsync(

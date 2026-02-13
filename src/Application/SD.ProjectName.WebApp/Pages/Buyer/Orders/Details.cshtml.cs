@@ -29,6 +29,15 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
         [BindProperty]
         public string? ReturnDescription { get; set; }
 
+        [BindProperty]
+        public int ReviewProductId { get; set; }
+
+        [BindProperty]
+        public int ReviewRating { get; set; } = 5;
+
+        [BindProperty]
+        public string? ReviewContent { get; set; }
+
         [TempData]
         public string? StatusMessage { get; set; }
 
@@ -40,6 +49,7 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
 
         public OrderView? Order { get; private set; }
         public int ReturnWindowDays => ReturnPolicies.ReturnWindowDays;
+        public bool CanSubmitReview => Order != null && string.Equals(OrderStatuses.Normalize(Order.Status), OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase);
 
         public async Task<IActionResult> OnGetAsync(int orderId)
         {
@@ -170,6 +180,68 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
             return RedirectToPage(new { orderId });
         }
 
+        public async Task<IActionResult> OnPostReviewAsync(int orderId)
+        {
+            var buyerId = _userManager.GetUserId(User);
+            if (string.IsNullOrWhiteSpace(buyerId))
+            {
+                return Challenge();
+            }
+
+            var loadResult = await LoadAsync(orderId, buyerId);
+            if (loadResult is not PageResult)
+            {
+                return loadResult;
+            }
+
+            if (!CanSubmitReview)
+            {
+                ModelState.AddModelError(string.Empty, "Reviews are available after delivery.");
+            }
+
+            if (ReviewProductId <= 0 || Order?.Items.All(i => i.ProductId != ReviewProductId) != false)
+            {
+                ModelState.AddModelError(nameof(ReviewProductId), "Select a product from this order.");
+            }
+
+            if (ReviewRating < 1 || ReviewRating > 5)
+            {
+                ModelState.AddModelError(nameof(ReviewRating), "Rating must be between 1 and 5.");
+            }
+
+            if (string.IsNullOrWhiteSpace(ReviewContent))
+            {
+                ModelState.AddModelError(nameof(ReviewContent), "Share feedback for your review.");
+            }
+            else if (ReviewContent!.Length > 2000)
+            {
+                ModelState.AddModelError(nameof(ReviewContent), "Review text must be 2000 characters or fewer.");
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return Page();
+            }
+
+            var result = await _orderService.SubmitProductReviewAsync(
+                orderId,
+                ReviewProductId,
+                buyerId,
+                null,
+                ReviewRating,
+                ReviewContent,
+                HttpContext.RequestAborted);
+
+            if (!result.Success)
+            {
+                ModelState.AddModelError(string.Empty, result.Error ?? "Unable to submit review.");
+                return Page();
+            }
+
+            StatusMessage = "Review submitted. Thank you for your feedback!";
+            return RedirectToPage(new { orderId });
+        }
+
         private async Task<IActionResult> LoadAsync(int orderId, string buyerId)
         {
             Order = await _orderService.GetOrderAsync(orderId, buyerId, HttpContext.RequestAborted);
@@ -186,6 +258,11 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
             if (string.IsNullOrWhiteSpace(ReturnType))
             {
                 ReturnType = ReturnRequestTypes.Return;
+            }
+
+            if (ReviewProductId <= 0 && Order.Items.Count > 0)
+            {
+                ReviewProductId = Order.Items[0].ProductId;
             }
 
             return Page();

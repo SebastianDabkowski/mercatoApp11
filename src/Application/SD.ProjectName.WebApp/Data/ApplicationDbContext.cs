@@ -13,6 +13,7 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<OrderRecord> Orders => Set<OrderRecord>();
         public DbSet<SellerShippingMethod> SellerShippingMethods => Set<SellerShippingMethod>();
         public DbSet<ShippingAddress> ShippingAddresses => Set<ShippingAddress>();
+        public DbSet<ProductReview> ProductReviews => Set<ProductReview>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -330,6 +331,35 @@ namespace SD.ProjectName.WebApp.Data
                 entity.HasIndex(o => new { o.BuyerId, o.Status, o.CreatedOn });
                 entity.HasIndex(o => o.Status);
                 entity.HasIndex(o => o.CreatedOn);
+            });
+
+            builder.Entity<ProductReview>(entity =>
+            {
+                entity.Property(r => r.BuyerId)
+                    .HasMaxLength(450)
+                    .IsRequired();
+
+                entity.Property(r => r.BuyerName)
+                    .HasMaxLength(256)
+                    .IsRequired();
+
+                entity.Property(r => r.Comment)
+                    .HasMaxLength(2000);
+
+                entity.Property(r => r.Status)
+                    .HasMaxLength(32)
+                    .IsRequired();
+
+                entity.Property(r => r.CreatedOn)
+                    .IsRequired();
+
+                entity.Property(r => r.Rating)
+                    .IsRequired();
+
+                entity.HasIndex(r => new { r.OrderId, r.ProductId, r.BuyerId })
+                    .IsUnique();
+
+                entity.HasIndex(r => new { r.ProductId, r.Status, r.CreatedOn });
             });
         }
     }
