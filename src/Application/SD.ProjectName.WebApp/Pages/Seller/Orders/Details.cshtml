@@ -21,6 +21,10 @@ else
                 {
                     <div class="text-muted small">Tracking: @Model.Order.TrackingNumber</div>
                 }
+                @if (!string.IsNullOrWhiteSpace(Model.Order.TrackingCarrier))
+                {
+                    <div class="text-muted small">Carrier: @Model.Order.TrackingCarrier</div>
+                }
                 @if (Model.Order.RefundedAmount > 0)
                 {
                     <div class="text-danger small">Refunded: @Model.Order.RefundedAmount.ToString("C")</div>
@@ -118,6 +122,10 @@ else
                     {
                         <div class="text-muted small mb-2">Tracking: @Model.Order.TrackingNumber</div>
                     }
+                    @if (!string.IsNullOrWhiteSpace(Model.Order.TrackingCarrier))
+                    {
+                        <div class="text-muted small mb-2">Carrier: @Model.Order.TrackingCarrier</div>
+                    }
                     @if (Model.Order.RefundedAmount > 0)
                     {
                         <div class="text-danger small mb-2">Refunded: @Model.Order.RefundedAmount.ToString("C")</div>
@@ -134,6 +142,10 @@ else
                                 <label class="form-label form-label-sm" asp-for="NewStatus">Next status</label>
                                 <select asp-for="NewStatus" class="form-select form-select-sm">
                                     <option value="">Select...</option>
+                                    @if (Model.Order.Status.Equals("Shipped", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <option value="@Model.Order.Status">Shipped (update tracking)</option>
+                                    }
                                     @foreach (var status in Model.NextStatuses)
                                     {
                                         <option value="@status">@status</option>
@@ -144,6 +156,10 @@ else
                             <div class="mb-2">
                                 <label class="form-label form-label-sm" asp-for="TrackingNumber">Tracking (optional)</label>
                                 <input asp-for="TrackingNumber" class="form-control form-control-sm" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label form-label-sm" asp-for="TrackingCarrier">Carrier (optional)</label>
+                                <input asp-for="TrackingCarrier" class="form-control form-control-sm" />
                             </div>
                             <div class="mb-3">
                                 <label class="form-label form-label-sm" asp-for="RefundedAmount">Refunded amount</label>
