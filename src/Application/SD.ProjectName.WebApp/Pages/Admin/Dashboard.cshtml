@@ -1,10 +1,21 @@
 @page
 @using Microsoft.AspNetCore.Authorization
 @using SD.ProjectName.WebApp.Identity
+@using SD.ProjectName.WebApp.Services
 @attribute [Authorize(Roles = AccountTypes.Admin)]
 @model SD.ProjectName.WebApp.Pages.Admin.DashboardModel
 @{
     ViewData["Title"] = "Admin dashboard";
+
+    string MetricLabel(string? key) => key switch
+    {
+        DashboardMetricKeys.Gmv => "Total GMV",
+        DashboardMetricKeys.Orders => "Orders",
+        DashboardMetricKeys.Sellers => "Active sellers",
+        DashboardMetricKeys.Products => "Active products",
+        DashboardMetricKeys.Users => "New users",
+        _ => "Details"
+    };
 }
 
 <h1 class="display-6">Admin dashboard</h1>
@@ -15,22 +26,201 @@
 </div>
 
 <div class="card my-3">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-start gap-3">
+        <div>
+            <div class="fw-semibold">Marketplace performance</div>
+            <div class="text-muted small">
+                Showing @Model.RangeStart.ToString("yyyy-MM-dd") to @Model.RangeEnd.ToString("yyyy-MM-dd")
+            </div>
+            <div class="text-muted small">
+                Last refreshed @Model.Metrics.RefreshedOn.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'")
+            </div>
+        </div>
+        <div class="d-flex flex-column gap-2 align-items-end">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Date range presets">
+                <a class="btn btn-outline-primary @(Model.Preset == DashboardRangePresets.Today ? "active" : string.Empty)"
+                   asp-page="/Admin/Dashboard"
+                   asp-route-Preset="@DashboardRangePresets.Today">
+                    Today
+                </a>
+                <a class="btn btn-outline-primary @(Model.Preset == DashboardRangePresets.Last7 ? "active" : string.Empty)"
+                   asp-page="/Admin/Dashboard"
+                   asp-route-Preset="@DashboardRangePresets.Last7">
+                    Last 7 days
+                </a>
+                <a class="btn btn-outline-primary @(Model.Preset == DashboardRangePresets.Last30 ? "active" : string.Empty)"
+                   asp-page="/Admin/Dashboard"
+                   asp-route-Preset="@DashboardRangePresets.Last30">
+                    Last 30 days
+                </a>
+            </div>
+            <form class="row g-2 align-items-end" method="get">
+                <input type="hidden" name="Preset" value="@DashboardRangePresets.Custom" />
+                @if (!string.IsNullOrWhiteSpace(Model.SelectedMetric))
+                {
+                    <input type="hidden" name="SelectedMetric" value="@Model.SelectedMetric" />
+                }
+                <div class="col-auto">
+                    <label class="form-label form-label-sm fw-semibold" for="fromDate">From</label>
+                    <input id="fromDate" class="form-control form-control-sm" type="date" name="FromDate" value="@(Model.FromDate?.ToString("yyyy-MM-dd"))" />
+                </div>
+                <div class="col-auto">
+                    <label class="form-label form-label-sm fw-semibold" for="toDate">To</label>
+                    <input id="toDate" class="form-control form-control-sm" type="date" name="ToDate" value="@(Model.ToDate?.ToString("yyyy-MM-dd"))" />
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+                    <a class="btn btn-sm btn-link text-decoration-none" asp-page="/Admin/Dashboard">Reset</a>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="card-body">
+        @if (Model.IsEmptyPeriod)
+        {
+            <div class="alert alert-info mb-3">
+                No orders or new user registrations were found for this period. KPIs show zero activity.
+            </div>
+        }
+        <div class="row g-3">
+            <div class="col-12 col-md-6 col-xl-3">
+                <a class="card h-100 text-decoration-none border-0 shadow-sm @(Model.SelectedMetric == DashboardMetricKeys.Gmv ? "border-primary" : string.Empty)"
+                   asp-page="/Admin/Dashboard"
+                   asp-route-Preset="@Model.Preset"
+                   asp-route-FromDate="@(Model.FromDate?.ToString("yyyy-MM-dd"))"
+                   asp-route-ToDate="@(Model.ToDate?.ToString("yyyy-MM-dd"))"
+                   asp-route-SelectedMetric="@DashboardMetricKeys.Gmv">
+                    <div class="card-body">
+                        <div class="text-muted small">Total GMV</div>
+                        <div class="fs-3 fw-semibold">@Model.Metrics.TotalGmv.ToString("C")</div>
+                        <div class="text-muted small">Gross merchandise value incl. shipping</div>
+                    </div>
+                </a>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <a class="card h-100 text-decoration-none border-0 shadow-sm @(Model.SelectedMetric == DashboardMetricKeys.Orders ? "border-primary" : string.Empty)"
+                   asp-page="/Admin/Dashboard"
+                   asp-route-Preset="@Model.Preset"
+                   asp-route-FromDate="@(Model.FromDate?.ToString("yyyy-MM-dd"))"
+                   asp-route-ToDate="@(Model.ToDate?.ToString("yyyy-MM-dd"))"
+                   asp-route-SelectedMetric="@DashboardMetricKeys.Orders">
+                    <div class="card-body">
+                        <div class="text-muted small">Orders</div>
+                        <div class="fs-3 fw-semibold">@Model.Metrics.Orders</div>
+                        <div class="text-muted small">Total orders placed</div>
+                    </div>
+                </a>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <a class="card h-100 text-decoration-none border-0 shadow-sm @(Model.SelectedMetric == DashboardMetricKeys.Sellers ? "border-primary" : string.Empty)"
+                   asp-page="/Admin/Dashboard"
+                   asp-route-Preset="@Model.Preset"
+                   asp-route-FromDate="@(Model.FromDate?.ToString("yyyy-MM-dd"))"
+                   asp-route-ToDate="@(Model.ToDate?.ToString("yyyy-MM-dd"))"
+                   asp-route-SelectedMetric="@DashboardMetricKeys.Sellers">
+                    <div class="card-body">
+                        <div class="text-muted small">Active sellers</div>
+                        <div class="fs-3 fw-semibold">@Model.Metrics.ActiveSellers</div>
+                        <div class="text-muted small">Orders or live listings</div>
+                    </div>
+                </a>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <a class="card h-100 text-decoration-none border-0 shadow-sm @(Model.SelectedMetric == DashboardMetricKeys.Products ? "border-primary" : string.Empty)"
+                   asp-page="/Admin/Dashboard"
+                   asp-route-Preset="@Model.Preset"
+                   asp-route-FromDate="@(Model.FromDate?.ToString("yyyy-MM-dd"))"
+                   asp-route-ToDate="@(Model.ToDate?.ToString("yyyy-MM-dd"))"
+                   asp-route-SelectedMetric="@DashboardMetricKeys.Products">
+                    <div class="card-body">
+                        <div class="text-muted small">Active products</div>
+                        <div class="fs-3 fw-semibold">@Model.Metrics.ActiveProducts</div>
+                        <div class="text-muted small">Products in active status</div>
+                    </div>
+                </a>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <a class="card h-100 text-decoration-none border-0 shadow-sm @(Model.SelectedMetric == DashboardMetricKeys.Users ? "border-primary" : string.Empty)"
+                   asp-page="/Admin/Dashboard"
+                   asp-route-Preset="@Model.Preset"
+                   asp-route-FromDate="@(Model.FromDate?.ToString("yyyy-MM-dd"))"
+                   asp-route-ToDate="@(Model.ToDate?.ToString("yyyy-MM-dd"))"
+                   asp-route-SelectedMetric="@DashboardMetricKeys.Users">
+                    <div class="card-body">
+                        <div class="text-muted small">New users</div>
+                        <div class="fs-3 fw-semibold">@Model.Metrics.NewUsers</div>
+                        <div class="text-muted small">Registrations in range</div>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (DashboardMetricKeys.IsValid(Model.SelectedMetric))
+{
+    <div class="card my-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <div class="fw-semibold">Details · @MetricLabel(Model.SelectedMetric)</div>
+                <div class="text-muted small">Period: @Model.RangeStart.ToString("yyyy-MM-dd") - @Model.RangeEnd.ToString("yyyy-MM-dd")</div>
+            </div>
+            <a class="btn btn-sm btn-outline-secondary" asp-page="/Admin/Dashboard" asp-route-Preset="@Model.Preset" asp-route-FromDate="@(Model.FromDate?.ToString("yyyy-MM-dd"))" asp-route-ToDate="@(Model.ToDate?.ToString("yyyy-MM-dd"))">
+                Close
+            </a>
+        </div>
+        <div class="card-body">
+            @if (Model.MetricDetails == null || Model.MetricDetails.Count == 0)
+            {
+                <div class="text-muted small">No records for this metric in the selected period.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead>
+                            <tr>
+                                <th scope="col">Title</th>
+                                <th scope="col">Details</th>
+                                <th scope="col">Status</th>
+                                <th scope="col" class="text-end">Amount</th>
+                                <th scope="col">Occurred</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var detail in Model.MetricDetails)
+                            {
+                                <tr>
+                                    <td class="fw-semibold">@detail.Title</td>
+                                    <td class="text-muted small">@detail.Subtitle</td>
+                                    <td>@detail.Status</td>
+                                    <td class="text-end">
+                                        @if (detail.Amount.HasValue)
+                                        {
+                                            @detail.Amount.Value.ToString("C")
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted small">-</span>
+                                        }
+                                    </td>
+                                    <td class="text-muted small">
+                                        @(detail.OccurredOn?.ToString("yyyy-MM-dd HH:mm") ?? "-")
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<div class="card my-3">
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center">
         <span class="fw-semibold">Returns &amp; complaints SLA</span>
-        <form class="row g-2 align-items-end" method="get">
-            <div class="col-auto">
-                <label class="form-label form-label-sm fw-semibold" for="fromDate">From</label>
-                <input id="fromDate" class="form-control form-control-sm" type="date" name="FromDate" value="@(Model.FromDate?.ToString("yyyy-MM-dd"))" />
-            </div>
-            <div class="col-auto">
-                <label class="form-label form-label-sm fw-semibold" for="toDate">To</label>
-                <input id="toDate" class="form-control form-control-sm" type="date" name="ToDate" value="@(Model.ToDate?.ToString("yyyy-MM-dd"))" />
-            </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-sm btn-primary">Refresh</button>
-                <a class="btn btn-sm btn-link text-decoration-none" asp-page="/Admin/Dashboard">Reset</a>
-            </div>
-        </form>
+        <span class="text-muted small">Period: @Model.RangeStart.ToString("yyyy-MM-dd") - @Model.RangeEnd.ToString("yyyy-MM-dd")</span>
     </div>
     <div class="card-body">
         @if (Model.SlaMetrics.Count == 0)
