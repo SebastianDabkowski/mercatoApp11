@@ -18,6 +18,8 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         private readonly ShippingOptionsService _shippingOptionsService;
         private readonly CheckoutOptions _checkoutOptions;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly OrderService _orderService;
+        private readonly CartService _cartService;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -40,7 +42,9 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             CheckoutStateService checkoutStateService,
             ShippingOptionsService shippingOptionsService,
             CheckoutOptions checkoutOptions,
-            UserManager<ApplicationUser> userManager)
+            UserManager<ApplicationUser> userManager,
+            OrderService orderService,
+            CartService cartService)
         {
             _cartViewService = cartViewService;
             _userCartService = userCartService;
@@ -48,6 +52,8 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             _shippingOptionsService = shippingOptionsService;
             _checkoutOptions = checkoutOptions;
             _userManager = userManager;
+            _orderService = orderService;
+            _cartService = cartService;
         }
 
         public async Task<IActionResult> OnGetAsync(string? providerResult = null, string? method = null)
@@ -155,9 +161,9 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 return Redirect(callbackUrl ?? "/Checkout/Payment");
             }
 
-            _checkoutStateService.SavePaymentSelection(HttpContext, selected.Id, CheckoutPaymentStatus.Confirmed, GenerateReference(selected.Id), signature);
+            var updatedState = _checkoutStateService.SavePaymentSelection(HttpContext, selected.Id, CheckoutPaymentStatus.Confirmed, GenerateReference(selected.Id), signature);
             StoreSnapshot(quote);
-            return RedirectToPage("/Checkout/Confirmation");
+            return await FinalizeOrderAsync(quote, updatedState);
         }
 
         private async Task<IActionResult?> HandleProviderReturn(string providerResult, string? methodId, CheckoutState state, ShippingQuote quote)
@@ -186,9 +192,9 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
 
             if (normalized == "success")
             {
-                _checkoutStateService.SavePaymentSelection(HttpContext, selectedMethod.Id, CheckoutPaymentStatus.Confirmed, GenerateReference(selectedMethod.Id), currentSignature);
+                var updatedState = _checkoutStateService.SavePaymentSelection(HttpContext, selectedMethod.Id, CheckoutPaymentStatus.Confirmed, GenerateReference(selectedMethod.Id), currentSignature);
                 StoreSnapshot(quote);
-                return RedirectToPage("/Checkout/Confirmation");
+                return await FinalizeOrderAsync(quote, updatedState);
             }
 
             if (normalized is "cancel" or "canceled")
@@ -281,6 +287,47 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             var bytes = Encoding.UTF8.GetBytes(builder.ToString());
             var hash = SHA256.HashData(bytes);
             return Convert.ToBase64String(hash);
+        }
+
+        private async Task<IActionResult> FinalizeOrderAsync(ShippingQuote quote, CheckoutState state)
+        {
+            var paymentLabel = ResolvePaymentLabel(state.PaymentMethod);
+            ApplicationUser? buyer = null;
+            if (User?.Identity?.IsAuthenticated ?? false)
+            {
+                buyer = await _userManager.GetUserAsync(User);
+            }
+
+            var result = await _orderService.EnsureOrderAsync(
+                state,
+                quote,
+                state.Address!,
+                buyer?.Id,
+                buyer?.Email,
+                buyer?.FullName ?? buyer?.UserName,
+                paymentLabel,
+                state.PaymentMethod,
+                HttpContext.RequestAborted);
+
+            _cartService.ReplaceCart(HttpContext, Array.Empty<CartItem>());
+            if (buyer != null)
+            {
+                await _userCartService.PersistAuthenticatedCartAsync(HttpContext, HttpContext.RequestAborted);
+            }
+
+            _checkoutStateService.Clear(HttpContext);
+            return RedirectToPage("/Checkout/Confirmation", new { orderId = result.Order.Id });
+        }
+
+        private string? ResolvePaymentLabel(string? methodId)
+        {
+            if (string.IsNullOrWhiteSpace(methodId))
+            {
+                return null;
+            }
+
+            var match = _checkoutOptions.PaymentMethods?.FirstOrDefault(m => string.Equals(m.Id, methodId, StringComparison.OrdinalIgnoreCase));
+            return match?.Label ?? methodId;
         }
     }
 
