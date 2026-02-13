@@ -22,6 +22,8 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<ProductQuestion> ProductQuestions => Set<ProductQuestion>();
         public DbSet<CommissionRule> CommissionRules => Set<CommissionRule>();
         public DbSet<CommissionRuleAudit> CommissionRuleAudits => Set<CommissionRuleAudit>();
+        public DbSet<VatRule> VatRules => Set<VatRule>();
+        public DbSet<VatRuleAudit> VatRuleAudits => Set<VatRuleAudit>();
         public DbSet<AnalyticsEvent> AnalyticsEvents => Set<AnalyticsEvent>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
@@ -579,6 +581,47 @@ namespace SD.ProjectName.WebApp.Data
                 entity.HasIndex(e => e.EventType);
                 entity.HasIndex(e => e.OccurredOn);
                 entity.HasIndex(e => new { e.EventType, e.OccurredOn });
+            });
+
+            builder.Entity<CommissionRule>(entity =>
+            {
+                entity.Property(r => r.Name)
+                    .HasDefaultValue(string.Empty)
+                    .HasMaxLength(256);
+                entity.Property(r => r.Rate)
+                    .HasColumnType("decimal(18,4)");
+                entity.HasIndex(r => new { r.SellerType, r.Category, r.EffectiveFrom });
+            });
+
+            builder.Entity<CommissionRuleAudit>(entity =>
+            {
+                entity.Property(a => a.Action)
+                    .HasDefaultValue("Updated")
+                    .HasMaxLength(32);
+                entity.HasIndex(a => a.RuleId);
+                entity.HasOne<CommissionRule>()
+                    .WithMany()
+                    .HasForeignKey(a => a.RuleId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            builder.Entity<VatRule>(entity =>
+            {
+                entity.Property(r => r.Rate)
+                    .HasColumnType("decimal(18,4)");
+                entity.HasIndex(r => new { r.Country, r.EffectiveFrom });
+            });
+
+            builder.Entity<VatRuleAudit>(entity =>
+            {
+                entity.Property(a => a.Action)
+                    .HasDefaultValue("Updated")
+                    .HasMaxLength(32);
+                entity.HasIndex(a => a.RuleId);
+                entity.HasOne<VatRule>()
+                    .WithMany()
+                    .HasForeignKey(a => a.RuleId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }

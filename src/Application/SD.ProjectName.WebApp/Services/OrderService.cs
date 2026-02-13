@@ -1116,6 +1116,7 @@ namespace SD.ProjectName.WebApp.Services
         private readonly CaseSlaOptions _caseSlaOptions;
         private readonly CommissionCalculator _commissionCalculator;
         private readonly ICommissionRuleResolver? _commissionRuleResolver;
+        private readonly IVatRuleResolver? _vatRuleResolver;
         private readonly ShippingProviderService _shippingProviderService;
         private readonly EmailOptions _emailOptions;
         private readonly NotificationService? _notificationService;
@@ -1147,7 +1148,8 @@ namespace SD.ProjectName.WebApp.Services
             EmailOptions? emailOptions = null,
             NotificationService? notificationService = null,
             IAnalyticsTracker? analyticsTracker = null,
-            ICommissionRuleResolver? commissionRuleResolver = null)
+            ICommissionRuleResolver? commissionRuleResolver = null,
+            IVatRuleResolver? vatRuleResolver = null)
         {
             _dbContext = dbContext;
             _emailSender = emailSender;
@@ -1159,6 +1161,7 @@ namespace SD.ProjectName.WebApp.Services
             _invoiceOptions = invoiceOptions ?? new InvoiceOptions();
             _caseSlaOptions = caseSlaOptions ?? new CaseSlaOptions();
             _commissionRuleResolver = commissionRuleResolver;
+            _vatRuleResolver = vatRuleResolver;
             _commissionCalculator = new CommissionCalculator(_cartOptions, commissionRuleResolver);
             _shippingProviderService = shippingProviderService ?? new ShippingProviderService(new ShippingProviderOptions(), TimeProvider.System, NullLogger<ShippingProviderService>.Instance);
             _emailOptions = emailOptions ?? new EmailOptions();
@@ -5171,6 +5174,7 @@ namespace SD.ProjectName.WebApp.Services
             var months = Math.Clamp(historyMonths, 1, Math.Max(1, _invoiceOptions.HistoryMonths));
             var anchor = DateTimeOffset.UtcNow;
             var invoices = new List<CommissionInvoiceSummaryView>();
+            var seller = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == sellerId, cancellationToken);
 
             for (var i = 0; i < months; i++)
             {
@@ -5189,8 +5193,9 @@ namespace SD.ProjectName.WebApp.Services
 
                 var invoiceNumber = await ResolveInvoiceNumberAsync(cursor.Year, cursor.Month, sellerId, cancellationToken);
                 var status = ResolveInvoiceStatus(detail);
+                var vatRate = ResolveVatRate(seller?.Country, null, detail.Summary.PeriodEnd);
                 var net = RoundCurrency(summary.CommissionTotal);
-                var tax = RoundCurrency(net * _invoiceOptions.TaxRate);
+                var tax = RoundCurrency(net * vatRate);
                 var total = RoundCurrency(net + tax);
 
                 invoices.Add(new CommissionInvoiceSummaryView(
@@ -5207,7 +5212,7 @@ namespace SD.ProjectName.WebApp.Services
                     summary.AdjustmentCount > 0,
                     net < 0,
                     _invoiceOptions.Currency,
-                    _invoiceOptions.TaxRate));
+                    vatRate));
             }
 
             return invoices
@@ -5243,8 +5248,9 @@ namespace SD.ProjectName.WebApp.Services
                 ? detail.Summary.SellerName
                 : seller?.BusinessName ?? seller?.FullName ?? sellerId;
 
+            var vatRate = ResolveVatRate(seller?.Country, null, detail.Summary.PeriodEnd);
             var net = RoundCurrency(detail.Summary.CommissionTotal);
-            var tax = RoundCurrency(net * _invoiceOptions.TaxRate);
+            var tax = RoundCurrency(net * vatRate);
             var total = RoundCurrency(net + tax);
             var status = ResolveInvoiceStatus(detail);
 
@@ -5262,7 +5268,7 @@ namespace SD.ProjectName.WebApp.Services
                 detail.Summary.AdjustmentCount > 0,
                 net < 0,
                 _invoiceOptions.Currency,
-                _invoiceOptions.TaxRate);
+                vatRate);
 
             var lines = detail.Orders
                 .OrderByDescending(o => o.PayoutOn)
@@ -7519,6 +7525,41 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             return InvoiceStatuses.Issued;
+        }
+
+        private decimal ResolveVatRate(string? country, string? category, DateTimeOffset asOf)
+        {
+            var normalizedCountry = string.IsNullOrWhiteSpace(country) ? _invoiceOptions.IssuerCountry : country;
+            if (_vatRuleResolver == null || string.IsNullOrWhiteSpace(normalizedCountry))
+            {
+                return ClampRate(_invoiceOptions.TaxRate);
+            }
+
+            try
+            {
+                var resolution = _vatRuleResolver.Resolve(normalizedCountry!, category, asOf);
+                return ClampRate(resolution.Rate);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Falling back to default VAT rate for {Country}", normalizedCountry);
+                return ClampRate(_invoiceOptions.TaxRate);
+            }
+        }
+
+        private static decimal ClampRate(decimal rate)
+        {
+            if (rate < 0)
+            {
+                return 0;
+            }
+
+            if (rate > 1)
+            {
+                return 1;
+            }
+
+            return rate;
         }
 
         private static decimal RoundCurrency(decimal amount) =>
