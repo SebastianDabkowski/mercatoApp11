@@ -337,6 +337,84 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task UpdateSubOrderStatusAsync_ShouldCreateShipment_ForIntegratedProvider()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var providerOptions = new ShippingProviderOptions
+            {
+                Providers = new List<ShippingProviderDefinition>
+                {
+                    new()
+                    {
+                        Id = "shipfast",
+                        Name = "ShipFast",
+                        Services = new List<ShippingProviderServiceDefinition>
+                        {
+                            new() { Code = "standard", Name = "ShipFast Standard", TrackingUrlTemplate = "https://track.shipfast.test/{tracking}" }
+                        }
+                    }
+                }
+            };
+            var shippingProviderService = new ShippingProviderService(providerOptions, TimeProvider.System, NullLogger<ShippingProviderService>.Instance);
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, shippingProviderService: shippingProviderService);
+            var quote = BuildQuote("shipfast", "standard");
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-provider-1", "sig-provider-1");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-provider", "buyerprovider@example.com", "Buyer Provider", "Card", "card");
+            var shipped = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Shipped);
+
+            Assert.True(shipped.Success);
+            Assert.NotNull(shipped.UpdatedSubOrder);
+            Assert.False(string.IsNullOrWhiteSpace(shipped.UpdatedSubOrder!.TrackingNumber));
+            Assert.Equal("shipfast", shipped.UpdatedSubOrder.ShippingProviderId);
+            Assert.Equal("standard", shipped.UpdatedSubOrder.ShippingProviderService);
+            Assert.False(string.IsNullOrWhiteSpace(shipped.UpdatedSubOrder.ShippingProviderReference));
+            Assert.Equal("ShipFast", shipped.UpdatedSubOrder.TrackingCarrier);
+            Assert.False(string.IsNullOrWhiteSpace(shipped.UpdatedSubOrder.TrackingUrl));
+        }
+
+        [Fact]
+        public async Task UpdateShippingStatusFromProviderAsync_ShouldApplyProviderStatuses()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var providerOptions = new ShippingProviderOptions
+            {
+                Providers = new List<ShippingProviderDefinition>
+                {
+                    new()
+                    {
+                        Id = "shipfast",
+                        Name = "ShipFast",
+                        Services = new List<ShippingProviderServiceDefinition>
+                        {
+                            new() { Code = "standard", Name = "ShipFast Standard", TrackingUrlTemplate = "https://track.shipfast.test/{tracking}" }
+                        }
+                    }
+                }
+            };
+            var shippingProviderService = new ShippingProviderService(providerOptions, TimeProvider.System, NullLogger<ShippingProviderService>.Instance);
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, shippingProviderService: shippingProviderService);
+            var quote = BuildQuote("shipfast", "standard");
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-provider-2", "sig-provider-2");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-provider2", "buyerprovider2@example.com", "Buyer Provider2", "Card", "card");
+            var shipped = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Shipped);
+
+            var reference = shipped.UpdatedSubOrder!.ShippingProviderReference!;
+            var trackingNumber = shipped.UpdatedSubOrder.TrackingNumber;
+
+            var update = await service.UpdateShippingStatusFromProviderAsync("shipfast", reference, "delivered", trackingNumber, "ShipFast");
+            Assert.True(update.Success);
+            Assert.Equal(OrderStatuses.Delivered, update.UpdatedSubOrder!.Status);
+
+            var buyerView = await service.GetOrderAsync(result.Order.Id, "buyer-provider2");
+            Assert.NotNull(buyerView);
+            Assert.Equal(OrderStatuses.Delivered, buyerView!.Status);
+        }
+
+        [Fact]
         public async Task UpdateSubOrderStatusAsync_ShouldReleaseEscrowOnCancellation()
         {
             await using var context = CreateContext();
@@ -1194,13 +1272,13 @@ namespace SD.ProjectName.Tests.Products
             Assert.DoesNotContain(tracked.Order.OrderNumber, csv);
         }
 
-        private static ShippingQuote BuildQuote()
+        private static ShippingQuote BuildQuote(string? providerId = null, string? providerServiceCode = null)
         {
             var product = new ProductModel { Id = 1, Title = "Sample Item", Price = 10, Stock = 5, SellerId = "seller-1" };
             var displayItem = new CartDisplayItem(product, 2, "Red", 10, 20, true, 5, new Dictionary<string, string>());
             var sellerGroup = new CartSellerGroup("seller-1", "Seller One", 20, 5, 25, new List<CartDisplayItem> { displayItem });
             var summary = new CartSummary(new List<CartSellerGroup> { sellerGroup }, 20, 5, 25, 2, CartSettlementSummary.Empty);
-            var options = new List<ShippingMethodOption> { new("standard", "Standard", 5, "Standard delivery", true) };
+            var options = new List<ShippingMethodOption> { new("standard", "Standard", 5, "Standard delivery", true, null, providerId, providerServiceCode) };
             var sellerOptions = new List<SellerShippingOptions> { new("seller-1", "Seller One", options) };
             var selections = new Dictionary<string, string> { ["seller-1"] = "standard" };
             return new ShippingQuote(summary, sellerOptions, selections);

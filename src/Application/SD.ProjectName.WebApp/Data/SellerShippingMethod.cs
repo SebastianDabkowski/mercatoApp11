@@ -26,6 +26,12 @@ namespace SD.ProjectName.WebApp.Data
         [StringLength(256)]
         public string? Availability { get; set; }
 
+        [StringLength(64)]
+        public string? ProviderId { get; set; }
+
+        [StringLength(64)]
+        public string? ProviderServiceCode { get; set; }
+
         public bool IsActive { get; set; } = true;
 
         public bool IsDeleted { get; set; }

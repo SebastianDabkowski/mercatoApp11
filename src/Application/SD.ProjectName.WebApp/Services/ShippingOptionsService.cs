@@ -3,7 +3,7 @@ using SD.ProjectName.WebApp.Data;
 
 namespace SD.ProjectName.WebApp.Services
 {
-    public record ShippingMethodOption(string Id, string Label, decimal Cost, string? Description, bool Recommended, string? DeliveryEstimate = null);
+    public record ShippingMethodOption(string Id, string Label, decimal Cost, string? Description, bool Recommended, string? DeliveryEstimate = null, string? ProviderId = null, string? ProviderServiceCode = null);
 
     public record SellerShippingOptions(string SellerId, string SellerName, List<ShippingMethodOption> Options);
 
@@ -125,7 +125,7 @@ namespace SD.ProjectName.WebApp.Services
                 var description = string.IsNullOrWhiteSpace(method.Description) ? ResolveDescription(label) : method.Description.Trim();
                 var estimate = string.IsNullOrWhiteSpace(method.DeliveryEstimate) ? ResolveDeliveryEstimate(label) : method.DeliveryEstimate.Trim();
                 var cost = NormalizeCost(method.BaseCost);
-                options.Add(new ShippingMethodOption(NormalizeId(label), label, cost, description, false, estimate));
+                options.Add(new ShippingMethodOption(NormalizeId(label), label, cost, description, false, estimate, method.ProviderId, method.ProviderServiceCode));
             }
 
             return options;

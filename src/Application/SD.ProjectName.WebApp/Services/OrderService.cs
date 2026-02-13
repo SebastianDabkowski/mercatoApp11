@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.WebApp.Data;
 using SD.ProjectName.WebApp.Identity;
@@ -168,7 +169,7 @@ namespace SD.ProjectName.WebApp.Services
 
     public record OrderItemDetail(int ProductId, string Name, string Variant, int Quantity, decimal UnitPrice, decimal LineTotal, string SellerId, string SellerName, string Status = OrderStatuses.Paid, string Category = "", decimal? CommissionRate = null);
 
-    public record OrderShippingDetail(string SellerId, string SellerName, string MethodId, string MethodLabel, decimal Cost, string? Description, string? DeliveryEstimate = null);
+    public record OrderShippingDetail(string SellerId, string SellerName, string MethodId, string MethodLabel, decimal Cost, string? Description, string? DeliveryEstimate = null, string? ProviderId = null, string? ProviderServiceCode = null);
 
     public record ReturnRequestItem(int ProductId, int Quantity);
 
@@ -193,7 +194,11 @@ namespace SD.ProjectName.WebApp.Services
         decimal RefundedAmount = 0,
         DateTimeOffset? DeliveredOn = null,
         ReturnRequest? Return = null,
-        List<OrderStatusChange>? StatusHistory = null);
+        List<OrderStatusChange>? StatusHistory = null,
+        string? ShippingProviderId = null,
+        string? ShippingProviderService = null,
+        string? ShippingProviderReference = null,
+        string? TrackingUrl = null);
 
     public static class EscrowEntryTypes
     {
@@ -495,6 +500,7 @@ namespace SD.ProjectName.WebApp.Services
         private readonly TimeZoneInfo _settlementTimeZone;
         private readonly InvoiceOptions _invoiceOptions;
         private readonly CommissionCalculator _commissionCalculator;
+        private readonly ShippingProviderService _shippingProviderService;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -502,7 +508,7 @@ namespace SD.ProjectName.WebApp.Services
 
         private record SellerOrderMatch(OrderRecord Order, OrderSubOrder SubOrder, DeliveryAddress Address, string Status);
 
-        public OrderService(ApplicationDbContext dbContext, IEmailSender emailSender, ILogger<OrderService> logger, EscrowOptions? escrowOptions = null, CartOptions? cartOptions = null, SettlementOptions? settlementOptions = null, InvoiceOptions? invoiceOptions = null)
+        public OrderService(ApplicationDbContext dbContext, IEmailSender emailSender, ILogger<OrderService> logger, EscrowOptions? escrowOptions = null, CartOptions? cartOptions = null, SettlementOptions? settlementOptions = null, InvoiceOptions? invoiceOptions = null, ShippingProviderService? shippingProviderService = null)
         {
             _dbContext = dbContext;
             _emailSender = emailSender;
@@ -513,6 +519,7 @@ namespace SD.ProjectName.WebApp.Services
             _settlementTimeZone = ResolveSettlementTimeZone(_settlementOptions.TimeZone);
             _invoiceOptions = invoiceOptions ?? new InvoiceOptions();
             _commissionCalculator = new CommissionCalculator(_cartOptions);
+            _shippingProviderService = shippingProviderService ?? new ShippingProviderService(new ShippingProviderOptions(), TimeProvider.System, NullLogger<ShippingProviderService>.Instance);
         }
 
         public async Task<OrderCreationResult> EnsureOrderAsync(
@@ -1965,6 +1972,7 @@ namespace SD.ProjectName.WebApp.Services
             decimal? refundedAmount = null,
             string? trackingCarrier = null,
             IEnumerable<int>? itemProductIds = null,
+            string? shippingProviderReference = null,
             CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(sellerId))
@@ -2045,8 +2053,51 @@ namespace SD.ProjectName.WebApp.Services
                 computedRefund = Math.Max(0, refundedAmount.Value);
             }
 
+            var deliveryAddress = DeserializeAddress(order.DeliveryAddressJson);
+            var providerId = string.IsNullOrWhiteSpace(subOrder.ShippingProviderId) ? subOrder.ShippingDetail.ProviderId : subOrder.ShippingProviderId;
+            var providerService = string.IsNullOrWhiteSpace(subOrder.ShippingProviderService) ? subOrder.ShippingDetail.ProviderServiceCode : subOrder.ShippingProviderService;
+            providerId = string.IsNullOrWhiteSpace(providerId) ? null : providerId.Trim();
+            providerService = string.IsNullOrWhiteSpace(providerService) ? null : providerService.Trim();
+            var providerReference = string.IsNullOrWhiteSpace(shippingProviderReference) ? subOrder.ShippingProviderReference : shippingProviderReference.Trim();
+            providerReference = string.IsNullOrWhiteSpace(providerReference) ? null : providerReference;
+            var trackingUrl = string.IsNullOrWhiteSpace(subOrder.TrackingUrl) ? null : subOrder.TrackingUrl.Trim();
+
             var tracking = string.IsNullOrWhiteSpace(trackingNumber) ? subOrder.TrackingNumber : trackingNumber.Trim();
             var carrier = string.IsNullOrWhiteSpace(trackingCarrier) ? subOrder.TrackingCarrier : trackingCarrier.Trim();
+
+            if (string.Equals(updatedStatus, OrderStatuses.Shipped, StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(tracking)
+                && !string.IsNullOrWhiteSpace(providerId)
+                && !string.IsNullOrWhiteSpace(providerService))
+            {
+                var shipment = _shippingProviderService.CreateShipment(new ShippingProviderShipmentRequest(
+                    providerId!,
+                    providerService!,
+                    order.OrderNumber,
+                    subOrder.SubOrderNumber,
+                    sellerId,
+                    deliveryAddress,
+                    order.BuyerEmail,
+                    order.BuyerName,
+                    deliveryAddress.Phone,
+                    subOrder.GrandTotal,
+                    subOrder.TotalQuantity,
+                    providerReference ?? order.PaymentReference));
+
+                if (!shipment.Success)
+                {
+                    return new SubOrderStatusUpdateResult(false, shipment.Error ?? "Unable to create shipment via provider.");
+                }
+
+                tracking = shipment.TrackingNumber ?? tracking;
+                carrier = string.IsNullOrWhiteSpace(carrier) ? shipment.Carrier : carrier;
+                providerReference = shipment.ProviderReference ?? providerReference;
+                if (!string.IsNullOrWhiteSpace(shipment.TrackingUrl))
+                {
+                    trackingUrl = shipment.TrackingUrl;
+                }
+            }
+
             var history = NormalizeStatusHistory(subOrder.StatusHistory, originalStatus, subOrder.TrackingNumber, subOrder.TrackingCarrier, now);
             var statusChanged = !string.Equals(originalStatus, updatedStatus, StringComparison.OrdinalIgnoreCase);
             if (statusChanged || !string.IsNullOrWhiteSpace(tracking))
@@ -2064,7 +2115,11 @@ namespace SD.ProjectName.WebApp.Services
                 DeliveredOn = string.Equals(updatedStatus, OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase)
                     ? subOrder.DeliveredOn ?? now
                     : subOrder.DeliveredOn,
-                StatusHistory = history
+                StatusHistory = history,
+                ShippingProviderId = providerId,
+                ShippingProviderService = providerService,
+                ShippingProviderReference = providerReference,
+                TrackingUrl = trackingUrl
             };
 
             var subOrderIndex = details.SubOrders.FindIndex(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
@@ -2097,6 +2152,61 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             return new SubOrderStatusUpdateResult(true, null, updatedSubOrder, order.Status);
+        }
+
+        public async Task<SubOrderStatusUpdateResult> UpdateShippingStatusFromProviderAsync(
+            string providerId,
+            string providerReference,
+            string providerStatus,
+            string? trackingNumber = null,
+            string? trackingCarrier = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(providerReference))
+            {
+                return new SubOrderStatusUpdateResult(false, "Provider id and reference are required.");
+            }
+
+            var normalizedProvider = providerId.Trim();
+            var normalizedReference = providerReference.Trim();
+            var referenceToken = $"\"shippingProviderReference\":\"{normalizedReference}\"";
+            var providerToken = $"\"shippingProviderId\":\"{normalizedProvider}\"";
+            var order = await _dbContext.Orders.FirstOrDefaultAsync(
+                o => o.DetailsJson.Contains(referenceToken) && o.DetailsJson.Contains(providerToken),
+                cancellationToken);
+            if (order == null)
+            {
+                return new SubOrderStatusUpdateResult(false, "Order not found for this shipment reference.");
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            var subOrder = details.SubOrders.FirstOrDefault(s =>
+                string.Equals(s.ShippingProviderReference, normalizedReference, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(s.ShippingProviderId, normalizedProvider, StringComparison.OrdinalIgnoreCase));
+            if (subOrder == null)
+            {
+                return new SubOrderStatusUpdateResult(false, "Sub-order not found for this shipment reference.");
+            }
+
+            var targetStatus = _shippingProviderService.MapProviderStatus(providerStatus);
+            var provider = _shippingProviderService.GetProvider(normalizedProvider);
+            var resolvedCarrier = string.IsNullOrWhiteSpace(trackingCarrier)
+                ? provider?.Name ?? subOrder.TrackingCarrier
+                : trackingCarrier.Trim();
+            var resolvedTracking = string.IsNullOrWhiteSpace(trackingNumber)
+                ? (string.IsNullOrWhiteSpace(subOrder.TrackingNumber) ? normalizedReference : subOrder.TrackingNumber)
+                : trackingNumber.Trim();
+
+            return await UpdateSubOrderStatusAsync(
+                order.Id,
+                subOrder.SellerId,
+                targetStatus,
+                resolvedTracking,
+                null,
+                resolvedCarrier,
+                null,
+                normalizedReference,
+                cancellationToken);
         }
 
         private OrderDetailsPayload BuildDetailsPayload(string orderNumber, ShippingQuote quote, string initialStatus, string? paymentReference, string paymentStatus, string paymentMessage, decimal paymentRefundedAmount)
@@ -2164,7 +2274,11 @@ namespace SD.ProjectName.WebApp.Services
                     0,
                     null,
                     null,
-                    initialHistory));
+                    initialHistory,
+                    ship.ProviderId,
+                    ship.ProviderServiceCode,
+                    null,
+                    null));
             }
 
             var escrow = BuildEscrowAllocations(subOrders, initialStatus, paymentReference);
@@ -2200,7 +2314,9 @@ namespace SD.ProjectName.WebApp.Services
                 match.Label,
                 match.Cost,
                 match.Description,
-                match.DeliveryEstimate);
+                match.DeliveryEstimate,
+                match.ProviderId,
+                match.ProviderServiceCode);
         }
 
         private static decimal CalculateDiscountShare(decimal remainingDiscount, decimal baseTotal, decimal totalBeforeDiscount, bool isLastSeller)
@@ -2688,6 +2804,11 @@ namespace SD.ProjectName.WebApp.Services
                     }
 
                     builder.Append("</p>");
+                }
+
+                if (!string.IsNullOrWhiteSpace(subOrder.TrackingUrl))
+                {
+                    builder.Append($"<p><a href=\"{subOrder.TrackingUrl}\" target=\"_blank\" rel=\"noopener\">Track your shipment</a></p>");
                 }
 
                 await _emailSender.SendEmailAsync(order.BuyerEmail, $"Order {order.OrderNumber} shipped", builder.ToString());
@@ -3185,6 +3306,10 @@ namespace SD.ProjectName.WebApp.Services
             var deliveredOn = subOrder.DeliveredOn == DateTimeOffset.MinValue ? null : subOrder.DeliveredOn;
             var normalizedReturn = NormalizeReturnRequest(subOrder.Return, normalizedItems);
             var history = NormalizeStatusHistory(subOrder.StatusHistory, derivedStatus, tracking, carrier, DateTimeOffset.UtcNow);
+            var providerId = string.IsNullOrWhiteSpace(subOrder.ShippingProviderId) ? null : subOrder.ShippingProviderId.Trim();
+            var providerService = string.IsNullOrWhiteSpace(subOrder.ShippingProviderService) ? null : subOrder.ShippingProviderService.Trim();
+            var providerReference = string.IsNullOrWhiteSpace(subOrder.ShippingProviderReference) ? null : subOrder.ShippingProviderReference.Trim();
+            var trackingUrl = string.IsNullOrWhiteSpace(subOrder.TrackingUrl) ? null : subOrder.TrackingUrl.Trim();
 
             return subOrder with
             {
@@ -3195,7 +3320,11 @@ namespace SD.ProjectName.WebApp.Services
                 RefundedAmount = refunded,
                 DeliveredOn = deliveredOn,
                 Return = normalizedReturn,
-                StatusHistory = history
+                StatusHistory = history,
+                ShippingProviderId = providerId,
+                ShippingProviderService = providerService,
+                ShippingProviderReference = providerReference,
+                TrackingUrl = trackingUrl
             };
         }
 

@@ -64,7 +64,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
                 RefundedAmount,
                 TrackingCarrier,
                 SelectedItems,
-                HttpContext.RequestAborted);
+                shippingProviderReference: null,
+                cancellationToken: HttpContext.RequestAborted);
 
             if (!result.Success)
             {

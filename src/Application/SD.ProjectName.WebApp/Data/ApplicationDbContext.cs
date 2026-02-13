@@ -212,6 +212,10 @@ namespace SD.ProjectName.WebApp.Data
                     .HasMaxLength(128);
                 entity.Property(m => m.Availability)
                     .HasMaxLength(256);
+                entity.Property(m => m.ProviderId)
+                    .HasMaxLength(64);
+                entity.Property(m => m.ProviderServiceCode)
+                    .HasMaxLength(64);
                 entity.Property(m => m.IsActive)
                     .IsRequired();
                 entity.Property(m => m.IsDeleted)

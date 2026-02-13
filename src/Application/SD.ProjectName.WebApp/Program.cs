@@ -68,6 +68,11 @@ builder.Services.AddOptions<CheckoutOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<CheckoutOptions>(sp => sp.GetRequiredService<IOptions<CheckoutOptions>>().Value);
+builder.Services.AddOptions<ShippingProviderOptions>()
+    .Bind(builder.Configuration.GetSection(ShippingProviderOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<ShippingProviderOptions>(sp => sp.GetRequiredService<IOptions<ShippingProviderOptions>>().Value);
 builder.Services.AddOptions<ShippingAddressOptions>()
     .Bind(builder.Configuration.GetSection(ShippingAddressOptions.SectionName))
     .ValidateDataAnnotations()
@@ -111,6 +116,7 @@ builder.Services.AddScoped<ShippingAddressService>();
 builder.Services.AddScoped<SellerShippingMethodService>();
 builder.Services.AddScoped<OrderService>();
 builder.Services.AddSingleton<PaymentProviderService>();
+builder.Services.AddSingleton<ShippingProviderService>();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {
