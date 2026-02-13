@@ -18,9 +18,9 @@ namespace SD.ProjectName.Modules.Products.Application
             _repository = repository;
         }
 
-        public async Task<List<ProductModel>> GetList()
+        public async Task<List<ProductModel>> GetList(string? sellerId = null, bool includeDrafts = false)
         {
-            return await _repository.GetList();
+            return await _repository.GetList(sellerId, includeDrafts);
         }
 
     }

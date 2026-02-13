@@ -75,7 +75,7 @@ namespace SD.ProjectName.WebApp.Pages.Store
             }
 
             IsPubliclyVisible = true;
-            var products = await _getProducts.GetList();
+            var products = await _getProducts.GetList(storeOwner.Id);
             ProductPreview = products.Take(6).ToList();
 
 
