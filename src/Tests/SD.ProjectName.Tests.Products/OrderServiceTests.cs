@@ -40,6 +40,7 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal(view.GrandTotal, view.SubOrders.First().GrandTotal);
             Assert.Equal(view.SubOrders.First().TotalQuantity, view.TotalQuantity);
             Assert.Equal(OrderStatuses.Paid, view.Status);
+            Assert.Equal(PaymentStatuses.Paid, view.PaymentStatus);
             Assert.All(view.SubOrders, s => Assert.Equal(OrderStatuses.Paid, s.Status));
 
             emailSender.Verify(e => e.SendEmailAsync("buyer@example.com", It.Is<string>(s => s.Contains(result.Order.OrderNumber)), It.IsAny<string>()), Times.Once);
@@ -61,6 +62,8 @@ namespace SD.ProjectName.Tests.Products
             var view = await service.GetOrderAsync(result.Order.Id, "buyer-failed");
             Assert.NotNull(view);
             Assert.Equal(OrderStatuses.Failed, view!.Status);
+            Assert.Equal(PaymentStatuses.Failed, view.PaymentStatus);
+            Assert.False(string.IsNullOrWhiteSpace(view.PaymentStatusMessage));
             Assert.All(view.SubOrders, s => Assert.Equal(OrderStatuses.Failed, s.Status));
             emailSender.Verify(e => e.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
@@ -162,13 +165,39 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal("Buyer Four", sellerOrder.BuyerName);
             Assert.Equal("buyer4@example.com", sellerOrder.BuyerEmail);
             Assert.Equal(TestAddress.Phone, sellerOrder.BuyerPhone);
-            Assert.Equal(OrderStatuses.Paid, sellerOrder.PaymentStatus);
+            Assert.Equal(PaymentStatuses.Paid, sellerOrder.PaymentStatus);
 
             var sellerSummaries = await service.GetSummariesForSellerAsync("seller-2");
             Assert.Equal(1, sellerSummaries.TotalCount);
             var summary = Assert.Single(sellerSummaries.Items);
             Assert.Equal(result.Order.Id, summary.Id);
             Assert.Equal(OrderStatuses.Paid, summary.Status);
+        }
+
+        [Fact]
+        public async Task UpdatePaymentStatusAsync_ShouldApplyWebhookStatus()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-webhook-1", "sig-webhook-1");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-webhook", "webhook@example.com", "Webhook Buyer", "Card", "card");
+            var update = await service.UpdatePaymentStatusAsync("ref-webhook-1", "refunded", 5m);
+
+            Assert.True(update.Success);
+            Assert.Equal(PaymentStatuses.Refunded, update.PaymentStatus);
+            Assert.Equal(5m, update.PaymentRefundedAmount);
+
+            var view = await service.GetOrderAsync(result.Order.Id, "buyer-webhook");
+            Assert.NotNull(view);
+            Assert.Equal(PaymentStatuses.Refunded, view!.PaymentStatus);
+            Assert.Equal(5m, view.PaymentRefundedAmount);
+
+            var sellerOrder = await service.GetSellerOrderAsync(result.Order.Id, "seller-1");
+            Assert.NotNull(sellerOrder);
+            Assert.Equal(PaymentStatuses.Refunded, sellerOrder!.PaymentStatus);
         }
 
         [Fact]
