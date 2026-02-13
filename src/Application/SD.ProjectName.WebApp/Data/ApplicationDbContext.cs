@@ -16,6 +16,7 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<ProductReview> ProductReviews => Set<ProductReview>();
         public DbSet<SellerRating> SellerRatings => Set<SellerRating>();
         public DbSet<ProductReviewAudit> ProductReviewAudits => Set<ProductReviewAudit>();
+        public DbSet<ProductReviewReport> ProductReviewReports => Set<ProductReviewReport>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -392,6 +393,26 @@ namespace SD.ProjectName.WebApp.Data
                     .IsRequired();
 
                 entity.HasIndex(a => a.ReviewId);
+            });
+
+            builder.Entity<ProductReviewReport>(entity =>
+            {
+                entity.Property(r => r.ReporterId)
+                    .HasMaxLength(450)
+                    .IsRequired();
+
+                entity.Property(r => r.Reason)
+                    .HasMaxLength(128)
+                    .IsRequired();
+
+                entity.Property(r => r.Details)
+                    .HasMaxLength(2000);
+
+                entity.Property(r => r.CreatedOn)
+                    .IsRequired();
+
+                entity.HasIndex(r => new { r.ReviewId, r.ReporterId })
+                    .IsUnique();
             });
 
             builder.Entity<SellerRating>(entity =>

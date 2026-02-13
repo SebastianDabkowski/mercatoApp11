@@ -230,6 +230,25 @@ else
                         </div>
                         <div class="mb-2">Rating: @review.Rating/5</div>
                         <div>@review.Comment</div>
+                        @if (User?.Identity?.IsAuthenticated == true)
+                        {
+                            <div class="d-flex flex-wrap align-items-center gap-2 mt-2 review-report" data-review-id="@review.Id">
+                                <label class="small mb-0" for="report-reason-@review.Id">Report</label>
+                                <select id="report-reason-@review.Id" class="form-select form-select-sm review-report-reason" data-review-id="@review.Id">
+                                    <option value="">Select reason</option>
+                                    @foreach (var reason in Model.ReportReasons)
+                                    {
+                                        <option value="@reason">@reason</option>
+                                    }
+                                </select>
+                                <button type="button" class="btn btn-sm btn-outline-danger report-review-btn" data-review-id="@review.Id">Report</button>
+                                <div class="small text-muted d-none review-report-status" data-review-id="@review.Id"></div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="small text-muted mt-2">Sign in to report this review.</div>
+                        }
                     </div>
                 }
                 @if (Model.TotalPages > 1)
@@ -372,6 +391,67 @@ else
                             button.disabled = false;
                         }
                     });
+            });
+        })();
+
+        (() => {
+            const reportBlocks = document.querySelectorAll('.review-report');
+            if (!reportBlocks.length) return;
+
+            reportBlocks.forEach(block => {
+                const button = block.querySelector('.report-review-btn');
+                const reason = block.querySelector('.review-report-reason');
+                const status = block.querySelector('.review-report-status');
+
+                if (!button || !reason) {
+                    return;
+                }
+
+                const setStatus = (text, success) => {
+                    if (!status) return;
+                    status.textContent = text;
+                    status.classList.toggle('text-danger', !success);
+                    status.classList.toggle('text-success', !!success);
+                    status.classList.remove('d-none');
+                };
+
+                button.addEventListener('click', () => {
+                    const reviewId = parseInt(button.dataset.reviewId || '0', 10);
+                    const selectedReason = reason.value;
+                    if (!reviewId) {
+                        return;
+                    }
+
+                    if (!selectedReason) {
+                        setStatus('Select a reason to report.', false);
+                        return;
+                    }
+
+                    button.disabled = true;
+
+                    fetch('/Api/Reviews?handler=Report', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ reviewId, reason: selectedReason })
+                    })
+                        .then(response => response.json().catch(() => ({})).then(data => ({ ok: response.ok, data })))
+                        .then(result => {
+                            const message = result.data?.message || (result.ok ? 'Report submitted.' : 'Could not report this review.');
+                            setStatus(message, result.ok);
+                            if (result.ok) {
+                                button.setAttribute('disabled', 'disabled');
+                                reason.setAttribute('disabled', 'disabled');
+                            } else {
+                                button.disabled = false;
+                            }
+                        })
+                        .catch(() => {
+                            setStatus('Could not report this review.', false);
+                            button.disabled = false;
+                        });
+                });
             });
         })();
     </script>
