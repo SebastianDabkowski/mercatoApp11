@@ -37,6 +37,8 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                 entity.Property(p => p.WidthCm).HasColumnType("decimal(18,3)");
                 entity.Property(p => p.HeightCm).HasColumnType("decimal(18,3)");
                 entity.Property(p => p.ShippingMethods).HasMaxLength(200);
+                entity.Property(p => p.HasVariants).HasDefaultValue(false);
+                entity.Property(p => p.VariantData).HasMaxLength(8000);
                 entity.Property(p => p.WorkflowState)
                       .HasMaxLength(32)
                       .HasDefaultValue(ProductWorkflowStates.Draft)

@@ -83,7 +83,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 LengthCm = product.LengthCm,
                 WidthCm = product.WidthCm,
                 HeightCm = product.HeightCm,
-                ShippingMethods = product.ShippingMethods
+                ShippingMethods = product.ShippingMethods,
+                HasVariants = product.HasVariants,
+                VariantJson = product.VariantData
             };
 
             await LoadCategoriesAsync(product.CategoryId);
@@ -150,6 +152,15 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Page();
             }
 
+            var variants = BuildVariants(Input);
+            if (Input.HasVariants && variants.Count == 0)
+            {
+                ModelState.AddModelError(nameof(Input.VariantJson), "Provide at least one valid variant.");
+                ImagePreviews = currentImages;
+                Input.SelectedMainImage ??= Input.MainImageUrl ?? product.MainImageUrl;
+                return Page();
+            }
+
             var savedImages = await SaveUploadsAsync(user.Id);
             var allImages = currentImages.Concat(savedImages).Distinct().ToList();
             var mainImage = SelectMainImage(Input.SelectedMainImage ?? product.MainImageUrl, allImages);
@@ -157,8 +168,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
             product.Title = Input.Title.Trim();
             product.MerchantSku = Input.MerchantSku.Trim();
-            product.Price = Input.Price;
-            product.Stock = Input.Stock;
+            product.Price = Input.HasVariants && variants.Any() ? variants.First().Price : Input.Price;
+            product.Stock = Input.HasVariants ? variants.Sum(v => v.Stock) : Input.Stock;
             product.CategoryId = category.Id;
             product.Category = category.FullPath;
             product.Description = string.IsNullOrWhiteSpace(Input.Description) ? null : Input.Description.Trim();
@@ -169,6 +180,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             product.WidthCm = Input.WidthCm;
             product.HeightCm = Input.HeightCm;
             product.ShippingMethods = string.IsNullOrWhiteSpace(Input.ShippingMethods) ? null : Input.ShippingMethods.Trim();
+            product.HasVariants = Input.HasVariants && variants.Any();
+            product.VariantData = ProductVariantSerializer.Serialize(variants);
 
             await _updateProduct.UpdateAsync(product);
             _logger.LogInformation("Product {ProductId} updated by seller {SellerId}", product.Id, user.Id);
@@ -181,6 +194,12 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
         public class InputModel
         {
+            public bool HasVariants { get; set; }
+
+            [MaxLength(8000)]
+            [Display(Name = "Variant definitions (JSON)")]
+            public string? VariantJson { get; set; }
+
             [Required]
             public int Id { get; set; }
 
@@ -339,6 +358,19 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 .ToList();
 
             return gallery.Any() ? string.Join(", ", gallery) : null;
+        }
+
+        private static List<ProductVariant> BuildVariants(InputModel input)
+        {
+            if (!input.HasVariants)
+            {
+                return new List<ProductVariant>();
+            }
+
+            var variants = ProductVariantSerializer.Deserialize(input.VariantJson);
+            return variants
+                .Where(v => v != null && v.Price > 0 && v.Stock >= 0)
+                .ToList();
         }
     }
 }

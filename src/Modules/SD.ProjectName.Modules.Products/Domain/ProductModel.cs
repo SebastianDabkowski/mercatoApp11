@@ -1,4 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json;
 
 namespace SD.ProjectName.Modules.Products.Domain
 {
@@ -49,6 +51,18 @@ namespace SD.ProjectName.Modules.Products.Domain
 
         [MaxLength(200)]
         public string? ShippingMethods { get; set; }
+
+        public bool HasVariants { get; set; }
+
+        [MaxLength(8000)]
+        public string? VariantData { get; set; }
+
+        [NotMapped]
+        public List<ProductVariant> Variants
+        {
+            get => ProductVariantSerializer.Deserialize(VariantData);
+            set => VariantData = ProductVariantSerializer.Serialize(value);
+        }
 
         [Required]
         [MaxLength(32)]
