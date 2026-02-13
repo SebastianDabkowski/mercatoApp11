@@ -142,13 +142,17 @@ else
                 <div class="card-body">
                     <div class="fw-semibold">@Model.Order.Shipping.MethodLabel</div>
                     <div>@Model.Order.Shipping.Cost.ToString("C")</div>
+                    @if (!string.IsNullOrWhiteSpace(Model.Order.Shipping.DeliveryEstimate))
+                    {
+                        <div class="text-muted small">Estimated: @Model.Order.Shipping.DeliveryEstimate</div>
+                    }
                     @if (!string.IsNullOrWhiteSpace(Model.Order.Shipping.Description))
                     {
-                        <div class="text-muted small">Instructions: @Model.Order.Shipping.Description</div>
+                        <div class="text-muted small">@Model.Order.Shipping.Description</div>
                     }
-                    else
+                    else if (string.IsNullOrWhiteSpace(Model.Order.Shipping.DeliveryEstimate))
                     {
-                        <div class="text-muted small">No delivery instructions provided.</div>
+                        <div class="text-muted small">No shipping details provided.</div>
                     }
                     <hr />
                     <div class="fw-semibold">Delivery address</div>
