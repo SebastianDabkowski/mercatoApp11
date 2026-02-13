@@ -228,7 +228,34 @@ Implements backend logic in C# aligned with architecture decisions.
 
 \- If implementation requires architectural change, escalate to Architect Agent and trigger ADR process.
 
+---
 
+
+
+\### 3.4 Documentation Sync Agent (DocSync)
+
+
+
+\*\*Role\*\*  
+Automates documentation and ADR currency so architecture and agent records always match implemented decisions.
+
+
+
+\*\*Primary Responsibilities\*\*
+
+\- Watch for architecture or agent-responsibility changes and auto-update `ARCHITECTURE.md` and `AGENT.md` in the same change.
+
+\- Run ADR validation against the current architecture; create or update missing ADRs immediately using the standard template and numbering.
+
+\- Keep ADR Traceability in `ARCHITECTURE.md` aligned with ADR statuses (Proposed/Accepted/Superseded) and ensure new decisions are captured before merge.
+
+
+
+\*\*Rules\*\*
+
+\- Treat `ARCHITECTURE.md` and `AGENT.md` as canonical; refresh them whenever structural or ownership shifts occur.
+
+\- Block merges if ADR validation finds gaps until the gaps are resolved by creating or updating ADRs and regenerating the docs.
 
 ---
 
