@@ -62,6 +62,42 @@ else
             </div>
 
             <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Messaging thread</span>
+                    <span class="text-muted small">Updated @Model.Case.Summary.LastUpdatedOn.ToLocalTime().ToString("g")</span>
+                </div>
+                <div class="card-body">
+                    @if (Model.Case.Messages.Count == 0)
+                    {
+                        <div class="text-muted small">No messages yet. Keep updates in this thread for the buyer.</div>
+                    }
+                    else
+                    {
+                        <ul class="list-unstyled mb-3">
+                            @foreach (var message in Model.Case.Messages)
+                            {
+                                <li class="mb-3">
+                                    <div class="small text-muted">@message.SentOn.ToLocalTime().ToString("g") — @message.Actor</div>
+                                    <div class="border rounded p-2">@message.Message</div>
+                                </li>
+                            }
+                        </ul>
+                    }
+                    <form method="post" asp-page-handler="Message">
+                        <input type="hidden" asp-for="CaseId" value="@summary.CaseId" />
+                        <div class="mb-3">
+                            <label class="form-label form-label-sm fw-semibold" asp-for="MessageBody">New message</label>
+                            <textarea asp-for="MessageBody" class="form-control form-control-sm" rows="3" placeholder="Share updates here and avoid posting phone numbers or email addresses."></textarea>
+                            <span asp-validation-for="MessageBody" class="text-danger small"></span>
+                        </div>
+                        <div class="text-end">
+                            <button type="submit" class="btn btn-sm btn-primary">Send message</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mb-3">
                 <div class="card-header">Shipping &amp; address</div>
                 <div class="card-body">
                     <div class="fw-semibold">@Model.Case.Shipping.MethodLabel</div>

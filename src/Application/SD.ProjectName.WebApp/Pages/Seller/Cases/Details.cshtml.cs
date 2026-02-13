@@ -23,6 +23,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Cases
         public string? Note { get; set; }
 
         [BindProperty]
+        public string? MessageBody { get; set; }
+
+        [BindProperty]
         public int OrderId { get; set; }
 
         public SellerCaseDetailView? Case { get; private set; }
@@ -46,6 +49,40 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Cases
             }
 
             return await LoadAsync(CaseId);
+        }
+
+        public async Task<IActionResult> OnPostMessageAsync()
+        {
+            var sellerId = _userManager.GetUserId(User);
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return Challenge();
+            }
+
+            if (string.IsNullOrWhiteSpace(CaseId))
+            {
+                return NotFound();
+            }
+
+            if (string.IsNullOrWhiteSpace(MessageBody))
+            {
+                ModelState.AddModelError(nameof(MessageBody), "Enter a message.");
+                return await LoadAsync(CaseId);
+            }
+
+            var result = await _orderService.AddReturnCaseMessageForSellerAsync(
+                sellerId,
+                CaseId!,
+                MessageBody!,
+                HttpContext.RequestAborted);
+
+            if (!result.Success)
+            {
+                ModelState.AddModelError(nameof(MessageBody), result.Error ?? "Unable to send message.");
+                return await LoadAsync(CaseId);
+            }
+
+            return RedirectToPage(new { caseId = CaseId });
         }
 
         public async Task<IActionResult> OnPostDecisionAsync()

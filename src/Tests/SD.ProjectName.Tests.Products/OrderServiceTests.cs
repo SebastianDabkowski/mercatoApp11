@@ -1217,6 +1217,81 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task AddReturnCaseMessages_ShouldBeSharedBetweenBuyerAndSeller()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-case-msg-1", "sig-case-msg-1");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-case-msg", "casemsg@example.com", "Case Message Buyer", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-case-msg");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+            var request = await service.CreateReturnRequestAsync(
+                result.Order.Id,
+                "buyer-case-msg",
+                subOrderNumber,
+                new List<int> { 1 },
+                "Damaged",
+                ReturnRequestTypes.Return,
+                "Screen cracked");
+
+            var beforeSummary = (await service.GetReturnCasesForBuyerAsync("buyer-case-msg")).Items.Single();
+
+            var buyerMessage = await service.AddReturnCaseMessageForBuyerAsync("buyer-case-msg", request.Request!.CaseId!, "Need an update on the resolution.");
+            Assert.True(buyerMessage.Success);
+            Assert.NotNull(buyerMessage.Request);
+            Assert.Contains(buyerMessage.Request!.Messages, m => m.Actor == "Buyer" && m.Message.Contains("Need an update", StringComparison.OrdinalIgnoreCase));
+
+            var sellerMessage = await service.AddReturnCaseMessageForSellerAsync("seller-1", request.Request!.CaseId!, "Please share photos of the damage.");
+            Assert.True(sellerMessage.Success);
+
+            var buyerDetail = await service.GetReturnCaseForBuyerAsync("buyer-case-msg", request.Request!.CaseId!);
+            Assert.NotNull(buyerDetail);
+            Assert.Equal(2, buyerDetail!.Messages.Count);
+            Assert.Equal("Buyer", buyerDetail.Messages.First().Actor);
+            Assert.Equal("Seller", buyerDetail.Messages.Last().Actor);
+
+            var sellerDetail = await service.GetReturnCaseForSellerAsync("seller-1", request.Request!.CaseId!);
+            Assert.NotNull(sellerDetail);
+            Assert.Equal(2, sellerDetail!.Messages.Count);
+
+            var summaryAfter = (await service.GetReturnCasesForBuyerAsync("buyer-case-msg")).Items.Single();
+            Assert.True(summaryAfter.LastUpdatedOn >= summaryAfter.RequestedOn);
+            Assert.True(summaryAfter.LastUpdatedOn > beforeSummary.LastUpdatedOn);
+        }
+
+        [Fact]
+        public async Task AddReturnCaseMessageForSellerAsync_ShouldEnforceOwnership()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-case-msg-2", "sig-case-msg-2");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-case-msg2", "casemsg2@example.com", "Case Message Buyer 2", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-case-msg2");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+            var request = await service.CreateReturnRequestAsync(
+                result.Order.Id,
+                "buyer-case-msg2",
+                subOrderNumber,
+                new List<int> { 1 },
+                "Wrong item",
+                ReturnRequestTypes.Return,
+                "Received wrong color");
+
+            var unauthorized = await service.AddReturnCaseMessageForSellerAsync("seller-2", request.Request!.CaseId!, "Attempted message");
+            Assert.False(unauthorized.Success);
+        }
+
+        [Fact]
         public async Task UpdateSubOrderStatusAsync_ShouldRejectInvalidTransition()
         {
             await using var context = CreateContext();

@@ -20,6 +20,9 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Cases
 
         public bool HasMessages => Case?.Messages != null && Case.Messages.Count > 0;
 
+        [BindProperty]
+        public string? MessageBody { get; set; }
+
         public DetailsModel(OrderService orderService, UserManager<ApplicationUser> userManager)
         {
             _orderService = orderService;
@@ -28,13 +31,52 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Cases
 
         public async Task<IActionResult> OnGetAsync(string? caseId)
         {
+            CaseId = string.IsNullOrWhiteSpace(caseId) ? CaseId : caseId;
+            return await LoadAsync();
+        }
+
+        public async Task<IActionResult> OnPostMessageAsync()
+        {
             var buyerId = _userManager.GetUserId(User);
             if (string.IsNullOrWhiteSpace(buyerId))
             {
                 return Challenge();
             }
 
-            CaseId = string.IsNullOrWhiteSpace(caseId) ? CaseId : caseId;
+            if (string.IsNullOrWhiteSpace(CaseId))
+            {
+                return NotFound();
+            }
+
+            if (string.IsNullOrWhiteSpace(MessageBody))
+            {
+                ModelState.AddModelError(nameof(MessageBody), "Enter a message.");
+                return await LoadAsync();
+            }
+
+            var result = await _orderService.AddReturnCaseMessageForBuyerAsync(
+                buyerId,
+                CaseId!,
+                MessageBody!,
+                HttpContext.RequestAborted);
+
+            if (!result.Success)
+            {
+                ModelState.AddModelError(nameof(MessageBody), result.Error ?? "Unable to send message.");
+                return await LoadAsync();
+            }
+
+            return RedirectToPage(new { caseId = CaseId });
+        }
+
+        private async Task<IActionResult> LoadAsync()
+        {
+            var buyerId = _userManager.GetUserId(User);
+            if (string.IsNullOrWhiteSpace(buyerId))
+            {
+                return Challenge();
+            }
+
             if (string.IsNullOrWhiteSpace(CaseId))
             {
                 return NotFound();
