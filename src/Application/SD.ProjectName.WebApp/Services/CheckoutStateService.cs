@@ -78,6 +78,10 @@ namespace SD.ProjectName.WebApp.Services
         Canceled = 4
     }
 
+    public record CheckoutOrderItemSnapshot(int ProductId, int Quantity, decimal UnitPrice, decimal LineTotal, string VariantKey);
+
+    public record CheckoutOrderSnapshot(List<CheckoutOrderItemSnapshot> Items, decimal ItemsSubtotal, decimal ShippingTotal, decimal GrandTotal, int TotalQuantity);
+
     public record CheckoutState(
         string? SavedAddressKey,
         DeliveryAddress Address,
@@ -85,7 +89,8 @@ namespace SD.ProjectName.WebApp.Services
         Dictionary<string, string>? ShippingSelections = null,
         string? PaymentMethod = null,
         CheckoutPaymentStatus PaymentStatus = CheckoutPaymentStatus.None,
-        string? PaymentReference = null);
+        string? PaymentReference = null,
+        string? CartSignature = null);
 
     public class CheckoutStateService
     {
@@ -149,7 +154,8 @@ namespace SD.ProjectName.WebApp.Services
                 shippingSelections,
                 shouldResetShipping ? null : existing?.PaymentMethod,
                 shouldResetShipping ? CheckoutPaymentStatus.None : existing?.PaymentStatus ?? CheckoutPaymentStatus.None,
-                shouldResetShipping ? null : existing?.PaymentReference);
+                shouldResetShipping ? null : existing?.PaymentReference,
+                shouldResetShipping ? null : existing?.CartSignature);
 
             SaveState(context, state);
             return state;
@@ -188,6 +194,7 @@ namespace SD.ProjectName.WebApp.Services
                 PaymentMethod = null,
                 PaymentStatus = CheckoutPaymentStatus.None,
                 PaymentReference = null,
+                CartSignature = null,
                 SavedAt = DateTimeOffset.UtcNow
             };
 
@@ -195,7 +202,7 @@ namespace SD.ProjectName.WebApp.Services
             return updated;
         }
 
-        public CheckoutState SavePaymentSelection(HttpContext context, string methodId, CheckoutPaymentStatus status, string? reference)
+        public CheckoutState SavePaymentSelection(HttpContext context, string methodId, CheckoutPaymentStatus status, string? reference, string? cartSignature = null)
         {
             if (context == null)
             {
@@ -218,6 +225,7 @@ namespace SD.ProjectName.WebApp.Services
                 PaymentMethod = methodId.Trim(),
                 PaymentStatus = status,
                 PaymentReference = reference,
+                CartSignature = string.IsNullOrWhiteSpace(cartSignature) ? state.CartSignature : cartSignature.Trim(),
                 SavedAt = DateTimeOffset.UtcNow
             };
 
@@ -270,7 +278,8 @@ namespace SD.ProjectName.WebApp.Services
             return state with
             {
                 ShippingSelections = normalized,
-                PaymentMethod = string.IsNullOrWhiteSpace(state.PaymentMethod) ? null : state.PaymentMethod.Trim()
+                PaymentMethod = string.IsNullOrWhiteSpace(state.PaymentMethod) ? null : state.PaymentMethod.Trim(),
+                CartSignature = string.IsNullOrWhiteSpace(state.CartSignature) ? null : state.CartSignature.Trim()
             };
         }
 

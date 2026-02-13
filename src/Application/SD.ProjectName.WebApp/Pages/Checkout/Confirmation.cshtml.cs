@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -14,6 +15,10 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         private readonly ShippingOptionsService _shippingOptionsService;
         private readonly CheckoutOptions _checkoutOptions;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly JsonSerializerOptions _serializerOptions = new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
 
         public CartSummary Summary { get; private set; } = CartSummary.Empty;
 
@@ -58,9 +63,17 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             PaymentReference = state.PaymentReference;
             PaymentMethodLabel = ResolvePaymentLabel(state.PaymentMethod);
 
-            var sellerCountries = await LoadSellerCountriesAsync(summary.SellerGroups.Select(g => g.SellerId));
-            var quote = _shippingOptionsService.BuildQuote(summary, state.Address, sellerCountries, state.ShippingSelections);
-            Summary = quote.Summary;
+            var snapshot = ReadSnapshot();
+            if (snapshot != null)
+            {
+                Summary = new CartSummary(new List<CartSellerGroup>(), snapshot.ItemsSubtotal, snapshot.ShippingTotal, snapshot.GrandTotal, snapshot.TotalQuantity, CartSettlementSummary.Empty);
+            }
+            else
+            {
+                var sellerCountries = await LoadSellerCountriesAsync(summary.SellerGroups.Select(g => g.SellerId));
+                var quote = _shippingOptionsService.BuildQuote(summary, state.Address, sellerCountries, state.ShippingSelections);
+                Summary = quote.Summary;
+            }
 
             _checkoutStateService.Clear(HttpContext);
             return Page();
@@ -95,6 +108,23 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             }
 
             return countries;
+        }
+
+        private CheckoutOrderSnapshot? ReadSnapshot()
+        {
+            if (!TempData.TryGetValue("CheckoutSnapshot", out var raw) || raw is not string payload || string.IsNullOrWhiteSpace(payload))
+            {
+                return null;
+            }
+
+            try
+            {
+                return JsonSerializer.Deserialize<CheckoutOrderSnapshot>(payload, _serializerOptions);
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 }
