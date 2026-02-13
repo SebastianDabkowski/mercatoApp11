@@ -263,6 +263,26 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task GetSellerRatingSummaryAsync_ShouldReturnAverageAndCount()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            context.SellerRatings.AddRange(
+                new SellerRating { OrderId = 1, SellerId = "seller-avg", BuyerId = "buyer-1", Rating = 4, CreatedOn = DateTimeOffset.UtcNow },
+                new SellerRating { OrderId = 2, SellerId = "seller-avg", BuyerId = "buyer-2", Rating = 5, CreatedOn = DateTimeOffset.UtcNow });
+            await context.SaveChangesAsync();
+
+            var summary = await service.GetSellerRatingSummaryAsync("seller-avg");
+
+            Assert.Equal(2, summary.RatedOrderCount);
+            Assert.Equal(4.5, summary.AverageRating);
+
+            var missing = await service.GetSellerRatingSummaryAsync("seller-none");
+            Assert.Equal(0, missing.RatedOrderCount);
+            Assert.Null(missing.AverageRating);
+        }
+
+        [Fact]
         public async Task SubmitProductReviewAsync_ShouldReject_WhenOrderNotDelivered()
         {
             await using var context = CreateContext();

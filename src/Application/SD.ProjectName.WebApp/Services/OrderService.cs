@@ -268,6 +268,8 @@ namespace SD.ProjectName.WebApp.Services
         public DateTimeOffset CreatedOn { get; set; }
     }
 
+    public record SellerRatingSummary(double? AverageRating, int RatedOrderCount);
+
     public record OrderItemDetail(int ProductId, string Name, string Variant, int Quantity, decimal UnitPrice, decimal LineTotal, string SellerId, string SellerName, string Status = OrderStatuses.Paid, string Category = "", decimal? CommissionRate = null);
 
     public record OrderShippingDetail(string SellerId, string SellerName, string MethodId, string MethodLabel, decimal Cost, string? Description, string? DeliveryEstimate = null, string? ProviderId = null, string? ProviderServiceCode = null);
@@ -1289,20 +1291,31 @@ namespace SD.ProjectName.WebApp.Services
             return ratings.ToDictionary(r => r.SellerId, r => r.Rating, StringComparer.OrdinalIgnoreCase);
         }
 
-        public async Task<double?> GetSellerRatingScoreAsync(string sellerId, CancellationToken cancellationToken = default)
+        public async Task<SellerRatingSummary> GetSellerRatingSummaryAsync(string sellerId, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(sellerId))
             {
-                return null;
+                return new SellerRatingSummary(null, 0);
             }
 
             var normalizedSellerId = sellerId.Trim();
-            var average = await _dbContext.SellerRatings.AsNoTracking()
-                .Where(r => r.SellerId == normalizedSellerId)
-                .Select(r => (double?)r.Rating)
-                .AverageAsync(cancellationToken);
+            var ratings = _dbContext.SellerRatings.AsNoTracking()
+                .Where(r => r.SellerId == normalizedSellerId);
 
-            return average.HasValue ? Math.Round(average.Value, 1) : null;
+            var count = await ratings.CountAsync(cancellationToken);
+            if (count == 0)
+            {
+                return new SellerRatingSummary(null, 0);
+            }
+
+            var average = await ratings.Select(r => (double?)r.Rating).AverageAsync(cancellationToken);
+            return new SellerRatingSummary(average.HasValue ? Math.Round(average.Value, 1) : null, count);
+        }
+
+        public async Task<double?> GetSellerRatingScoreAsync(string sellerId, CancellationToken cancellationToken = default)
+        {
+            var summary = await GetSellerRatingSummaryAsync(sellerId, cancellationToken);
+            return summary.AverageRating;
         }
 
         public async Task<PaymentStatusUpdateResult> UpdatePaymentStatusAsync(
