@@ -15,6 +15,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         private readonly CheckoutStateService _checkoutStateService;
         private readonly ShippingAddressService _shippingAddressService;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly IAnalyticsTracker? _analyticsTracker;
 
         public CartSummary Summary { get; private set; } = CartSummary.Empty;
 
@@ -28,13 +29,15 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             IUserCartService userCartService,
             CheckoutStateService checkoutStateService,
             ShippingAddressService shippingAddressService,
-            UserManager<ApplicationUser> userManager)
+            UserManager<ApplicationUser> userManager,
+            IAnalyticsTracker? analyticsTracker = null)
         {
             _cartViewService = cartViewService;
             _userCartService = userCartService;
             _checkoutStateService = checkoutStateService;
             _shippingAddressService = shippingAddressService;
             _userManager = userManager;
+            _analyticsTracker = analyticsTracker;
         }
 
         public async Task<IActionResult> OnGetAsync()
@@ -66,6 +69,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 Input.NewAddress = AddressForm.From(state.Address);
             }
 
+            await TrackCheckoutStartAsync(Summary);
             return Page();
         }
 
@@ -112,6 +116,21 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
 
             TempData["CheckoutAddressSaved"] = true;
             return RedirectToPage("/Checkout/Shipping");
+        }
+
+        private Task TrackCheckoutStartAsync(CartSummary summary)
+        {
+            if (_analyticsTracker == null)
+            {
+                return Task.CompletedTask;
+            }
+
+            return _analyticsTracker.TrackAsync(
+                new AnalyticsEventEntry(
+                    AnalyticsEventTypes.CheckoutStart,
+                    Quantity: summary.TotalQuantity,
+                    Amount: summary.GrandTotal),
+                HttpContext.RequestAborted);
         }
 
         private async Task<DeliveryAddress?> ResolveAddressAsync()

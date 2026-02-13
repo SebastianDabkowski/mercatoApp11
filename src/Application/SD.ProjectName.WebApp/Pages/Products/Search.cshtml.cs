@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.WebApp.Identity;
+using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Products
 {
@@ -14,14 +15,16 @@ namespace SD.ProjectName.WebApp.Pages.Products
         private readonly GetProducts _getProducts;
         private readonly ManageCategories _manageCategories;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly IAnalyticsTracker? _analyticsTracker;
         private const int MaxQueryLength = 200;
         private const int DefaultPageSize = 12;
 
-        public SearchModel(GetProducts getProducts, ManageCategories manageCategories, UserManager<ApplicationUser> userManager)
+        public SearchModel(GetProducts getProducts, ManageCategories manageCategories, UserManager<ApplicationUser> userManager, IAnalyticsTracker? analyticsTracker = null)
         {
             _getProducts = getProducts;
             _manageCategories = manageCategories;
             _userManager = userManager;
+            _analyticsTracker = analyticsTracker;
         }
 
         [BindProperty(SupportsGet = true)]
@@ -132,6 +135,22 @@ namespace SD.ProjectName.WebApp.Pages.Products
                 StatusMessage = filterOptions.HasAnyFilters()
                     ? "No products match these filters. Clear filters to see all results for this search."
                     : "No products match this search. Try adjusting your keywords or browse categories.";
+            }
+
+            if (_analyticsTracker != null)
+            {
+                await _analyticsTracker.TrackAsync(
+                    new AnalyticsEventEntry(
+                        AnalyticsEventTypes.Search,
+                        Keyword: term,
+                        SellerId: filterOptions.SellerId,
+                        Metadata: new Dictionary<string, string?>
+                        {
+                            ["categoryId"] = CategoryId?.ToString(),
+                            ["hasFilters"] = filterOptions.HasAnyFilters().ToString(),
+                            ["results"] = TotalResults.ToString()
+                        }),
+                    cancellationToken);
             }
         }
 

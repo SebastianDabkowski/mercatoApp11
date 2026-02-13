@@ -23,6 +23,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddDistributedMemoryCache();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
     {
         options.SignIn.RequireConfirmedAccount = true;
@@ -114,6 +115,11 @@ builder.Services.AddOptions<EmailOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<EmailOptions>(sp => sp.GetRequiredService<IOptions<EmailOptions>>().Value);
+builder.Services.AddOptions<AnalyticsOptions>()
+    .Bind(builder.Configuration.GetSection(AnalyticsOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<AnalyticsOptions>(sp => sp.GetRequiredService<IOptions<AnalyticsOptions>>().Value);
 builder.Services.AddSingleton(sp =>
 {
     var options = new PushNotificationOptions();
@@ -152,6 +158,7 @@ builder.Services.AddScoped<SellerShippingMethodService>();
 builder.Services.AddScoped<OrderService>();
 builder.Services.AddScoped<AdminReportingService>();
 builder.Services.AddScoped<SellerReportingService>();
+builder.Services.AddScoped<IAnalyticsTracker, AnalyticsTracker>();
 builder.Services.AddSingleton<PaymentProviderService>();
 builder.Services.AddSingleton<ShippingProviderService>();
 
