@@ -1384,6 +1384,155 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task GetReturnCasesForAdminAsync_ShouldReturnPlatformCases()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-admin-list", "sig-admin-list");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-admin", "adminlist@example.com", "Admin Buyer", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-admin");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+            await service.CreateReturnRequestAsync(
+                result.Order.Id,
+                "buyer-admin",
+                subOrderNumber,
+                new List<int> { 1 },
+                "Damaged",
+                ReturnRequestTypes.Complaint,
+                "Complaint details");
+
+            var paged = await service.GetReturnCasesForAdminAsync();
+            Assert.Equal(1, paged.TotalCount);
+            var summary = Assert.Single(paged.Items);
+            Assert.Equal("seller-1", summary.SellerId);
+            Assert.Equal(ReturnRequestTypes.Complaint, summary.Type);
+            Assert.Equal(ReturnRequestStatuses.PendingSellerReview, summary.Status);
+            Assert.False(string.IsNullOrWhiteSpace(summary.BuyerName));
+        }
+
+        [Fact]
+        public async Task EscalateReturnCaseForAdminAsync_ShouldMoveCaseUnderReview_AndNotifyParties()
+        {
+            await using var context = CreateContext();
+            context.Users.Add(new ApplicationUser
+            {
+                Id = "seller-1",
+                UserName = "seller@example.com",
+                Email = "seller@example.com",
+                AccountType = AccountTypes.Seller,
+                FullName = "Seller One",
+                Address = "1 Admin Way",
+                Country = "US"
+            });
+            await context.SaveChangesAsync();
+
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-admin-escalate", "sig-admin-escalate");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-admin-esc", "buyeresc@example.com", "Buyer Esc", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-admin-esc");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+            var request = await service.CreateReturnRequestAsync(
+                result.Order.Id,
+                "buyer-admin-esc",
+                subOrderNumber,
+                new List<int> { 1 },
+                "Damaged",
+                ReturnRequestTypes.Return,
+                "Cracked screen");
+
+            emailSender.Invocations.Clear();
+
+            var escalated = await service.EscalateReturnCaseForAdminAsync(
+                result.Order.Id,
+                request.Request!.CaseId!,
+                "buyer",
+                "Buyer requested admin help");
+
+            Assert.True(escalated.Success);
+            Assert.NotNull(escalated.Request);
+            Assert.Equal(ReturnRequestStatuses.UnderAdminReview, escalated.Request!.Status);
+            Assert.Contains(escalated.Request!.History, h => h.Actor == "Admin" && h.Status == ReturnRequestStatuses.UnderAdminReview);
+
+            var detail = await service.GetReturnCaseForAdminAsync(request.Request!.CaseId!);
+            Assert.NotNull(detail);
+            Assert.Equal(ReturnRequestStatuses.UnderAdminReview, detail!.Summary.Status);
+
+            emailSender.Verify(e => e.SendEmailAsync("buyeresc@example.com", It.IsAny<string>(), It.IsAny<string>()), Times.Once);
+            emailSender.Verify(e => e.SendEmailAsync("seller@example.com", It.IsAny<string>(), It.IsAny<string>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task ResolveReturnCaseForAdminAsync_ShouldRecordAdminDecision()
+        {
+            await using var context = CreateContext();
+            context.Users.Add(new ApplicationUser
+            {
+                Id = "seller-1",
+                UserName = "seller@example.com",
+                Email = "seller@example.com",
+                AccountType = AccountTypes.Seller,
+                FullName = "Seller One",
+                Address = "1 Admin Way",
+                Country = "US"
+            });
+            await context.SaveChangesAsync();
+
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-admin-decision", "sig-admin-decision");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-admin-dec", "buyerdecision@example.com", "Buyer Decider", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-admin-dec");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+            var request = await service.CreateReturnRequestAsync(
+                result.Order.Id,
+                "buyer-admin-dec",
+                subOrderNumber,
+                new List<int> { 1 },
+                "Damaged",
+                ReturnRequestTypes.Return,
+                "Broken item");
+
+            emailSender.Invocations.Clear();
+
+            var resolved = await service.ResolveReturnCaseForAdminAsync(
+                result.Order.Id,
+                request.Request!.CaseId!,
+                "fullrefund",
+                12m,
+                "admin-ref-1",
+                "Override seller decision");
+
+            Assert.True(resolved.Success);
+            Assert.NotNull(resolved.Request);
+            Assert.Equal(ReturnRequestStatuses.Completed, resolved.Request!.Status);
+            Assert.Equal("Admin", resolved.Request!.ResolutionActor);
+            Assert.Equal("Full refund", resolved.Request!.ResolutionOutcome);
+            Assert.Equal(orderView.SubOrders.Single().GrandTotal, resolved.Request!.ResolutionRefundAmount);
+
+            var detail = await service.GetReturnCaseForAdminAsync(request.Request!.CaseId!);
+            Assert.NotNull(detail);
+            Assert.Equal(ReturnRequestStatuses.Completed, detail!.Summary.Status);
+            Assert.Contains(detail.History, h => h.Actor == "Admin" && h.Status == ReturnRequestStatuses.Completed);
+
+            emailSender.Verify(e => e.SendEmailAsync("buyerdecision@example.com", It.IsAny<string>(), It.IsAny<string>()), Times.Once);
+            emailSender.Verify(e => e.SendEmailAsync("seller@example.com", It.IsAny<string>(), It.IsAny<string>()), Times.Once);
+        }
+
+        [Fact]
         public async Task UpdateSubOrderStatusAsync_ShouldRejectInvalidTransition()
         {
             await using var context = CreateContext();
