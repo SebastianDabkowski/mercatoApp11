@@ -41,6 +41,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Cases
             ReturnRequestStatuses.PendingSellerReview,
             ReturnRequestStatuses.PendingBuyerInfo,
             ReturnRequestStatuses.SellerProposed,
+            ReturnRequestStatuses.UnderAdminReview,
             ReturnRequestStatuses.Approved,
             ReturnRequestStatuses.Rejected,
             ReturnRequestStatuses.Completed

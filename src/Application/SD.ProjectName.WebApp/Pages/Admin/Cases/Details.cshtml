@@ -1,0 +1,297 @@
+@page "/Admin/Cases/Details/{caseId?}"
+@model SD.ProjectName.WebApp.Pages.Admin.Cases.DetailsModel
+@{
+    ViewData["Title"] = "Case review";
+}
+
+<h1 class="mb-3">Case review</h1>
+
+@if (Model.Case == null)
+{
+    <div class="alert alert-warning">Case not found.</div>
+}
+else
+{
+    var summary = Model.Case.Summary;
+    <div class="alert alert-secondary d-flex justify-content-between align-items-center">
+        <div>
+            <div class="fw-semibold">Case @summary.CaseId</div>
+            <div class="text-muted small">Opened @summary.RequestedOn.ToLocalTime().ToString("f")</div>
+        </div>
+        <div class="text-end">
+            <span class="badge bg-primary">@summary.Status</span>
+            <div class="text-muted small mt-1">@summary.Type</div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-3">
+                <div class="card-header">Request details</div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-3">Order</dt>
+                        <dd class="col-sm-9">
+                            <div class="fw-semibold">@summary.OrderNumber</div>
+                            <div class="text-muted small">Sub-order @summary.SubOrderNumber</div>
+                        </dd>
+                        <dt class="col-sm-3">Seller</dt>
+                        <dd class="col-sm-9">
+                            <div class="fw-semibold">@summary.SellerName</div>
+                            <div class="text-muted small">@summary.SellerId</div>
+                        </dd>
+                        <dt class="col-sm-3">Buyer</dt>
+                        <dd class="col-sm-9">
+                            <div class="fw-semibold">@summary.BuyerName</div>
+                            @if (!string.IsNullOrWhiteSpace(summary.BuyerEmail))
+                            {
+                                <div class="text-muted small">@summary.BuyerEmail</div>
+                            }
+                        </dd>
+                        <dt class="col-sm-3">Reason</dt>
+                        <dd class="col-sm-9">@Model.Case.Reason</dd>
+                        <dt class="col-sm-3">Description</dt>
+                        <dd class="col-sm-9">@(!string.IsNullOrWhiteSpace(Model.Case.Description) ? Model.Case.Description : "No additional description provided.")</dd>
+                        <dt class="col-sm-3">Items</dt>
+                        <dd class="col-sm-9">
+                            <ul class="mb-0">
+                                @foreach (var item in Model.Case.Items)
+                                {
+                                    <li>@item.Quantity x @item.Label (Product #@item.ProductId)</li>
+                                }
+                            </ul>
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Messaging thread</span>
+                    <span class="text-muted small">Updated @Model.Case.Summary.LastUpdatedOn.ToLocalTime().ToString("g")</span>
+                </div>
+                <div class="card-body">
+                    @if (Model.Case.Messages.Count == 0)
+                    {
+                        <div class="text-muted small">No messages yet between buyer and seller.</div>
+                    }
+                    else
+                    {
+                        <ul class="list-unstyled mb-0">
+                            @foreach (var message in Model.Case.Messages)
+                            {
+                                <li class="mb-3">
+                                    <div class="small text-muted">@message.SentOn.ToLocalTime().ToString("g") — @message.Actor</div>
+                                    <div class="border rounded p-2">@message.Message</div>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">Shipping &amp; address</div>
+                <div class="card-body">
+                    <div class="fw-semibold">@Model.Case.Shipping.MethodLabel</div>
+                    <div>@Model.Case.Shipping.Cost.ToString("C")</div>
+                    @if (!string.IsNullOrWhiteSpace(Model.Case.Shipping.DeliveryEstimate))
+                    {
+                        <div class="text-muted small">Estimated: @Model.Case.Shipping.DeliveryEstimate</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Model.Case.Shipping.Description))
+                    {
+                        <div class="text-muted small">@Model.Case.Shipping.Description</div>
+                    }
+                    <hr />
+                    <div class="fw-semibold">Delivery address</div>
+                    <div>@Model.Case.Address.Recipient</div>
+                    <div>@Model.Case.Address.Line1</div>
+                    @if (!string.IsNullOrWhiteSpace(Model.Case.Address.Line2))
+                    {
+                        <div>@Model.Case.Address.Line2</div>
+                    }
+                    <div>@Model.Case.Address.City @Model.Case.Address.State @Model.Case.Address.PostalCode</div>
+                    <div>@Model.Case.Address.Country</div>
+                    @if (!string.IsNullOrWhiteSpace(Model.Case.Address.Phone))
+                    {
+                        <div class="text-muted small">Phone: @Model.Case.Address.Phone</div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header">Resolution</div>
+                <div class="card-body">
+                    <div class="fw-semibold mb-1">@Model.Case.Resolution.Outcome</div>
+                    <div class="text-muted small mb-2">@Model.Case.Resolution.Summary</div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted small">Refunded</span>
+                        <span class="fw-semibold">@Model.Case.Resolution.RefundedAmount.ToString("C")</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted small">Sub-order total</span>
+                        <span class="text-muted small">@Model.Case.Resolution.SubOrderTotal.ToString("C")</span>
+                    </div>
+                    <div class="text-muted small mt-2">Refund status: @Model.Case.Resolution.PaymentStatus</div>
+                    @if (!string.IsNullOrWhiteSpace(Model.Case.Resolution.PaymentReference))
+                    {
+                        <div class="text-muted small">Refund ref: @Model.Case.Resolution.PaymentReference</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Model.Case.Resolution.DecisionNote))
+                    {
+                        <div class="small mt-2">Note: @Model.Case.Resolution.DecisionNote</div>
+                    }
+                    @if (Model.Case.Resolution.ResolvedOn.HasValue)
+                    {
+                        <div class="text-muted small">Resolved on: @Model.Case.Resolution.ResolvedOn.Value.ToLocalTime().ToString("g")</div>
+                    }
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">Escalation</div>
+                <div class="card-body">
+                    <form method="post" asp-page-handler="Escalate">
+                        <input type="hidden" asp-for="CaseId" value="@summary.CaseId" />
+                        <input type="hidden" asp-for="OrderId" value="@summary.OrderId" />
+                        <div asp-validation-summary="ModelOnly" class="text-danger small"></div>
+                        <div class="mb-3">
+                            <label class="form-label form-label-sm fw-semibold" asp-for="EscalationReason">Reason</label>
+                            <select asp-for="EscalationReason" class="form-select form-select-sm" aria-label="Escalation reason" disabled="@(Model.CanEscalate ? null : "disabled")">
+                                <option value="">Manual admin flag</option>
+                                <option value="buyer">Buyer requested escalation</option>
+                                <option value="sla">SLA breach / inactivity</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label form-label-sm" asp-for="Note">Internal note</label>
+                            <textarea asp-for="Note" class="form-control form-control-sm" rows="2" placeholder="Optional context for the audit log" disabled="@(Model.CanEscalate ? null : "disabled")"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-outline-primary" disabled="@(Model.CanEscalate ? null : "disabled")">Mark under admin review</button>
+                        @if (!Model.CanEscalate)
+                        {
+                            <div class="text-muted small mt-2">Case is already under admin review.</div>
+                        }
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">Admin decision</div>
+                <div class="card-body">
+                    <form method="post" asp-page-handler="Decision">
+                        <input type="hidden" asp-for="CaseId" value="@summary.CaseId" />
+                        <input type="hidden" asp-for="OrderId" value="@summary.OrderId" />
+                        <div asp-validation-summary="ModelOnly" class="text-danger small"></div>
+                        <div class="mb-3">
+                            <label class="form-label form-label-sm fw-semibold">Action</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" asp-for="Decision" value="fullrefund" id="decision-fullrefund" />
+                                <label class="form-check-label" for="decision-fullrefund">Enforce full refund</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" asp-for="Decision" value="partialrefund" id="decision-partial" />
+                                <label class="form-check-label" for="decision-partial">Enforce partial refund</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" asp-for="Decision" value="replacement" id="decision-replacement" />
+                                <label class="form-check-label" for="decision-replacement">Approve replacement</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" asp-for="Decision" value="repair" id="decision-repair" />
+                                <label class="form-check-label" for="decision-repair">Approve repair</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" asp-for="Decision" value="norefund" id="decision-norefund" />
+                                <label class="form-check-label" for="decision-norefund">Decline refund</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" asp-for="Decision" value="close" id="decision-close" />
+                                <label class="form-check-label" for="decision-close">Close without action</label>
+                            </div>
+                            <span asp-validation-for="Decision" class="text-danger small"></span>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label form-label-sm" asp-for="RefundAmount">Refund amount</label>
+                            <input asp-for="RefundAmount" class="form-control form-control-sm" type="number" step="0.01" min="0" />
+                            <div class="text-muted small">Required for partial refunds. Leave blank for full refunds.</div>
+                            <span asp-validation-for="RefundAmount" class="text-danger small"></span>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label form-label-sm" asp-for="RefundReference">Refund reference (optional)</label>
+                            <input asp-for="RefundReference" class="form-control form-control-sm" />
+                            <div class="text-muted small">Link to the transaction or refund ID if applicable.</div>
+                            <span asp-validation-for="RefundReference" class="text-danger small"></span>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label form-label-sm" asp-for="Note">Decision note</label>
+                            <textarea asp-for="Note" class="form-control form-control-sm" rows="3" placeholder="Share the admin rationale for audit and buyer/seller notification"></textarea>
+                            <span asp-validation-for="Note" class="text-danger small"></span>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-primary">Record decision</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">Case history</div>
+                <div class="card-body">
+                    @if (Model.Case.History.Count == 0)
+                    {
+                        <div class="text-muted small">No history available.</div>
+                    }
+                    else
+                    {
+                        <ul class="list-unstyled mb-0 small">
+                            @foreach (var entry in Model.Case.History)
+                            {
+                                <li class="text-muted mb-1">
+                                    @entry.ChangedOn.ToLocalTime().ToString("g"): @entry.Status — @entry.Actor
+                                    @if (!string.IsNullOrWhiteSpace(entry.Note))
+                                    {
+                                        <div class="ms-2">@entry.Note</div>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">Status history</div>
+                <div class="card-body">
+                    @if (Model.Case.StatusHistory.Count == 0)
+                    {
+                        <div class="text-muted small">No history available.</div>
+                    }
+                    else
+                    {
+                        <ul class="list-unstyled mb-0 small">
+                            @foreach (var entry in Model.Case.StatusHistory)
+                            {
+                                <li class="text-muted mb-1">
+                                    @entry.ChangedOn.ToLocalTime().ToString("g"): @entry.Status
+                                    @if (!string.IsNullOrWhiteSpace(entry.TrackingNumber))
+                                    {
+                                        <span class="ms-1">• Tracking: @entry.TrackingNumber</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(entry.TrackingCarrier))
+                                    {
+                                        <span class="ms-1">(@entry.TrackingCarrier)</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="mt-3">
+    <a class="btn btn-outline-secondary" asp-page="/Admin/Cases/Index">Back to cases</a>
+</div>

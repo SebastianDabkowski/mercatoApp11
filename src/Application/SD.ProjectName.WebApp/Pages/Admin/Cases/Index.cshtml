@@ -1,0 +1,135 @@
+@page
+@model SD.ProjectName.WebApp.Pages.Admin.Cases.IndexModel
+@{
+    ViewData["Title"] = "Returns & disputes";
+}
+
+<h1 class="mb-2">Returns & disputes</h1>
+<p class="text-muted">Search and filter all buyer and seller cases across the platform.</p>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-12 col-lg-4">
+                <label class="form-label fw-semibold" for="query">Search</label>
+                <input id="query" class="form-control" type="text" name="Query" value="@Model.Query" placeholder="Case ID, order number, buyer, seller" />
+            </div>
+            <div class="col-6 col-lg-2">
+                <label class="form-label fw-semibold" for="type">Type</label>
+                <select id="type" class="form-select" name="Type">
+                    <option value="">All types</option>
+                    @foreach (var type in Model.AvailableTypes)
+                    {
+                        <option value="@type" selected="@(string.Equals(Model.Type, type, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@type</option>
+                    }
+                </select>
+            </div>
+            <div class="col-6 col-lg-3">
+                <label class="form-label fw-semibold">Status</label>
+                <div class="d-flex flex-wrap gap-2">
+                    @foreach (var status in Model.AvailableStatuses)
+                    {
+                        var inputId = $"status-{status.Replace(" ", "-").ToLower()}";
+                        var isChecked = Model.StatusFilters.Any(s => s.Equals(status, StringComparison.OrdinalIgnoreCase));
+                        <div class="form-check me-2">
+                            <input class="form-check-input" type="checkbox" name="status" value="@status" id="@inputId" @(isChecked ? "checked" : null) />
+                            <label class="form-check-label" for="@inputId">@status</label>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="col-6 col-lg-1">
+                <label class="form-label fw-semibold" for="fromDate">From</label>
+                <input id="fromDate" class="form-control" type="date" name="FromDate" value="@(Model.FromDate?.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-6 col-lg-1">
+                <label class="form-label fw-semibold" for="toDate">To</label>
+                <input id="toDate" class="form-control" type="date" name="ToDate" value="@(Model.ToDate?.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-12 col-lg-1 text-lg-end">
+                <input type="hidden" name="page" value="1" />
+                <button type="submit" class="btn btn-primary">Apply</button>
+                @if (Model.HasFilters)
+                {
+                    <a class="btn btn-link text-decoration-none ms-2" asp-page="./Index">Clear</a>
+                }
+            </div>
+        </form>
+    </div>
+</div>
+
+@if (Model.Cases.Count == 0)
+{
+    <div class="alert alert-info">
+        @(Model.HasFilters ? "No cases match these filters." : "No return or complaint cases found.")
+    </div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">Case</th>
+                    <th scope="col">Order</th>
+                    <th scope="col">Seller</th>
+                    <th scope="col">Buyer</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Activity</th>
+                    <th scope="col">Status</th>
+                    <th scope="col" class="text-end"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in Model.Cases)
+                {
+                    var age = DateTimeOffset.UtcNow - item.RequestedOn;
+                    <tr>
+                        <td class="fw-semibold">@item.CaseId</td>
+                        <td>
+                            <div class="fw-semibold">@item.OrderNumber</div>
+                            <div class="text-muted small">Sub-order @item.SubOrderNumber</div>
+                        </td>
+                        <td>
+                            <div class="fw-semibold">@item.SellerName</div>
+                            <div class="text-muted small">@item.SellerId</div>
+                        </td>
+                        <td>
+                            <div class="fw-semibold">@item.BuyerName</div>
+                            @if (!string.IsNullOrWhiteSpace(item.BuyerEmail))
+                            {
+                                <div class="text-muted small">@item.BuyerEmail</div>
+                            }
+                        </td>
+                        <td>@item.Type</td>
+                        <td>
+                            <div>@item.LastUpdatedOn.ToLocalTime().ToString("g")</div>
+                            <div class="text-muted small">Opened @item.RequestedOn.ToLocalTime().ToString("g")</div>
+                            <div class="text-muted small">Age: @Math.Max(0, (int)age.TotalDays) days</div>
+                        </td>
+                        <td>
+                            <span class="badge bg-primary">@item.Status</span>
+                        </td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary" asp-page="/Admin/Cases/Details" asp-route-caseId="@item.CaseId" asp-route-orderId="@item.OrderId">Review</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (Model.TotalPages > 1)
+    {
+        <nav aria-label="Case pagination">
+            <ul class="pagination justify-content-center">
+                <li class="page-item @(Model.PageNumber <= 1 ? "disabled" : "")">
+                    <a class="page-link" href="@Url.Page(null, new { page = Model.PageNumber - 1, status = Model.StatusFilters, query = Model.Query, type = Model.Type, fromDate = Model.FromDate?.ToString("yyyy-MM-dd"), toDate = Model.ToDate?.ToString("yyyy-MM-dd") })">Previous</a>
+                </li>
+                <li class="page-item @(Model.PageNumber >= Model.TotalPages ? "disabled" : "")">
+                    <a class="page-link" href="@Url.Page(null, new { page = Model.PageNumber + 1, status = Model.StatusFilters, query = Model.Query, type = Model.Type, fromDate = Model.FromDate?.ToString("yyyy-MM-dd"), toDate = Model.ToDate?.ToString("yyyy-MM-dd") })">Next</a>
+                </li>
+            </ul>
+        </nav>
+    }
+}

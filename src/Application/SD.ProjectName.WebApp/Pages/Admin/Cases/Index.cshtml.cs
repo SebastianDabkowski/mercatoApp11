@@ -1,21 +1,25 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Services;
 
-namespace SD.ProjectName.WebApp.Pages.Buyer.Cases
+namespace SD.ProjectName.WebApp.Pages.Admin.Cases
 {
-    [Authorize(Roles = AccountTypes.Buyer)]
+    [Authorize(Roles = AccountTypes.Admin)]
     public class IndexModel : PageModel
     {
         private readonly OrderService _orderService;
-        private readonly UserManager<ApplicationUser> _userManager;
-        private const int DefaultPageSize = 10;
+        private const int DefaultPageSize = 20;
 
         [BindProperty(SupportsGet = true, Name = "status")]
         public List<string> StatusFilters { get; set; } = new();
+
+        [BindProperty(SupportsGet = true)]
+        public string? Query { get; set; }
+
+        [BindProperty(SupportsGet = true)]
+        public string? Type { get; set; }
 
         [BindProperty(SupportsGet = true)]
         public DateTime? FromDate { get; set; }
@@ -26,7 +30,7 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Cases
         [BindProperty(SupportsGet = true, Name = "page")]
         public int PageNumber { get; set; } = 1;
 
-        public List<BuyerCaseSummaryView> Cases { get; private set; } = new();
+        public List<AdminCaseSummaryView> Cases { get; private set; } = new();
 
         public int TotalCases { get; private set; }
 
@@ -34,7 +38,12 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Cases
 
         public int PageSize => DefaultPageSize;
 
-        public bool HasFilters => StatusFilters.Count > 0 || FromDate.HasValue || ToDate.HasValue;
+        public bool HasFilters =>
+            StatusFilters.Count > 0
+            || !string.IsNullOrWhiteSpace(Query)
+            || !string.IsNullOrWhiteSpace(Type)
+            || FromDate.HasValue
+            || ToDate.HasValue;
 
         public List<string> AvailableStatuses { get; } = new()
         {
@@ -47,33 +56,30 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Cases
             ReturnRequestStatuses.Completed
         };
 
-        public IndexModel(OrderService orderService, UserManager<ApplicationUser> userManager)
+        public List<string> AvailableTypes { get; } = new()
+        {
+            ReturnRequestTypes.Return,
+            ReturnRequestTypes.Complaint
+        };
+
+        public IndexModel(OrderService orderService)
         {
             _orderService = orderService;
-            _userManager = userManager;
         }
 
-        public async Task<IActionResult> OnGetAsync()
+        public async Task OnGetAsync()
         {
-            var buyerId = _userManager.GetUserId(User);
-            if (string.IsNullOrWhiteSpace(buyerId))
-            {
-                return Challenge();
-            }
-
             PageNumber = Math.Max(1, PageNumber);
             var filters = BuildFilters();
-            var paged = await _orderService.GetReturnCasesForBuyerAsync(buyerId, filters, PageNumber, DefaultPageSize, HttpContext.RequestAborted);
+            var paged = await _orderService.GetReturnCasesForAdminAsync(filters, PageNumber, DefaultPageSize, HttpContext.RequestAborted);
 
             Cases = paged.Items;
             TotalCases = paged.TotalCount;
             TotalPages = paged.TotalPages;
             PageNumber = paged.PageNumber;
-
-            return Page();
         }
 
-        private ReturnCaseFilterOptions BuildFilters()
+        private AdminCaseFilterOptions BuildFilters()
         {
             var normalizedStatuses = StatusFilters
                 .Select(ReturnRequestStatuses.Normalize)
@@ -88,11 +94,13 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Cases
                 (from, to) = (to, from);
             }
 
-            return new ReturnCaseFilterOptions
+            return new AdminCaseFilterOptions
             {
                 Statuses = normalizedStatuses,
                 FromDate = from,
-                ToDate = to
+                ToDate = to,
+                Query = string.IsNullOrWhiteSpace(Query) ? null : Query.Trim(),
+                Type = string.IsNullOrWhiteSpace(Type) ? null : ReturnRequestTypes.Normalize(Type)
             };
         }
 

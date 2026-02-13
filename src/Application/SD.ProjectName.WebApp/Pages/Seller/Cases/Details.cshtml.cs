@@ -38,7 +38,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Cases
 
         public bool CanReview =>
             Case != null
-            && ReturnRequestStatuses.IsOpen(ReturnRequestStatuses.Normalize(Case.Summary.Status));
+            && ReturnRequestStatuses.IsOpen(ReturnRequestStatuses.Normalize(Case.Summary.Status))
+            && !string.Equals(ReturnRequestStatuses.Normalize(Case.Summary.Status), ReturnRequestStatuses.UnderAdminReview, StringComparison.OrdinalIgnoreCase);
 
         public DetailsModel(OrderService orderService, UserManager<ApplicationUser> userManager)
         {
