@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using SD.ProjectName.Modules.Products.Domain;
@@ -372,6 +373,85 @@ namespace SD.ProjectName.Tests.Products
             Assert.False(string.IsNullOrWhiteSpace(shipped.UpdatedSubOrder.ShippingProviderReference));
             Assert.Equal("ShipFast", shipped.UpdatedSubOrder.TrackingCarrier);
             Assert.False(string.IsNullOrWhiteSpace(shipped.UpdatedSubOrder.TrackingUrl));
+        }
+
+        [Fact]
+        public async Task UpdateSubOrderStatusAsync_ShouldStoreShippingLabel_ForProviderShipment()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var providerOptions = new ShippingProviderOptions
+            {
+                Providers = new List<ShippingProviderDefinition>
+                {
+                    new()
+                    {
+                        Id = "shipfast",
+                        Name = "ShipFast",
+                        Services = new List<ShippingProviderServiceDefinition>
+                        {
+                            new() { Code = "standard", Name = "ShipFast Standard", TrackingUrlTemplate = "https://track.shipfast.test/{tracking}", LabelRetentionDays = 10 }
+                        }
+                    }
+                }
+            };
+            var shippingProviderService = new ShippingProviderService(providerOptions, TimeProvider.System, NullLogger<ShippingProviderService>.Instance);
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, shippingProviderService: shippingProviderService);
+            var quote = BuildQuote("shipfast", "standard");
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-provider-label", "sig-provider-label");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-label", "buyerlabel@example.com", "Buyer Label", "Card", "card");
+            var shipped = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Shipped);
+
+            Assert.True(shipped.Success);
+            Assert.NotNull(shipped.UpdatedSubOrder);
+            Assert.NotNull(shipped.UpdatedSubOrder!.ShippingLabel);
+            Assert.False(string.IsNullOrWhiteSpace(shipped.UpdatedSubOrder!.ShippingLabel!.Base64Content));
+
+            var sellerOrder = await service.GetSellerOrderAsync(result.Order.Id, "seller-1");
+            Assert.NotNull(sellerOrder);
+            Assert.True(sellerOrder!.HasShippingLabel);
+            Assert.NotNull(sellerOrder.ShippingLabelExpiresOn);
+
+            var label = await service.GetShippingLabelAsync(result.Order.Id, "seller-1");
+            Assert.NotNull(label);
+            Assert.Equal("application/pdf", label!.ContentType);
+            Assert.NotEmpty(label.Content);
+        }
+
+        [Fact]
+        public async Task UpdateSubOrderStatusAsync_ShouldNotShip_WhenLabelGenerationFails()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var providerOptions = new ShippingProviderOptions
+            {
+                Providers = new List<ShippingProviderDefinition>
+                {
+                    new()
+                    {
+                        Id = "shipfast",
+                        Name = "ShipFast",
+                        Services = new List<ShippingProviderServiceDefinition>
+                        {
+                            new() { Code = "standard", Name = "ShipFast Standard", TrackingUrlTemplate = "https://track.shipfast.test/{tracking}" }
+                        }
+                    }
+                }
+            };
+            var shippingProviderService = new FailingLabelShippingProviderService(providerOptions, TimeProvider.System, NullLogger<ShippingProviderService>.Instance);
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, shippingProviderService: shippingProviderService);
+            var quote = BuildQuote("shipfast", "standard");
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-provider-label-fail", "sig-provider-label-fail");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-label-fail", "buyerlabelfail@example.com", "Buyer Label Fail", "Card", "card");
+            var shipped = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Shipped);
+
+            Assert.False(shipped.Success);
+            var sellerOrder = await service.GetSellerOrderAsync(result.Order.Id, "seller-1");
+            Assert.NotNull(sellerOrder);
+            Assert.Equal(OrderStatuses.Paid, sellerOrder!.Status);
+            Assert.False(sellerOrder.HasShippingLabel);
         }
 
         [Fact]
@@ -1270,6 +1350,19 @@ namespace SD.ProjectName.Tests.Products
             var csv = Encoding.UTF8.GetString(export.Content);
             Assert.Contains(untracked.Order.OrderNumber, csv);
             Assert.DoesNotContain(tracked.Order.OrderNumber, csv);
+        }
+
+        private class FailingLabelShippingProviderService : ShippingProviderService
+        {
+            public FailingLabelShippingProviderService(ShippingProviderOptions options, TimeProvider clock, ILogger<ShippingProviderService> logger)
+                : base(options, clock, logger)
+            {
+            }
+
+            protected override byte[] RenderLabelPdf(ShippingProviderShipmentRequest request, string trackingNumber, string carrier, string providerReference)
+            {
+                throw new InvalidOperationException("Simulated label failure");
+            }
         }
 
         private static ShippingQuote BuildQuote(string? providerId = null, string? providerServiceCode = null)

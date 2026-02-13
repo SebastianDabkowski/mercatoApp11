@@ -177,6 +177,8 @@ namespace SD.ProjectName.WebApp.Services
 
     public record OrderStatusChange(string Status, DateTimeOffset ChangedOn, string? TrackingNumber = null, string? TrackingCarrier = null);
 
+    public record ShippingLabelInfo(string FileName, string ContentType, string Base64Content, DateTimeOffset CreatedOn, DateTimeOffset? ExpiresOn = null);
+
     public record OrderSubOrder(
         string SubOrderNumber,
         string SellerId,
@@ -198,7 +200,8 @@ namespace SD.ProjectName.WebApp.Services
         string? ShippingProviderId = null,
         string? ShippingProviderService = null,
         string? ShippingProviderReference = null,
-        string? TrackingUrl = null);
+        string? TrackingUrl = null,
+        ShippingLabelInfo? ShippingLabel = null);
 
     public static class EscrowEntryTypes
     {
@@ -321,7 +324,10 @@ namespace SD.ProjectName.WebApp.Services
         string? PaymentStatusMessage,
         ReturnRequest? ReturnRequest,
         EscrowAllocation? Escrow,
-        List<OrderStatusChange> StatusHistory);
+        List<OrderStatusChange> StatusHistory,
+        bool HasShippingLabel,
+        string? ShippingLabelFileName,
+        DateTimeOffset? ShippingLabelExpiresOn);
 
     public record SellerPayoutScheduleView(string Schedule, string Status, decimal EligibleAmount, decimal ProcessingAmount, decimal PaidAmount, decimal Threshold, string? ErrorReference);
 
@@ -484,6 +490,8 @@ namespace SD.ProjectName.WebApp.Services
         List<CommissionInvoiceLine> Lines);
 
     public record CommissionInvoicePdf(byte[] Content, string FileName);
+
+    public record ShippingLabelFile(byte[] Content, string ContentType, string FileName);
 
     public record SellerFilterOption(string Id, string Name);
 
@@ -1613,6 +1621,7 @@ namespace SD.ProjectName.WebApp.Services
                 || string.Equals(e.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
             var address = DeserializeAddress(order.DeliveryAddressJson);
             var paymentStatus = ResolvePaymentStatusForSubOrder(details, subOrder);
+            var hasLabel = subOrder.ShippingLabel != null && !string.IsNullOrWhiteSpace(subOrder.ShippingLabel.Base64Content);
             return new SellerOrderView(
                 order.Id,
                 order.OrderNumber,
@@ -1639,7 +1648,46 @@ namespace SD.ProjectName.WebApp.Services
                 details.PaymentStatusMessage,
                 subOrder.Return,
                 escrow,
-                subOrder.StatusHistory ?? new List<OrderStatusChange>());
+                subOrder.StatusHistory ?? new List<OrderStatusChange>(),
+                hasLabel,
+                subOrder.ShippingLabel?.FileName,
+                subOrder.ShippingLabel?.ExpiresOn);
+        }
+
+        public async Task<ShippingLabelFile?> GetShippingLabelAsync(int orderId, string sellerId, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return null;
+            }
+
+            var sellerToken = $"\"sellerId\":\"{sellerId}\"";
+            var order = await _dbContext.Orders.AsNoTracking()
+                .FirstOrDefaultAsync(o => o.Id == orderId && o.DetailsJson.Contains(sellerToken), cancellationToken);
+            if (order == null)
+            {
+                return null;
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            var subOrder = details.SubOrders.FirstOrDefault(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
+            var label = subOrder?.ShippingLabel;
+            if (subOrder == null || label == null || string.IsNullOrWhiteSpace(label.Base64Content))
+            {
+                return null;
+            }
+
+            try
+            {
+                var bytes = Convert.FromBase64String(label.Base64Content);
+                var fileName = string.IsNullOrWhiteSpace(label.FileName) ? $"{subOrder.SubOrderNumber}-label.pdf" : label.FileName;
+                var contentType = string.IsNullOrWhiteSpace(label.ContentType) ? "application/pdf" : label.ContentType;
+                return new ShippingLabelFile(bytes, contentType, fileName);
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         public async Task<PagedResult<SellerPayoutSummaryView>> GetPayoutsForSellerAsync(
@@ -2061,6 +2109,7 @@ namespace SD.ProjectName.WebApp.Services
             var providerReference = string.IsNullOrWhiteSpace(shippingProviderReference) ? subOrder.ShippingProviderReference : shippingProviderReference.Trim();
             providerReference = string.IsNullOrWhiteSpace(providerReference) ? null : providerReference;
             var trackingUrl = string.IsNullOrWhiteSpace(subOrder.TrackingUrl) ? null : subOrder.TrackingUrl.Trim();
+            var shippingLabel = subOrder.ShippingLabel;
 
             var tracking = string.IsNullOrWhiteSpace(trackingNumber) ? subOrder.TrackingNumber : trackingNumber.Trim();
             var carrier = string.IsNullOrWhiteSpace(trackingCarrier) ? subOrder.TrackingCarrier : trackingCarrier.Trim();
@@ -2096,6 +2145,24 @@ namespace SD.ProjectName.WebApp.Services
                 {
                     trackingUrl = shipment.TrackingUrl;
                 }
+
+                if (shipment.Label != null)
+                {
+                    if (shipment.Label.Content == null || shipment.Label.Content.Length == 0)
+                    {
+                        return new SubOrderStatusUpdateResult(false, "Shipping label could not be generated.");
+                    }
+
+                    var base64 = Convert.ToBase64String(shipment.Label.Content);
+                    var fileName = string.IsNullOrWhiteSpace(shipment.Label.FileName)
+                        ? $"{subOrder.SubOrderNumber}-label.pdf"
+                        : shipment.Label.FileName.Trim();
+                    var contentType = string.IsNullOrWhiteSpace(shipment.Label.ContentType)
+                        ? "application/pdf"
+                        : shipment.Label.ContentType.Trim();
+                    var createdOn = shipment.Label.CreatedOn == default ? now : shipment.Label.CreatedOn;
+                    shippingLabel = new ShippingLabelInfo(fileName, contentType, base64, createdOn, shipment.Label.ExpiresOn);
+                }
             }
 
             var history = NormalizeStatusHistory(subOrder.StatusHistory, originalStatus, subOrder.TrackingNumber, subOrder.TrackingCarrier, now);
@@ -2119,7 +2186,8 @@ namespace SD.ProjectName.WebApp.Services
                 ShippingProviderId = providerId,
                 ShippingProviderService = providerService,
                 ShippingProviderReference = providerReference,
-                TrackingUrl = trackingUrl
+                TrackingUrl = trackingUrl,
+                ShippingLabel = shippingLabel
             };
 
             var subOrderIndex = details.SubOrders.FindIndex(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
@@ -3310,6 +3378,7 @@ namespace SD.ProjectName.WebApp.Services
             var providerService = string.IsNullOrWhiteSpace(subOrder.ShippingProviderService) ? null : subOrder.ShippingProviderService.Trim();
             var providerReference = string.IsNullOrWhiteSpace(subOrder.ShippingProviderReference) ? null : subOrder.ShippingProviderReference.Trim();
             var trackingUrl = string.IsNullOrWhiteSpace(subOrder.TrackingUrl) ? null : subOrder.TrackingUrl.Trim();
+            var shippingLabel = NormalizeShippingLabel(subOrder.ShippingLabel);
 
             return subOrder with
             {
@@ -3324,8 +3393,23 @@ namespace SD.ProjectName.WebApp.Services
                 ShippingProviderId = providerId,
                 ShippingProviderService = providerService,
                 ShippingProviderReference = providerReference,
-                TrackingUrl = trackingUrl
+                TrackingUrl = trackingUrl,
+                ShippingLabel = shippingLabel
             };
+        }
+
+        private static ShippingLabelInfo? NormalizeShippingLabel(ShippingLabelInfo? label)
+        {
+            if (label == null || string.IsNullOrWhiteSpace(label.Base64Content))
+            {
+                return null;
+            }
+
+            var fileName = string.IsNullOrWhiteSpace(label.FileName) ? "shipping-label.pdf" : label.FileName.Trim();
+            var contentType = string.IsNullOrWhiteSpace(label.ContentType) ? "application/pdf" : label.ContentType.Trim();
+            var createdOn = label.CreatedOn == default ? DateTimeOffset.UtcNow : label.CreatedOn;
+            var expiresOn = label.ExpiresOn == DateTimeOffset.MinValue ? null : label.ExpiresOn;
+            return new ShippingLabelInfo(fileName, contentType, label.Base64Content.Trim(), createdOn, expiresOn);
         }
 
         private static OrderItemDetail NormalizeItem(OrderItemDetail item, string fallbackStatus)
