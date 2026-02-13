@@ -28,6 +28,7 @@ namespace SD.ProjectName.Tests.Products
             {
                 Id = 2,
                 Title = "Other Seller Product",
+                MerchantSku = "SKU-OTHER",
                 Price = 10,
                 Stock = 1,
                 Category = "Cat",
@@ -41,7 +42,7 @@ namespace SD.ProjectName.Tests.Products
             var userManager = CreateUserManager(user);
             await using var dbContext = CreateContext();
             var categories = new ManageCategories(dbContext);
-            var model = CreateModel(getProducts, updateProduct, userManager.Object, categories);
+            var model = CreateModel(getProducts, updateProduct, userManager.Object, categories, repository.Object);
 
             var result = await model.OnGetAsync(2);
 
@@ -59,6 +60,7 @@ namespace SD.ProjectName.Tests.Products
             {
                 Id = 3,
                 Title = "Original",
+                MerchantSku = "SKU-ORIGINAL",
                 Price = 10,
                 Stock = 1,
                 Category = "Cat",
@@ -76,11 +78,12 @@ namespace SD.ProjectName.Tests.Products
             var updateProduct = new UpdateProduct(repository.Object);
             var user = new ApplicationUser { Id = "current-seller", UserName = "seller@example.com" };
             var userManager = CreateUserManager(user);
-            var model = CreateModel(getProducts, updateProduct, userManager.Object, categories);
+            var model = CreateModel(getProducts, updateProduct, userManager.Object, categories, repository.Object);
             model.Input = new EditModel.InputModel
             {
                 Id = product.Id,
                 Title = "Updated title",
+                MerchantSku = "SKU-UPDATED",
                 Price = 25,
                 Stock = 5,
                 CategoryId = createdCategory.Id,
@@ -111,7 +114,7 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal(createdCategory.FullPath, saved.Category);
         }
 
-        private static EditModel CreateModel(GetProducts getProducts, UpdateProduct updateProduct, UserManager<ApplicationUser> userManager, ManageCategories categories)
+        private static EditModel CreateModel(GetProducts getProducts, UpdateProduct updateProduct, UserManager<ApplicationUser> userManager, ManageCategories categories, IProductRepository repository)
         {
             var logger = Mock.Of<ILogger<EditModel>>();
             var httpContext = new DefaultHttpContext
@@ -121,7 +124,7 @@ namespace SD.ProjectName.Tests.Products
             var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
             var pageContext = new PageContext(actionContext);
 
-            return new EditModel(getProducts, updateProduct, userManager, categories, logger)
+            return new EditModel(getProducts, updateProduct, userManager, categories, logger, repository)
             {
                 PageContext = pageContext,
                 TempData = new TempDataDictionary(httpContext, Mock.Of<ITempDataProvider>())

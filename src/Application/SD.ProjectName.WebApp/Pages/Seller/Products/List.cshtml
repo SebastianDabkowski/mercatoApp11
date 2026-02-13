@@ -18,6 +18,7 @@
 
 <p>
     <a class="btn btn-primary" asp-page="Add">Add product</a>
+    <a class="btn btn-outline-primary ms-2" asp-page="Import">Import catalog</a>
     @if (Model.Products.Any())
     {
         <form id="bulkForm" method="get" asp-page="BulkUpdate" class="d-inline">

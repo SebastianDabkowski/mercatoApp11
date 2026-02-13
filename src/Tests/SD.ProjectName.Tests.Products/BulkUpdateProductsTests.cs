@@ -15,6 +15,7 @@ namespace SD.ProjectName.Tests.Products
             {
                 Id = 1,
                 Title = "Test",
+                MerchantSku = "SKU-BULK-1",
                 Price = 10,
                 Stock = 5,
                 Category = "Cat",
@@ -48,6 +49,7 @@ namespace SD.ProjectName.Tests.Products
             {
                 Id = 2,
                 Title = "Owned",
+                MerchantSku = "SKU-BULK-2",
                 Price = 20,
                 Stock = 4,
                 Category = "Cat",

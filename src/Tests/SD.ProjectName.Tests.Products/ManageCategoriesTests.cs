@@ -18,6 +18,7 @@ namespace SD.ProjectName.Tests.Products
             context.Products.Add(new ProductModel
             {
                 Title = "Laptop",
+                MerchantSku = "SKU-1",
                 Price = 999,
                 Stock = 5,
                 CategoryId = laptops.Id,
@@ -44,6 +45,7 @@ namespace SD.ProjectName.Tests.Products
             context.Products.Add(new ProductModel
             {
                 Title = "Phone",
+                MerchantSku = "SKU-2",
                 Price = 500,
                 Stock = 3,
                 CategoryId = electronics.Id,

@@ -1,0 +1,80 @@
+@page "/Seller/Products/Import"
+@model SD.ProjectName.WebApp.Pages.Seller.Products.ImportModel
+@{
+    ViewData["Title"] = "Import products";
+}
+
+<h1>Import product catalog</h1>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+@if (TempData["ErrorMessage"] is string errorMessage)
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+
+<p class="text-muted">
+    Upload a CSV or Excel file that matches the template. Products are matched by SKU per seller; existing SKUs are updated, new SKUs are created.
+</p>
+<p>
+    <a class="btn btn-outline-secondary btn-sm" asp-page-handler="Template">Download template</a>
+</p>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <h5 class="card-title">Required columns</h5>
+        <ul>
+            <li><strong>SKU</strong> (merchant SKU, unique per seller)</li>
+            <li><strong>Title</strong></li>
+            <li><strong>Price</strong> (use dot for decimals)</li>
+            <li><strong>Stock</strong> (integer)</li>
+            <li><strong>Category</strong> (full path, e.g. <code>General</code>)</li>
+        </ul>
+        <p class="mb-0">Optional columns: Description, ShippingMethods, MainImageUrl, GalleryImageUrls, WeightKg, LengthCm, WidthCm, HeightCm.</p>
+    </div>
+</div>
+
+<form method="post" enctype="multipart/form-data" asp-page-handler="Preview" class="mb-4">
+    <div class="form-group">
+        <label asp-for="Upload"></label>
+        <input asp-for="Upload" class="form-control" />
+        <span asp-validation-for="Upload" class="text-danger"></span>
+    </div>
+    <button type="submit" class="btn btn-primary mt-2">Validate file</button>
+    <a asp-page="ImportHistory" class="btn btn-link">View import history</a>
+</form>
+
+@if (Model.Preview != null)
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Validation summary</h5>
+            <p>Total rows: <strong>@Model.Preview.TotalRows</strong></p>
+            <p>Will create <strong>@Model.Preview.CreateCount</strong> products and update <strong>@Model.Preview.UpdateCount</strong> products.</p>
+
+            @if (Model.Preview.Errors.Any())
+            {
+                <div class="alert alert-warning">
+                    <p class="mb-1"><strong>Errors found:</strong></p>
+                    <ul class="mb-0">
+                        @foreach (var error in Model.Preview.Errors)
+                        {
+                            <li>@(error.RowNumber > 0 ? $"Row {error.RowNumber}: " : string.Empty)@error.Message</li>
+                        }
+                    </ul>
+                </div>
+            }
+            else if (Model.PendingJobId.HasValue)
+            {
+                <form method="post" asp-page-handler="Confirm">
+                    <input type="hidden" name="jobId" value="@Model.PendingJobId" />
+                    <button type="submit" class="btn btn-success">Start import</button>
+                </form>
+            }
+        </div>
+    </div>
+}
+
+<partial name="_ValidationScriptsPartial" />

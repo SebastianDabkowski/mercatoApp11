@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
+using SD.ProjectName.Modules.Products.Domain.Interfaces;
 using SD.ProjectName.WebApp.Identity;
 
 namespace SD.ProjectName.WebApp.Pages.Seller.Products
@@ -16,12 +17,14 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
         private readonly CreateProduct _createProduct;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly ManageCategories _categories;
+        private readonly IProductRepository _productRepository;
 
-        public AddModel(CreateProduct createProduct, UserManager<ApplicationUser> userManager, ManageCategories categories)
+        public AddModel(CreateProduct createProduct, UserManager<ApplicationUser> userManager, ManageCategories categories, IProductRepository productRepository)
         {
             _createProduct = createProduct;
             _userManager = userManager;
             _categories = categories;
+            _productRepository = productRepository;
         }
 
         [BindProperty]
@@ -63,9 +66,17 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Page();
             }
 
+            var existingSku = await _productRepository.GetBySku(user.Id, Input.MerchantSku.Trim(), includeDrafts: true);
+            if (existingSku != null)
+            {
+                ModelState.AddModelError(nameof(Input.MerchantSku), "This SKU is already used by another product.");
+                return Page();
+            }
+
             var product = new ProductModel
             {
                 Title = Input.Title.Trim(),
+                MerchantSku = Input.MerchantSku.Trim(),
                 Price = Input.Price,
                 Stock = Input.Stock,
                 Category = category.FullPath,
@@ -94,6 +105,11 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             [MaxLength(200)]
             [Display(Name = "Title")]
             public string Title { get; set; } = string.Empty;
+
+            [Required]
+            [MaxLength(100)]
+            [Display(Name = "Merchant SKU")]
+            public string MerchantSku { get; set; } = string.Empty;
 
             [Required]
             [Range(0.01, double.MaxValue, ErrorMessage = "Price must be greater than zero.")]

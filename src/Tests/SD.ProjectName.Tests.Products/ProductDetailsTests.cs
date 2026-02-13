@@ -37,6 +37,7 @@ namespace SD.ProjectName.Tests.Products
             {
                 Id = 7,
                 Title = "Active Product",
+                MerchantSku = "SKU-7",
                 Price = 10,
                 Stock = 3,
                 Category = "Cat",

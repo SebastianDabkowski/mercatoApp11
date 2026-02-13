@@ -87,5 +87,23 @@ namespace SD.ProjectName.Modules.Products.Domain
             _context.Set<ProductModel>().Update(product);
             await _context.SaveChangesAsync();
         }
+
+        public async Task<ProductModel?> GetBySku(string sellerId, string merchantSku, bool includeDrafts = false)
+        {
+            if (string.IsNullOrWhiteSpace(sellerId) || string.IsNullOrWhiteSpace(merchantSku))
+            {
+                return null;
+            }
+
+            var query = _context.Set<ProductModel>()
+                .Where(p => p.SellerId == sellerId && p.MerchantSku == merchantSku && p.WorkflowState != ProductWorkflowStates.Archived);
+
+            if (!includeDrafts)
+            {
+                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active);
+            }
+
+            return await query.FirstOrDefaultAsync();
+        }
     }
 }

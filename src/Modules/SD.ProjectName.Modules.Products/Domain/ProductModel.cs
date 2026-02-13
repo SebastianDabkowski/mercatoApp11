@@ -10,6 +10,10 @@ namespace SD.ProjectName.Modules.Products.Domain
         [MaxLength(200)]
         public string Title { get; set; } = string.Empty;
 
+        [Required]
+        [MaxLength(100)]
+        public string MerchantSku { get; set; } = string.Empty;
+
         [Range(0.01, double.MaxValue)]
         public decimal Price { get; set; }
 

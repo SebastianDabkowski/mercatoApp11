@@ -1,0 +1,53 @@
+@page "/Seller/Products/ImportHistory"
+@model SD.ProjectName.WebApp.Pages.Seller.Products.ImportHistoryModel
+@{
+    ViewData["Title"] = "Import history";
+}
+
+<h1>Import history</h1>
+
+<p>
+    <a class="btn btn-outline-primary btn-sm" asp-page="Import">New import</a>
+</p>
+
+@if (Model.Jobs.Any())
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>File</th>
+                <th>Status</th>
+                <th>Summary</th>
+                <th>Created</th>
+                <th>Completed</th>
+                <th>Errors</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var job in Model.Jobs)
+            {
+                <tr>
+                    <td>@job.FileName</td>
+                    <td class="text-capitalize">@job.Status.Replace("_", " ")</td>
+                    <td>@job.Summary</td>
+                    <td>@job.CreatedOn.ToString("g")</td>
+                    <td>@(job.CompletedOn.HasValue ? job.CompletedOn.Value.ToString("g") : "-")</td>
+                    <td>
+                        @if (!string.IsNullOrWhiteSpace(job.ErrorReport))
+                        {
+                            <a asp-page-handler="Download" asp-route-id="@job.Id">Download</a>
+                        }
+                        else
+                        {
+                            <span class="text-muted">-</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <p>No import jobs yet.</p>
+}

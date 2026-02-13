@@ -17,5 +17,7 @@ namespace SD.ProjectName.Modules.Products.Domain.Interfaces
         Task Add(ProductModel product);
 
         Task Update(ProductModel product);
+
+        Task<ProductModel?> GetBySku(string sellerId, string merchantSku, bool includeDrafts = false);
     }
 }
