@@ -1,0 +1,108 @@
+@page "/Categories/{id:int?}"
+@model SD.ProjectName.WebApp.Pages.Products.CategoryModel
+@{
+    ViewData["Title"] = Model.CurrentCategory?.Name ?? "Categories";
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-3">
+    <div>
+        <h1 class="mb-1">@ViewData["Title"]</h1>
+        @if (Model.Breadcrumb.Any())
+        {
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    @foreach (var crumb in Model.Breadcrumb)
+                    {
+                        var isLast = Model.Breadcrumb.Last() == crumb;
+                        <li class="breadcrumb-item @(isLast ? "active" : string.Empty)" aria-current="@(isLast ? "page" : null)">
+                            @if (isLast)
+                            {
+                                @crumb.Name
+                            }
+                            else
+                            {
+                                <a asp-page="/Products/Category" asp-route-id="@crumb.Id">@crumb.Name</a>
+                            }
+                        </li>
+                    }
+                </ol>
+            </nav>
+        }
+    </div>
+    <div class="text-end">
+        @if (Model.IncludeSubcategories)
+        {
+            <a class="btn btn-outline-secondary" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-includeSubcategories="false">Show this category only</a>
+        }
+        else
+        {
+            <a class="btn btn-outline-secondary" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-includeSubcategories="true">Include subcategories</a>
+        }
+    </div>
+</div>
+
+@if (Model.Subcategories.Any())
+{
+    <div class="card mb-4">
+        <div class="card-body">
+            <h2 class="h5">Subcategories</h2>
+            <div class="d-flex flex-wrap gap-2">
+                @foreach (var child in Model.Subcategories)
+                {
+                    <a class="btn btn-light border" asp-page="/Products/Category" asp-route-id="@child.Id">
+                        @child.Name
+                        <span class="badge bg-secondary ms-2">@child.ProductCount</span>
+                    </a>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<div class="d-flex align-items-center justify-content-between mb-2">
+    <h2 class="h5 mb-0">Products</h2>
+    <small class="text-muted">@((Model.IncludeSubcategories ? "Including subcategories" : "This category only"))</small>
+</div>
+
+@if (Model.Products.Any())
+{
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Price</th>
+                    <th>Category</th>
+                    <th>Stock</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var product in Model.Products)
+                {
+                    <tr>
+                        <td>
+                            <a asp-page="/Products/Details" asp-route-id="@product.Id">@product.Title</a>
+                        </td>
+                        <td>@product.Price.ToString("C")</td>
+                        <td>@product.Category</td>
+                        <td>@product.Stock</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <div class="alert alert-info">
+        <p class="mb-1">No products found in this category.</p>
+        @if (Model.Subcategories.Any())
+        {
+            <p class="mb-0">Try a subcategory above or <a asp-page="/Products/List">browse all products</a>.</p>
+        }
+        else
+        {
+            <p class="mb-0">Try another category or use search when available.</p>
+        }
+    </div>
+}

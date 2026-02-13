@@ -110,5 +110,25 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal(ProductWorkflowStates.Draft, result.First().WorkflowState);
             mockRepository.Verify(r => r.GetList(sellerId, true), Times.Once);
         }
+
+        [Fact]
+        public async Task GetByCategoryIds_ShouldDelegateToRepository()
+        {
+            var categories = new[] { 1, 2, 3 };
+            var expectedProducts = new List<ProductModel>
+            {
+                new ProductModel { Id = 10, Title = "Category Product", MerchantSku = "SKU-30", Price = 25, Stock = 10, Category = "Cat", CategoryId = 2, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" }
+            };
+
+            var mockRepository = new Mock<IProductRepository>(MockBehavior.Strict);
+            mockRepository.Setup(r => r.GetByCategoryIds(categories, false)).ReturnsAsync(expectedProducts);
+
+            var getProducts = new GetProducts(mockRepository.Object);
+
+            var result = await getProducts.GetByCategoryIds(categories);
+
+            Assert.Equal(expectedProducts, result);
+            mockRepository.Verify(r => r.GetByCategoryIds(categories, false), Times.Once);
+        }
     }
 }
