@@ -1,48 +1,245 @@
 @page "/Cart"
 @model SD.ProjectName.WebApp.Pages.CartModel
+@using System.Text.Json
 @{
     ViewData["Title"] = "Your cart";
 }
 
 <h1>Your cart</h1>
 
-@if (!Model.SellerGroups.Any())
+<div id="cart-feedback" class="alert alert-info d-none" role="alert"></div>
+<div id="cart-empty" class="alert alert-info @(Model.SellerGroups.Any() ? "d-none" : "")">Your cart is empty.</div>
+
+@if (Model.SellerGroups.Any())
 {
-    <div class="alert alert-info">Your cart is empty.</div>
-}
-else
-{
-    @foreach (var group in Model.SellerGroups)
-    {
-        <div class="card mb-4">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <div class="fw-semibold">Seller: @group.SellerName</div>
-                <span class="text-muted small">@group.Items.Count item(s)</span>
-            </div>
-            <ul class="list-group list-group-flush">
-                @foreach (var item in group.Items)
-                {
-                    <li class="list-group-item d-flex justify-content-between align-items-start flex-wrap">
-                        <div class="me-3">
-                            <div class="fw-semibold">@item.Product.Title</div>
-                            <div class="text-muted small">SKU: @item.Product.MerchantSku</div>
-                            @if (!string.IsNullOrWhiteSpace(item.VariantLabel))
-                            {
-                                <div class="text-muted small">Variant: @item.VariantLabel</div>
-                            }
-                            <div class="text-muted small">Quantity: @item.Quantity</div>
-                            @if (!item.IsAvailable)
-                            {
-                                <div class="badge bg-warning text-dark mt-2">Unavailable</div>
-                            }
+    <div class="row">
+        <div class="col-lg-8" id="cart-items">
+            @foreach (var group in Model.SellerGroups)
+            {
+                <div class="card mb-4" data-seller-id="@group.SellerId">
+                    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div class="fw-semibold">Seller: @group.SellerName</div>
+                        <div class="text-muted small d-flex align-items-center gap-3">
+                            <span><span class="seller-item-count">@group.Items.Count</span> item(s)</span>
+                            <span>Subtotal: <span class="seller-subtotal">@group.Subtotal.ToString("C")</span></span>
                         </div>
-                        <div class="text-end ms-auto">
-                            <div>@item.UnitPrice.ToString("C")</div>
-                            <div class="text-muted small">Line total: @item.LineTotal.ToString("C")</div>
-                        </div>
-                    </li>
-                }
-            </ul>
+                    </div>
+                    <ul class="list-group list-group-flush">
+                        @foreach (var item in group.Items)
+                        {
+                            var variantData = JsonSerializer.Serialize(item.VariantAttributes ?? new Dictionary<string, string>());
+                            <li class="list-group-item d-flex justify-content-between align-items-start flex-wrap gap-3"
+                                data-product-id="@item.Product.Id"
+                                data-variant='@Html.Raw(variantData)'
+                                data-seller-id="@group.SellerId">
+                                <div class="me-3">
+                                    <div class="fw-semibold">@item.Product.Title</div>
+                                    <div class="text-muted small">SKU: @item.Product.MerchantSku</div>
+                                    @if (!string.IsNullOrWhiteSpace(item.VariantLabel))
+                                    {
+                                        <div class="text-muted small">Variant: @item.VariantLabel</div>
+                                    }
+                                    <div class="text-muted small">In stock: @item.AvailableStock</div>
+                                </div>
+                                <div class="ms-auto text-end">
+                                    <div>@item.UnitPrice.ToString("C")</div>
+                                    <div class="text-muted small">Line total: <span class="line-total">@item.LineTotal.ToString("C")</span></div>
+                                    <div class="d-flex align-items-center justify-content-end gap-2 mt-2">
+                                        <input class="form-control form-control-sm cart-quantity"
+                                               type="number"
+                                               aria-label="Quantity"
+                                               value="@item.Quantity"
+                                               min="1"
+                                               max="@item.AvailableStock"
+                                               data-product-id="@item.Product.Id"
+                                               data-variant='@Html.Raw(variantData)'
+                                               data-seller-id="@group.SellerId" />
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-danger cart-remove"
+                                                data-product-id="@item.Product.Id"
+                                                data-variant='@Html.Raw(variantData)'>Remove</button>
+                                    </div>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
         </div>
-    }
+        <div class="col-lg-4">
+            <div class="card" id="cart-summary">
+                <div class="card-body">
+                    <h5 class="card-title">Order summary</h5>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>Items total</span>
+                        <span id="cart-grand-total">@Model.GrandTotal.ToString("C")</span>
+                    </div>
+                    <div class="text-muted small mb-3">Items: <span id="cart-total-quantity">@Model.TotalQuantity</span></div>
+                    <button type="button" class="btn btn-primary w-100" id="checkout-button">Proceed to checkout</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+    <script>
+        (() => {
+            const cartItems = document.getElementById('cart-items');
+            const summaryCard = document.getElementById('cart-summary');
+            const emptyState = document.getElementById('cart-empty');
+            const feedback = document.getElementById('cart-feedback');
+            const grandTotal = document.getElementById('cart-grand-total');
+            const totalQuantity = document.getElementById('cart-total-quantity');
+
+            const formatMoney = (value) => new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(value || 0);
+
+            const parseVariant = (raw) => {
+                if (!raw) return {};
+                try {
+                    return JSON.parse(raw);
+                } catch {
+                    return {};
+                }
+            };
+
+            const setFeedback = (message, isError) => {
+                if (!feedback || !message) return;
+                feedback.textContent = message;
+                feedback.classList.remove('d-none', 'alert-info', 'alert-danger', 'alert-success');
+                feedback.classList.add(isError ? 'alert-danger' : 'alert-success');
+            };
+
+            const updateSummary = (totals) => {
+                if (!totals) return;
+                if (grandTotal) {
+                    grandTotal.textContent = formatMoney(totals.grandTotal || 0);
+                }
+                if (totalQuantity) {
+                    totalQuantity.textContent = totals.totalQuantity ?? 0;
+                }
+                if (Array.isArray(totals.sellers)) {
+                    totals.sellers.forEach(seller => {
+                        const card = document.querySelector(`[data-seller-id="${seller.sellerId}"]`);
+                        const subtotalEl = card?.querySelector('.seller-subtotal');
+                        if (subtotalEl) {
+                            subtotalEl.textContent = formatMoney(seller.subtotal);
+                        }
+                    });
+                }
+            };
+
+            const updateSellerItemCounts = () => {
+                document.querySelectorAll('[data-seller-id] .seller-item-count').forEach(span => {
+                    const card = span.closest('[data-seller-id]');
+                    const count = card ? card.querySelectorAll('li[data-product-id]').length : 0;
+                    span.textContent = count;
+                });
+            };
+
+            const ensureVisibility = () => {
+                const hasItems = cartItems && cartItems.querySelectorAll('li[data-product-id]').length > 0;
+                if (emptyState) {
+                    emptyState.classList.toggle('d-none', hasItems);
+                }
+                if (summaryCard) {
+                    summaryCard.classList.toggle('d-none', !hasItems);
+                }
+            };
+
+            const handleUpdateResponse = (data, targetItem) => {
+                if (!data || !data.success) {
+                    setFeedback(data?.message || 'Could not update cart.', true);
+                    return;
+                }
+
+                if (data.removed && targetItem) {
+                    const card = targetItem.closest('[data-seller-id]');
+                    targetItem.remove();
+                    if (card && card.querySelectorAll('li[data-product-id]').length === 0) {
+                        card.remove();
+                    }
+                } else if (targetItem) {
+                    const quantityInput = targetItem.querySelector('.cart-quantity');
+                    if (quantityInput && typeof data.quantity === 'number') {
+                        quantityInput.value = data.quantity;
+                        quantityInput.max = data.availableStock > 0 ? data.availableStock : '';
+                    }
+
+                    const lineTotalEl = targetItem.querySelector('.line-total');
+                    if (lineTotalEl && typeof data.lineTotal === 'number') {
+                        lineTotalEl.textContent = formatMoney(data.lineTotal);
+                    }
+                }
+
+                updateSummary(data.totals);
+                updateSellerItemCounts();
+                ensureVisibility();
+
+                if (data.message) {
+                    setFeedback(data.message, false);
+                }
+            };
+
+            const sendUpdate = (payload, targetItem, isRemoval) => {
+                const url = isRemoval ? '/Api/Cart?handler=Remove' : '/Api/Cart?handler=UpdateQuantity';
+                return fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                    .then(response => response.json().catch(() => ({})).then(data => ({ ok: response.ok, data })))
+                    .then(result => handleUpdateResponse(result.data, targetItem))
+                    .catch(() => setFeedback('Could not update cart.', true));
+            };
+
+            cartItems?.addEventListener('change', (event) => {
+                const input = event.target;
+                if (!input.classList.contains('cart-quantity')) {
+                    return;
+                }
+
+                const itemRow = input.closest('li[data-product-id]');
+                if (!itemRow) {
+                    return;
+                }
+
+                const quantity = parseInt(input.value, 10);
+                const payload = {
+                    productId: parseInt(itemRow.dataset.productId || '0', 10),
+                    quantity: Number.isFinite(quantity) ? quantity : 1,
+                    variantAttributes: parseVariant(itemRow.dataset.variant)
+                };
+
+                input.disabled = true;
+                sendUpdate(payload, itemRow, false).finally(() => {
+                    input.disabled = false;
+                });
+            });
+
+            cartItems?.addEventListener('click', (event) => {
+                const button = event.target.closest('.cart-remove');
+                if (!button) {
+                    return;
+                }
+
+                const itemRow = button.closest('li[data-product-id]');
+                if (!itemRow) {
+                    return;
+                }
+
+                const payload = {
+                    productId: parseInt(itemRow.dataset.productId || '0', 10),
+                    variantAttributes: parseVariant(itemRow.dataset.variant)
+                };
+
+                button.disabled = true;
+                sendUpdate(payload, itemRow, true).finally(() => {
+                    button.disabled = false;
+                });
+            });
+
+            ensureVisibility();
+        })();
+    </script>
 }
