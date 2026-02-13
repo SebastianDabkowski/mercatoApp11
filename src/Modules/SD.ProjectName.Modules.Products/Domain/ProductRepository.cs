@@ -19,9 +19,29 @@ namespace SD.ProjectName.Modules.Products.Domain
             _context = context;
         }
 
-        public async Task<List<ProductModel>> GetList()
+        public async Task<List<ProductModel>> GetList(string? sellerId = null, bool includeDrafts = false)
         {
-            return await _context.Set<ProductModel>().ToListAsync();
+            var query = _context.Set<ProductModel>().AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(sellerId))
+            {
+                query = query.Where(p => p.SellerId == sellerId);
+            }
+
+            if (!includeDrafts)
+            {
+                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active);
+            }
+
+            return await query
+                .OrderByDescending(p => p.Id)
+                .ToListAsync();
+        }
+
+        public async Task Add(ProductModel product)
+        {
+            _context.Set<ProductModel>().Add(product);
+            await _context.SaveChangesAsync();
         }
     }
 }

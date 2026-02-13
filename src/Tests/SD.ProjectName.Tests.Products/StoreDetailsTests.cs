@@ -22,7 +22,9 @@ namespace SD.ProjectName.Tests.Products
         public async Task OnGet_ShouldReturnPublicStore_WhenActive()
         {
             var user = CreateSeller(AccountStatuses.Verified, OnboardingStatuses.Completed, "Active Store");
-            var model = CreateModel(new[] { user }, new List<ProductModel> { new() { Id = 1, Name = "Product", Description = "Desc", Price = 10 } });
+            var model = CreateModel(
+                new[] { user },
+                new List<ProductModel> { new() { Id = 1, Title = "Product", Description = "Desc", Price = 10, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = user.Id } });
 
             var result = await model.OnGetAsync("active-store");
 
@@ -103,7 +105,7 @@ namespace SD.ProjectName.Tests.Products
         private static GetProducts CreateGetProducts(List<ProductModel> products)
         {
             var repo = new Mock<IProductRepository>();
-            repo.Setup(r => r.GetList()).ReturnsAsync(products);
+            repo.Setup(r => r.GetList(It.IsAny<string?>(), false)).ReturnsAsync(products);
             return new GetProducts(repo.Object);
         }
 
@@ -111,6 +113,7 @@ namespace SD.ProjectName.Tests.Products
         {
             return new ApplicationUser
             {
+                Id = Guid.NewGuid().ToString(),
                 AccountType = AccountTypes.Seller,
                 AccountStatus = accountStatus,
                 OnboardingStatus = onboardingStatus,

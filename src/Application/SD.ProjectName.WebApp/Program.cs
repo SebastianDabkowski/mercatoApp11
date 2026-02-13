@@ -107,6 +107,7 @@ builder.Services.AddDbContext<ProductDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<GetProducts>();
+builder.Services.AddScoped<CreateProduct>();
 
 builder.Services.AddRazorPages(options =>
 {

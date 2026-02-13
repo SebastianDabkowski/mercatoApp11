@@ -19,7 +19,18 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<ProductModel>().ToTable("ProductModel");
+            modelBuilder.Entity<ProductModel>(entity =>
+            {
+                entity.ToTable("ProductModel");
+                entity.Property(p => p.Title).HasMaxLength(200).IsRequired();
+                entity.Property(p => p.Category).HasMaxLength(100).IsRequired();
+                entity.Property(p => p.Description).HasMaxLength(1000);
+                entity.Property(p => p.WorkflowState)
+                      .HasMaxLength(32)
+                      .HasDefaultValue(ProductWorkflowStates.Draft)
+                      .IsRequired();
+                entity.Property(p => p.SellerId).IsRequired();
+            });
         }
 
     }

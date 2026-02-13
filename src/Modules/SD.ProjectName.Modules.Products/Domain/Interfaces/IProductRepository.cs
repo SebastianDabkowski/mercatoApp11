@@ -8,6 +8,8 @@ namespace SD.ProjectName.Modules.Products.Domain.Interfaces
 {
     public interface IProductRepository
     {
-        Task<List<ProductModel>> GetList();
+        Task<List<ProductModel>> GetList(string? sellerId = null, bool includeDrafts = false);
+
+        Task Add(ProductModel product);
     }
 }
