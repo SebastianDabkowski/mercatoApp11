@@ -1441,7 +1441,33 @@ namespace SD.ProjectName.Tests.Products
             var emailSender = new Mock<IEmailSender>();
             var settlementOptions = new SettlementOptions { CloseDay = 1, TimeZone = "UTC" };
             var invoiceOptions = new InvoiceOptions { Series = "INV", TaxRate = 0.2m, HistoryMonths = 3 };
-            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, null, null, settlementOptions, invoiceOptions);
+            var vatService = new VatRuleService(context, invoiceOptions);
+            var vatRule = await vatService.SaveAsync(
+                new VatRuleInput
+                {
+                    Country = "PL",
+                    Rate = 0.12m,
+                    EffectiveFrom = DateTimeOffset.UtcNow.Date.AddMonths(-2)
+                },
+                "admin",
+                "Admin");
+            Assert.True(vatRule.Success);
+
+            context.Users.Add(new ApplicationUser
+            {
+                Id = "seller-1",
+                UserName = "seller-1@example.com",
+                Email = "seller-1@example.com",
+                EmailConfirmed = true,
+                FullName = "Seller One",
+                Address = "Test address",
+                Country = "PL",
+                AccountStatus = AccountStatuses.Verified,
+                AccountType = AccountTypes.Seller
+            });
+            await context.SaveChangesAsync();
+
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, null, null, settlementOptions, invoiceOptions, vatRuleResolver: vatService);
             var serializerOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
             var windowEnd = new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero);
@@ -1508,6 +1534,8 @@ namespace SD.ProjectName.Tests.Products
             Assert.StartsWith(expectedPrefix, invoice.InvoiceNumber);
             Assert.True(invoice.HasCorrections);
             Assert.Equal(invoice.NetAmount + invoice.TaxAmount, invoice.TotalAmount);
+            Assert.Equal(0.12m, invoice.TaxRate);
+            Assert.Equal(Math.Round(invoice.NetAmount * 0.12m, 2, MidpointRounding.AwayFromZero), invoice.TaxAmount);
             Assert.Equal(InvoiceStatuses.Pending, invoice.Status);
             Assert.True(invoice.TaxAmount > 0);
 

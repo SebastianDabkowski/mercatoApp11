@@ -1,0 +1,173 @@
+@page
+@model SD.ProjectName.WebApp.Pages.Admin.Settings.VatModel
+@{
+    ViewData["Title"] = "VAT";
+}
+
+<h1 class="display-6">VAT and tax settings</h1>
+<p class="text-muted">Manage VAT rates per country and category with effective dates so invoices stay compliant.</p>
+
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <div class="alert alert-success">@Model.SuccessMessage</div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="fw-semibold">Configured VAT rules</div>
+                    <div class="text-muted small">Future-dated rules activate automatically on their start date.</div>
+                </div>
+                <div class="text-muted small">@Model.Rules.Count rule(s)</div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 align-middle">
+                    <thead>
+                        <tr>
+                            <th>Country</th>
+                            <th>Rate</th>
+                            <th>Categories</th>
+                            <th>Effective</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @if (Model.Rules.Count == 0)
+                    {
+                        <tr><td colspan="5" class="text-muted text-center py-3">No VAT rules configured.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var rule in Model.Rules)
+                        {
+                            <tr class="@(rule.EffectiveFrom > DateTimeOffset.UtcNow ? "table-warning" : string.Empty)">
+                                <td>@rule.Country</td>
+                                <td>@rule.Rate:P2</td>
+                                <td>@(string.IsNullOrWhiteSpace(rule.Categories) ? "Any" : rule.Categories)</td>
+                                <td>
+                                    <div>@rule.EffectiveFrom.ToString("yyyy-MM-dd")</div>
+                                    <div class="text-muted small">@(rule.EffectiveTo?.ToString("yyyy-MM-dd") ?? "open-ended")</div>
+                                </td>
+                                <td class="text-end">
+                                    <a class="btn btn-sm btn-outline-primary" asp-page="/Admin/Settings/Vat" asp-route-id="@rule.Id">Edit</a>
+                                </td>
+                            </tr>
+                        }
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <div class="fw-semibold">History</div>
+                <div class="text-muted small">Previous and current rates with timestamps and authors.</div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 align-middle">
+                    <thead>
+                        <tr>
+                            <th>Changed</th>
+                            <th>Action</th>
+                            <th>Country</th>
+                            <th>Rate</th>
+                            <th>Categories</th>
+                            <th>Effective</th>
+                            <th>By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @if (Model.History.Count == 0)
+                    {
+                        <tr><td colspan="7" class="text-muted text-center py-3">No history yet.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var audit in Model.History.Take(50))
+                        {
+                            <tr>
+                                <td>@audit.ChangedOn.ToString("u")</td>
+                                <td>@audit.Action</td>
+                                <td>@audit.Country</td>
+                                <td>@audit.Rate:P2</td>
+                                <td>@(audit.Categories.Count == 0 ? "Any" : string.Join(", ", audit.Categories))</td>
+                                <td>
+                                    <div>@audit.EffectiveFrom.ToString("yyyy-MM-dd")</div>
+                                    <div class="text-muted small">@(audit.EffectiveTo?.ToString("yyyy-MM-dd") ?? "open-ended")</div>
+                                </td>
+                                <td>@audit.ChangedBy</td>
+                            </tr>
+                        }
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <div class="fw-semibold">@((Model.Input.Id.HasValue ? "Edit" : "Create") + " VAT rule")</div>
+                <div class="text-muted small">Validate overlapping windows before saving.</div>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+                    <input type="hidden" asp-for="Input.Id" />
+                    <div class="mb-3">
+                        <label asp-for="Input.Country" class="form-label">Country (ISO code)</label>
+                        <input asp-for="Input.Country" class="form-control" />
+                        <span asp-validation-for="Input.Country" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Rate" class="form-label">VAT rate</label>
+                        <div class="input-group">
+                            <input asp-for="Input.Rate" class="form-control" step="0.01" min="0" max="1" />
+                            <span class="input-group-text">0-1</span>
+                        </div>
+                        <span asp-validation-for="Input.Rate" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Categories" class="form-label">Categories (optional)</label>
+                        <input asp-for="Input.Categories" class="form-control" placeholder="Comma-separated categories" />
+                        <span asp-validation-for="Input.Categories" class="text-danger"></span>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label asp-for="Input.EffectiveFrom" class="form-label">Effective from</label>
+                            <input asp-for="Input.EffectiveFrom" class="form-control" type="date" />
+                            <span asp-validation-for="Input.EffectiveFrom" class="text-danger"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Input.EffectiveTo" class="form-label">Effective to (optional)</label>
+                            <input asp-for="Input.EffectiveTo" class="form-control" type="date" />
+                            <span asp-validation-for="Input.EffectiveTo" class="text-danger"></span>
+                        </div>
+                    </div>
+                    @if (Model.Errors.Count > 0)
+                    {
+                        <div class="alert alert-warning">
+                            <ul class="mb-0">
+                                @foreach (var err in Model.Errors)
+                                {
+                                    <li>@err</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">Save rule</button>
+                        <a asp-page="/Admin/Settings/Vat" class="btn btn-outline-secondary">Reset</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

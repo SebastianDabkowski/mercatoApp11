@@ -151,6 +151,8 @@ builder.Services.AddScoped<CartTotalsCalculator>();
 builder.Services.AddScoped<CartViewService>();
 builder.Services.AddScoped<CommissionRuleService>();
 builder.Services.AddScoped<ICommissionRuleResolver>(sp => sp.GetRequiredService<CommissionRuleService>());
+builder.Services.AddScoped<VatRuleService>();
+builder.Services.AddScoped<IVatRuleResolver>(sp => sp.GetRequiredService<VatRuleService>());
 builder.Services.AddScoped<PromoCodeService>();
 builder.Services.AddScoped<IUserCartService, UserCartService>();
 builder.Services.AddScoped<CheckoutStateService>();
