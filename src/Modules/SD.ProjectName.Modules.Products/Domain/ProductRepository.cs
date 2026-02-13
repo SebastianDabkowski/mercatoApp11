@@ -80,7 +80,8 @@ namespace SD.ProjectName.Modules.Products.Domain
 
         public async Task<List<ProductModel>> FilterActiveProducts(ProductFilterOptions filters, CancellationToken cancellationToken = default)
         {
-            var query = BuildActiveQuery(filters);
+            var query = BuildActiveQuery(filters, out var normalizedSearch);
+            var normalizedSearchValue = normalizedSearch;
 
             if (filters.MinPrice.HasValue)
             {
@@ -105,14 +106,26 @@ namespace SD.ProjectName.Modules.Products.Domain
                 query = query.Where(p => p.SellerId == filters.SellerId);
             }
 
-            return await query
-                .OrderByDescending(p => p.Id)
-                .ToListAsync(cancellationToken);
+            var hasSearch = !string.IsNullOrWhiteSpace(normalizedSearchValue);
+            var sort = ProductSortOptions.Normalize(filters.SortBy, hasSearch);
+
+            query = sort switch
+            {
+                ProductSortOptions.PriceAsc => query.OrderBy(p => p.Price).ThenByDescending(p => p.Id),
+                ProductSortOptions.PriceDesc => query.OrderByDescending(p => p.Price).ThenByDescending(p => p.Id),
+                ProductSortOptions.Relevance when hasSearch && normalizedSearchValue != null => query
+                    .OrderByDescending(p => p.Title.ToLower().Contains(normalizedSearchValue))
+                    .ThenByDescending(p => !string.IsNullOrWhiteSpace(p.Description) && p.Description!.ToLower().Contains(normalizedSearchValue))
+                    .ThenByDescending(p => p.Id),
+                _ => query.OrderByDescending(p => p.Id)
+            };
+
+            return await query.ToListAsync(cancellationToken);
         }
 
         public async Task<ProductFilterMetadata> GetFilterMetadata(ProductFilterContext context, CancellationToken cancellationToken = default)
         {
-            var query = BuildActiveQuery(context);
+            var query = BuildActiveQuery(context, out _);
             var metadata = new ProductFilterMetadata();
 
             if (!await query.AnyAsync(cancellationToken))
@@ -228,18 +241,20 @@ namespace SD.ProjectName.Modules.Products.Domain
             return await query.FirstOrDefaultAsync();
         }
 
-        private IQueryable<ProductModel> BuildActiveQuery(ProductFilterContext context)
+        private IQueryable<ProductModel> BuildActiveQuery(ProductFilterContext context, out string? normalizedSearch)
         {
+            string? normalizedSearchValue = null;
             var query = _context.Set<ProductModel>()
                 .Where(p => p.WorkflowState == ProductWorkflowStates.Active);
 
             if (!string.IsNullOrWhiteSpace(context.Search))
             {
                 var term = NormalizeSearch(context.Search!);
-                var normalizedTerm = term.ToLowerInvariant();
+                normalizedSearchValue = term.ToLowerInvariant();
+                var searchTerm = normalizedSearchValue;
                 query = query.Where(p =>
-                    p.Title.ToLower().Contains(normalizedTerm) ||
-                    (!string.IsNullOrWhiteSpace(p.Description) && p.Description!.ToLower().Contains(normalizedTerm)));
+                    p.Title.ToLower().Contains(searchTerm) ||
+                    (!string.IsNullOrWhiteSpace(p.Description) && p.Description!.ToLower().Contains(searchTerm)));
             }
 
             if (context.CategoryIds != null)
@@ -251,6 +266,7 @@ namespace SD.ProjectName.Modules.Products.Domain
                 }
             }
 
+            normalizedSearch = normalizedSearchValue;
             return query;
         }
 
