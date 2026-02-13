@@ -30,7 +30,7 @@ namespace SD.ProjectName.WebApp.Pages.Api
                 .Where(c => !string.IsNullOrWhiteSpace(c.FullPath) && c.FullPath.Contains(term, StringComparison.OrdinalIgnoreCase))
                 .OrderBy(c => c.FullPath)
                 .Take(MaxSuggestions)
-                .Select(c => new SearchCategorySuggestion(c.Id, c.FullPath))
+                .Select(c => new SearchCategorySuggestion(c.Id, c.FullPath, c.Slug))
                 .ToList();
 
             var products = await _getProducts.SearchActiveLimited(term, MaxSuggestions, cancellationToken);
@@ -78,7 +78,7 @@ namespace SD.ProjectName.WebApp.Pages.Api
         }
     }
 
-    public record SearchCategorySuggestion(int Id, string Name);
+    public record SearchCategorySuggestion(int Id, string Name, string Slug);
 
     public record SearchProductSuggestion(int Id, string Title, string Category, decimal Price, string? MainImageUrl);
 

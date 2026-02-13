@@ -39,6 +39,9 @@ namespace SD.ProjectName.WebApp.Pages.Products
         public int? CategoryId { get; set; }
 
         [BindProperty(SupportsGet = true)]
+        public string? Slug { get; set; }
+
+        [BindProperty(SupportsGet = true)]
         public decimal? MinPrice { get; set; }
 
         [BindProperty(SupportsGet = true)]
@@ -97,6 +100,23 @@ namespace SD.ProjectName.WebApp.Pages.Products
             {
                 Response.StatusCode = StatusCodes.Status404NotFound;
                 return NotFound();
+            }
+
+            if (!string.IsNullOrWhiteSpace(CurrentCategory.Slug)
+                && !string.Equals(Slug, CurrentCategory.Slug, StringComparison.OrdinalIgnoreCase))
+            {
+                return RedirectToPagePermanent("/Products/Category", new
+                {
+                    id = CurrentCategory.Id,
+                    slug = CurrentCategory.Slug,
+                    includeSubcategories = IncludeSubcategories,
+                    minPrice = MinPrice,
+                    maxPrice = MaxPrice,
+                    condition = Condition,
+                    sellerId = SellerId,
+                    sort = Sort,
+                    page = PageNumber
+                });
             }
 
             NormalizePriceBounds();

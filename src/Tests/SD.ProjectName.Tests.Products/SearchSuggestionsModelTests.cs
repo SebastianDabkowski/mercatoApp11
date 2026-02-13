@@ -28,8 +28,8 @@ namespace SD.ProjectName.Tests.Products
         public async Task OnGet_ShouldReturnMatchingCategoriesProductsAndQueries()
         {
             await using var context = CreateContext();
-            context.Categories.Add(new CategoryModel { Name = "Cameras", FullPath = "Electronics / Cameras", SortOrder = 0, IsActive = true });
-            context.Categories.Add(new CategoryModel { Name = "Inactive", FullPath = "Electronics / Inactive", SortOrder = 1, IsActive = false });
+            context.Categories.Add(new CategoryModel { Name = "Cameras", Slug = "cameras", FullPath = "Electronics / Cameras", SortOrder = 0, IsActive = true });
+            context.Categories.Add(new CategoryModel { Name = "Inactive", Slug = "inactive", FullPath = "Electronics / Inactive", SortOrder = 1, IsActive = false });
             context.Products.AddRange(
                 new ProductModel { Title = "Red Camera", Description = "Mirrorless", MerchantSku = "SUG-1", Price = 899, Stock = 2, Category = "Electronics / Cameras", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
                 new ProductModel { Title = "Tripod", Description = "Red compact tripod", MerchantSku = "SUG-2", Price = 49, Stock = 3, Category = "Accessories", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" });
@@ -45,6 +45,7 @@ namespace SD.ProjectName.Tests.Products
             Assert.Contains(payload.Categories, c => c.Name.Contains("Cameras", StringComparison.OrdinalIgnoreCase));
             Assert.True(payload.Products.Any());
             Assert.Contains(payload.Queries, q => q.Contains("cam", StringComparison.OrdinalIgnoreCase));
+            Assert.All(payload.Categories, c => Assert.False(string.IsNullOrWhiteSpace(c.Slug)));
         }
 
         private static SearchSuggestionsModel CreateModel(ProductDbContext context)

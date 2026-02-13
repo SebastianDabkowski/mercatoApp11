@@ -54,7 +54,9 @@ namespace SD.ProjectName.WebApp.Pages.Admin
                 return Page();
             }
 
-            var (result, _) = await _categories.CreateAsync(CreateInput.Name, CreateInput.ParentId);
+            var slug = string.IsNullOrWhiteSpace(CreateInput.Slug) ? null : CreateInput.Slug;
+            var description = string.IsNullOrWhiteSpace(CreateInput.Description) ? null : CreateInput.Description;
+            var (result, _) = await _categories.CreateAsync(CreateInput.Name, CreateInput.ParentId, description, slug);
             if (!result.Success)
             {
                 ModelState.AddModelError(string.Empty, result.Error ?? "Unable to create category.");
@@ -77,7 +79,9 @@ namespace SD.ProjectName.WebApp.Pages.Admin
                 return Page();
             }
 
-            var result = await _categories.RenameAsync(RenameInput.Id, RenameInput.Name);
+            var slug = string.IsNullOrWhiteSpace(RenameInput.Slug) ? null : RenameInput.Slug;
+            var description = string.IsNullOrWhiteSpace(RenameInput.Description) ? null : RenameInput.Description;
+            var result = await _categories.RenameAsync(RenameInput.Id, RenameInput.Name, slug, RenameInput.ParentId, description);
             if (!result.Success)
             {
                 ModelState.AddModelError(string.Empty, result.Error ?? "Unable to rename category.");
@@ -146,7 +150,7 @@ namespace SD.ProjectName.WebApp.Pages.Admin
                 return Page();
             }
 
-            var result = await _categories.DeleteAsync(DeleteInput.Id);
+            var result = await _categories.DeleteAsync(DeleteInput.Id, DeleteInput.ReassignCategoryId);
             if (!result.Success)
             {
                 ModelState.AddModelError(string.Empty, result.Error ?? "Unable to delete category.");
@@ -182,6 +186,14 @@ namespace SD.ProjectName.WebApp.Pages.Admin
             [Display(Name = "Name")]
             public string Name { get; set; } = string.Empty;
 
+            [MaxLength(160)]
+            [Display(Name = "Slug (optional)")]
+            public string? Slug { get; set; }
+
+            [MaxLength(512)]
+            [Display(Name = "Description (optional)")]
+            public string? Description { get; set; }
+
             [Display(Name = "Parent category")]
             public int? ParentId { get; set; }
         }
@@ -195,6 +207,17 @@ namespace SD.ProjectName.WebApp.Pages.Admin
             [MaxLength(120)]
             [Display(Name = "New name")]
             public string Name { get; set; } = string.Empty;
+
+            [MaxLength(160)]
+            [Display(Name = "Slug")]
+            public string? Slug { get; set; }
+
+            [Display(Name = "Parent category")]
+            public int? ParentId { get; set; }
+
+            [MaxLength(512)]
+            [Display(Name = "Description (optional)")]
+            public string? Description { get; set; }
         }
 
         public class OrderInputModel
@@ -218,6 +241,9 @@ namespace SD.ProjectName.WebApp.Pages.Admin
         {
             [Required]
             public int Id { get; set; }
+
+            [Display(Name = "Reassign products to")]
+            public int? ReassignCategoryId { get; set; }
         }
     }
 }

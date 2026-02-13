@@ -23,6 +23,14 @@
                 <input asp-for="CreateInput.Name" class="form-control" />
             </div>
             <div class="form-group mr-3">
+                <label asp-for="CreateInput.Slug" class="mr-2"></label>
+                <input asp-for="CreateInput.Slug" class="form-control" placeholder="auto-generated if empty" />
+            </div>
+            <div class="form-group mr-3">
+                <label asp-for="CreateInput.Description" class="mr-2"></label>
+                <input asp-for="CreateInput.Description" class="form-control" />
+            </div>
+            <div class="form-group mr-3">
                 <label asp-for="CreateInput.ParentId" class="mr-2"></label>
                 <select asp-for="CreateInput.ParentId" class="form-control" asp-items="Model.ParentOptions"></select>
             </div>
@@ -52,6 +60,11 @@
                         <td>
                             <span class="text-monospace">@indent</span> @category.Name
                             <div class="text-muted small">@category.FullPath</div>
+                            <div class="text-muted small">Slug: @category.Slug</div>
+                            @if (!string.IsNullOrWhiteSpace(category.Description))
+                            {
+                                <div class="text-muted small">Description: @category.Description</div>
+                            }
                         </td>
                         <td>@category.SortOrder</td>
                         <td>@(category.IsActive ? "Active" : "Inactive")</td>
@@ -61,6 +74,16 @@
                                 <form method="post" asp-page-handler="Rename" class="form-inline mr-2 mb-2">
                                     <input type="hidden" asp-for="RenameInput.Id" value="@category.Id" />
                                     <input name="RenameInput.Name" class="form-control form-control-sm mr-2" value="@category.Name" />
+                                    <input name="RenameInput.Slug" class="form-control form-control-sm mr-2" value="@category.Slug" placeholder="slug" />
+                                    <select name="RenameInput.ParentId" class="form-control form-control-sm mr-2">
+                                        <option value=""></option>
+                                        @foreach (var option in Model.ParentOptions.Where(o => o.Value != category.Id.ToString()))
+                                        {
+                                            var isSelected = option.Value == (category.ParentId?.ToString() ?? string.Empty);
+                                            <option value="@option.Value" selected="@(isSelected ? "selected" : null)">@option.Text</option>
+                                        }
+                                    </select>
+                                    <input name="RenameInput.Description" class="form-control form-control-sm mr-2" value="@category.Description" placeholder="Description" />
                                     <button type="submit" class="btn btn-sm btn-secondary">Rename</button>
                                 </form>
                                 <form method="post" asp-page-handler="Order" class="form-inline mr-2 mb-2">
@@ -77,6 +100,13 @@
                                 </form>
                                 <form method="post" asp-page-handler="Delete" class="mb-2">
                                     <input type="hidden" asp-for="DeleteInput.Id" value="@category.Id" />
+                                    <select name="DeleteInput.ReassignCategoryId" class="form-control form-control-sm mr-2" style="max-width: 220px;">
+                                        <option value="">(block if in use)</option>
+                                        @foreach (var option in Model.Categories.Where(c => c.Id != category.Id))
+                                        {
+                                            <option value="@option.Id">@option.FullPath</option>
+                                        }
+                                    </select>
                                     <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
                                 </form>
                             </div>

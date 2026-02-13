@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.Modules.Products.Infrastructure;
+using System.Text;
 
 namespace SD.ProjectName.Modules.Products.Application
 {
@@ -11,7 +12,7 @@ namespace SD.ProjectName.Modules.Products.Application
         public static CategoryOperationResult Failed(string error) => new(false, error);
     }
 
-    public record CategoryNode(int Id, string Name, string FullPath, int? ParentId, int SortOrder, bool IsActive, int Depth, int ProductCount);
+    public record CategoryNode(int Id, string Name, string Slug, string FullPath, int? ParentId, int SortOrder, bool IsActive, int Depth, int ProductCount, string? Description);
 
     public class ManageCategories
     {
@@ -76,6 +77,7 @@ namespace SD.ProjectName.Modules.Products.Application
             _context.Categories.Add(new CategoryModel
             {
                 Name = "General",
+                Slug = "general",
                 FullPath = "General",
                 SortOrder = 0,
                 IsActive = true
@@ -84,12 +86,18 @@ namespace SD.ProjectName.Modules.Products.Application
             await _context.SaveChangesAsync();
         }
 
-        public async Task<(CategoryOperationResult Result, CategoryModel? Category)> CreateAsync(string name, int? parentId)
+        public async Task<(CategoryOperationResult Result, CategoryModel? Category)> CreateAsync(string name, int? parentId, string? description = null, string? slug = null)
         {
             var trimmed = name?.Trim();
             if (string.IsNullOrWhiteSpace(trimmed))
             {
                 return (CategoryOperationResult.Failed("Name is required."), null);
+            }
+
+            var normalizedSlug = NormalizeSlug(slug ?? trimmed);
+            if (string.IsNullOrWhiteSpace(normalizedSlug))
+            {
+                return (CategoryOperationResult.Failed("Slug is required."), null);
             }
 
             CategoryModel? parent = null;
@@ -112,6 +120,16 @@ namespace SD.ProjectName.Modules.Products.Application
                 return (CategoryOperationResult.Failed("A category with this name already exists under the selected parent."), null);
             }
 
+            var siblingSlugs = await _context.Categories
+                .Where(c => c.ParentId == parentId)
+                .Select(c => c.Slug)
+                .ToListAsync();
+
+            if (siblingSlugs.Any(n => n.Equals(normalizedSlug, StringComparison.OrdinalIgnoreCase)))
+            {
+                return (CategoryOperationResult.Failed("A category with this slug already exists under the selected parent."), null);
+            }
+
             var nextSort = await _context.Categories
                 .Where(c => c.ParentId == parentId)
                 .Select(c => (int?)c.SortOrder)
@@ -120,10 +138,12 @@ namespace SD.ProjectName.Modules.Products.Application
             var category = new CategoryModel
             {
                 Name = trimmed,
+                Slug = normalizedSlug,
                 ParentId = parentId,
                 SortOrder = nextSort + 1,
                 FullPath = BuildFullPath(trimmed, parent?.FullPath ?? string.Empty),
-                IsActive = true
+                IsActive = true,
+                Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim()
             };
 
             _context.Categories.Add(category);
@@ -132,12 +152,18 @@ namespace SD.ProjectName.Modules.Products.Application
             return (CategoryOperationResult.Ok(), category);
         }
 
-        public async Task<CategoryOperationResult> RenameAsync(int id, string newName)
+        public async Task<CategoryOperationResult> RenameAsync(int id, string newName, string? newSlug = null, int? newParentId = null, string? description = null)
         {
             var trimmed = newName?.Trim();
             if (string.IsNullOrWhiteSpace(trimmed))
             {
                 return CategoryOperationResult.Failed("Name is required.");
+            }
+
+            var normalizedSlug = NormalizeSlug(newSlug ?? newName);
+            if (string.IsNullOrWhiteSpace(normalizedSlug))
+            {
+                return CategoryOperationResult.Failed("Slug is required.");
             }
 
             var categories = await _context.Categories.ToListAsync();
@@ -147,13 +173,42 @@ namespace SD.ProjectName.Modules.Products.Application
                 return CategoryOperationResult.Failed("Category not found.");
             }
 
-            if (categories.Any(c => c.ParentId == category.ParentId && c.Id != id && c.Name.Equals(trimmed, StringComparison.OrdinalIgnoreCase)))
+            CategoryModel? parent = null;
+            if (newParentId.HasValue)
+            {
+                parent = categories.FirstOrDefault(c => c.Id == newParentId.Value);
+                if (parent == null)
+                {
+                    return CategoryOperationResult.Failed("Parent category not found.");
+                }
+            }
+
+            if (CreatesCycle(id, newParentId, categories))
+            {
+                return CategoryOperationResult.Failed("Cannot move a category under one of its descendants.");
+            }
+
+            if (categories.Any(c => c.ParentId == newParentId && c.Id != id && c.Name.Equals(trimmed, StringComparison.OrdinalIgnoreCase)))
             {
                 return CategoryOperationResult.Failed("Another category with this name already exists at the same level.");
             }
 
+            if (categories.Any(c => c.ParentId == newParentId && c.Id != id && c.Slug.Equals(normalizedSlug, StringComparison.OrdinalIgnoreCase)))
+            {
+                return CategoryOperationResult.Failed("Another category with this slug already exists at the same level.");
+            }
+
+            var parentPath = parent?.FullPath ?? string.Empty;
+
+            var parentChanged = category.ParentId != newParentId;
             category.Name = trimmed;
-            var parentPath = categories.FirstOrDefault(c => c.Id == category.ParentId)?.FullPath ?? string.Empty;
+            category.Slug = normalizedSlug;
+            category.ParentId = newParentId;
+            category.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+            if (parentChanged)
+            {
+                category.SortOrder = GetNextSortOrder(categories, newParentId, id);
+            }
             UpdateFullPathRecursive(category, categories, parentPath);
 
             var affectedIds = CollectBranchIds(category, categories);
@@ -189,7 +244,7 @@ namespace SD.ProjectName.Modules.Products.Application
             return CategoryOperationResult.Ok();
         }
 
-        public async Task<CategoryOperationResult> DeleteAsync(int id)
+        public async Task<CategoryOperationResult> DeleteAsync(int id, int? reassignToCategoryId = null)
         {
             var categories = await _context.Categories.ToListAsync();
             var category = categories.FirstOrDefault(c => c.Id == id);
@@ -204,8 +259,30 @@ namespace SD.ProjectName.Modules.Products.Application
                 return CategoryOperationResult.Failed("Remove or re-parent child categories before deleting this category.");
             }
 
-            var hasProducts = await _context.Products.AnyAsync(p => p.CategoryId == id);
-            if (hasProducts)
+            if (reassignToCategoryId.HasValue)
+            {
+                var target = categories.FirstOrDefault(c => c.Id == reassignToCategoryId.Value);
+                if (target == null)
+                {
+                    return CategoryOperationResult.Failed("Reassignment target category not found.");
+                }
+
+                if (target.Id == category.Id)
+                {
+                    return CategoryOperationResult.Failed("Select a different category for reassignment.");
+                }
+
+                var products = await _context.Products
+                    .Where(p => p.CategoryId == id)
+                    .ToListAsync();
+
+                foreach (var product in products)
+                {
+                    product.CategoryId = target.Id;
+                    product.Category = target.FullPath;
+                }
+            }
+            else if (await _context.Products.AnyAsync(p => p.CategoryId == id))
             {
                 return CategoryOperationResult.Failed("Cannot delete a category that has products assigned. Reassign products first.");
             }
@@ -265,6 +342,61 @@ namespace SD.ProjectName.Modules.Products.Application
             }
         }
 
+        private static string NormalizeSlug(string? slug)
+        {
+            if (string.IsNullOrWhiteSpace(slug))
+            {
+                return string.Empty;
+            }
+
+            var value = slug.Trim().ToLowerInvariant();
+            var builder = new StringBuilder(value.Length);
+            var lastWasDash = false;
+
+            foreach (var ch in value)
+            {
+                if (char.IsLetterOrDigit(ch))
+                {
+                    builder.Append(ch);
+                    lastWasDash = false;
+                }
+                else if (ch == ' ' || ch == '-' || ch == '_' || ch == '.')
+                {
+                    if (!lastWasDash)
+                    {
+                        builder.Append('-');
+                        lastWasDash = true;
+                    }
+                }
+            }
+
+            return builder.ToString().Trim('-');
+        }
+
+        private static bool CreatesCycle(int categoryId, int? newParentId, List<CategoryModel> all)
+        {
+            var cursor = newParentId;
+            while (cursor.HasValue)
+            {
+                if (cursor.Value == categoryId)
+                {
+                    return true;
+                }
+
+                cursor = all.FirstOrDefault(c => c.Id == cursor.Value)?.ParentId;
+            }
+
+            return false;
+        }
+
+        private static int GetNextSortOrder(List<CategoryModel> categories, int? parentId, int movingId)
+        {
+            return (categories
+                .Where(c => c.ParentId == parentId && c.Id != movingId)
+                .Select(c => (int?)c.SortOrder)
+                .Max() ?? -1) + 1;
+        }
+
         private static List<CategoryNode> BuildTree(List<CategoryModel> categories, Dictionary<int, int> productCounts)
         {
             var result = new List<CategoryNode>();
@@ -282,7 +414,7 @@ namespace SD.ProjectName.Modules.Products.Application
                 foreach (var category in ordered.Where(c => c.ParentId == parentId))
                 {
                     productCounts.TryGetValue(category.Id, out var count);
-                    result.Add(new CategoryNode(category.Id, category.Name, category.FullPath, category.ParentId, category.SortOrder, category.IsActive, depth, count));
+                    result.Add(new CategoryNode(category.Id, category.Name, category.Slug, category.FullPath, category.ParentId, category.SortOrder, category.IsActive, depth, count, category.Description));
                     AddChildren(category.Id, depth + 1);
                 }
             }

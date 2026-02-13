@@ -72,7 +72,7 @@
         .map(
           (c) => `<div class="suggestion-item" data-type="category" data-id="${escapeHtml(
             c.id
-          )}">
+          )}" data-slug="${escapeHtml(c.slug || "")}">
               <div>
                   <div class="suggestion-title">${escapeHtml(c.name)}</div>
                   <div class="suggestion-meta">Category</div>
@@ -166,7 +166,8 @@
     }
 
     if (type === "category" && item.dataset.id) {
-      window.location.href = `/Categories/${item.dataset.id}`;
+      const slug = item.dataset.slug ? `/${item.dataset.slug}` : "";
+      window.location.href = `/Categories/${item.dataset.id}${slug}`;
       return;
     }
 
