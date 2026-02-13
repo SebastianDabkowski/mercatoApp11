@@ -16,9 +16,32 @@
     <div class="alert alert-danger">@errorMessage</div>
 }
 
+<form method="get" class="row g-2 mb-3">
+    <div class="col-sm-4">
+        <label class="form-label" for="searchInput">Search</label>
+        <input id="searchInput" name="Search" value="@Model.Search" class="form-control" placeholder="Title or SKU" />
+    </div>
+    <div class="col-sm-3">
+        <label class="form-label" for="workflowFilter">Status</label>
+        <select id="workflowFilter" name="WorkflowStateFilter" class="form-select">
+            <option value="" selected="@(string.IsNullOrEmpty(Model.WorkflowStateFilter) ? "selected" : null)">All (active, draft, suspended)</option>
+            <option value="@ProductWorkflowStates.Active" selected="@(Model.WorkflowStateFilter == ProductWorkflowStates.Active ? "selected" : null)">Active</option>
+            <option value="@ProductWorkflowStates.Draft" selected="@(Model.WorkflowStateFilter == ProductWorkflowStates.Draft ? "selected" : null)">Draft</option>
+            <option value="@ProductWorkflowStates.Suspended" selected="@(Model.WorkflowStateFilter == ProductWorkflowStates.Suspended ? "selected" : null)">Suspended</option>
+        </select>
+    </div>
+    <div class="col-sm-2 align-self-end">
+        <button type="submit" class="btn btn-primary">Apply</button>
+    </div>
+    <div class="col-sm-2 align-self-end">
+        <a class="btn btn-outline-secondary" asp-page="/Seller/Products/List">Clear</a>
+    </div>
+</form>
+
 <p>
     <a class="btn btn-primary" asp-page="Add">Add product</a>
     <a class="btn btn-outline-primary ms-2" asp-page="Import">Import catalog</a>
+    <a class="btn btn-outline-secondary ms-2" asp-page="ExportHistory">Export history</a>
     @if (Model.Products.Any())
     {
         <form id="bulkForm" method="get" asp-page="BulkUpdate" class="d-inline">
@@ -26,6 +49,29 @@
         </form>
     }
 </p>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="post" asp-page-handler="Export" class="row g-2 align-items-end">
+            <input type="hidden" asp-for="Search" />
+            <input type="hidden" asp-for="WorkflowStateFilter" />
+            <div class="col-sm-3">
+                <label class="form-label" asp-for="ExportFormat">Export format</label>
+                <select asp-for="ExportFormat" class="form-select">
+                    <option value="csv">CSV</option>
+                    <option value="xls">XLS</option>
+                </select>
+            </div>
+            <div class="col-sm-5 form-check mt-sm-4">
+                <input class="form-check-input" asp-for="ExportFilteredOnly" id="exportFiltered" />
+                <label class="form-check-label" for="exportFiltered">Export only filtered results</label>
+            </div>
+            <div class="col-sm-3">
+                <button type="submit" class="btn btn-success mt-sm-4">Export catalog</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 @if (Model.Products.Any())
 {

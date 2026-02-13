@@ -126,6 +126,73 @@ namespace SD.ProjectName.Modules.Products.Infrastructure.Migrations
                     b.ToTable("ProductImportJob", (string)null);
                 });
 
+            modelBuilder.Entity("SD.ProjectName.Modules.Products.Domain.ProductExportJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("CompletedOn")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ContentType")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("CreatedOn")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("FileContent")
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Format")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Search")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("SellerId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Summary")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<int>("TotalProducts")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("UseFilters")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("WorkflowState")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SellerId", "CreatedOn");
+
+                    b.ToTable("ProductExportJob", (string)null);
+                });
+
             modelBuilder.Entity("SD.ProjectName.Modules.Products.Domain.ProductModel", b =>
                 {
                     b.Property<int>("Id")

@@ -74,6 +74,24 @@ namespace SD.ProjectName.Tests.Products
             Assert.DoesNotContain(results, p => p.WorkflowState == ProductWorkflowStates.Archived);
         }
 
+        [Fact]
+        public async Task GetListFiltered_ShouldRespectSearchAndWorkflowState()
+        {
+            await using var context = CreateContext();
+            context.Products.AddRange(
+                new ProductModel { Title = "Match One", MerchantSku = "SKU-F1", Price = 10, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Match Two", MerchantSku = "SKU-F2", Price = 5, Stock = 2, Category = "Cat", WorkflowState = ProductWorkflowStates.Draft, SellerId = "seller-1" },
+                new ProductModel { Title = "Other Seller", MerchantSku = "SKU-F3", Price = 3, Stock = 0, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-2" });
+            await context.SaveChangesAsync();
+
+            var repository = new ProductRepository(context);
+
+            var results = await repository.GetListFiltered("seller-1", includeDrafts: true, search: "F1", workflowState: ProductWorkflowStates.Active);
+
+            Assert.Single(results);
+            Assert.Equal("SKU-F1", results[0].MerchantSku);
+        }
+
         private static ProductDbContext CreateContext()
         {
             var options = new DbContextOptionsBuilder<ProductDbContext>()

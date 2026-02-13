@@ -117,6 +117,9 @@ builder.Services.AddScoped<ManageCategories>();
 builder.Services.AddSingleton<ProductImportQueue>();
 builder.Services.AddScoped<ProductCatalogImportService>();
 builder.Services.AddHostedService<ProductImportBackgroundService>();
+builder.Services.AddSingleton<ProductExportQueue>();
+builder.Services.AddScoped<ProductCatalogExportService>();
+builder.Services.AddHostedService<ProductExportBackgroundService>();
 
 builder.Services.AddRazorPages(options =>
 {

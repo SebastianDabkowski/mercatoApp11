@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using SD.ProjectName.Modules.Products.Domain;
@@ -26,6 +27,11 @@ namespace SD.ProjectName.Modules.Products.Application
         public async Task<ProductModel?> GetById(int id, bool includeDrafts = false)
         {
             return await _repository.GetById(id, includeDrafts);
+        }
+
+        public async Task<List<ProductModel>> GetFilteredList(string sellerId, bool includeDrafts, string? search, string? workflowState, CancellationToken cancellationToken = default)
+        {
+            return await _repository.GetListFiltered(sellerId, includeDrafts, search, workflowState, cancellationToken);
         }
 
     }
