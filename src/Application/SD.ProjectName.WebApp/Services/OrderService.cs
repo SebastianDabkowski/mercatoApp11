@@ -217,7 +217,10 @@ namespace SD.ProjectName.WebApp.Services
         decimal DiscountTotal = 0,
         string? PromoCode = null,
         List<OrderSubOrder> SubOrders = null!,
-        List<EscrowAllocation>? Escrow = null);
+        List<EscrowAllocation>? Escrow = null,
+        string PaymentStatus = PaymentStatuses.Paid,
+        string? PaymentStatusMessage = null,
+        decimal PaymentRefundedAmount = 0);
 
     public record OrderView(
         int Id,
@@ -226,9 +229,12 @@ namespace SD.ProjectName.WebApp.Services
         DateTimeOffset CreatedOn,
         string PaymentMethodLabel,
         string? PaymentReference,
+        string PaymentStatus,
+        string? PaymentStatusMessage,
         decimal ItemsSubtotal,
         decimal ShippingTotal,
         decimal GrandTotal,
+        decimal PaymentRefundedAmount,
         decimal DiscountTotal,
         string? PromoCode,
         int TotalQuantity,
@@ -280,6 +286,8 @@ namespace SD.ProjectName.WebApp.Services
         EscrowAllocation? Escrow);
 
     public record OrderCreationResult(OrderRecord Order, bool Created);
+
+    public record PaymentStatusUpdateResult(bool Success, string? Error, string? PaymentStatus = null, decimal PaymentRefundedAmount = 0);
 
     public record SubOrderStatusUpdateResult(bool Success, string? Error, OrderSubOrder? UpdatedSubOrder = null, string? OrderStatus = null);
 
@@ -338,33 +346,60 @@ namespace SD.ProjectName.WebApp.Services
             string? paymentMethodLabel,
             string? paymentMethodId,
             string initialStatus = OrderStatuses.Paid,
+            string paymentStatus = PaymentStatuses.Paid,
+            string? paymentMessage = null,
+            decimal paymentRefundedAmount = 0,
             CancellationToken cancellationToken = default)
         {
             var normalizedReference = string.IsNullOrWhiteSpace(state.PaymentReference) ? null : state.PaymentReference.Trim();
+            var normalizedSignature = string.IsNullOrWhiteSpace(state.CartSignature) ? null : state.CartSignature.Trim();
+            OrderRecord? existingOrder = null;
             if (!string.IsNullOrEmpty(normalizedReference))
             {
-                var existingByReference = await _dbContext.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.PaymentReference == normalizedReference, cancellationToken);
-                if (existingByReference != null)
-                {
-                    return new OrderCreationResult(existingByReference, false);
-                }
+                existingOrder = await _dbContext.Orders.FirstOrDefaultAsync(o => o.PaymentReference == normalizedReference, cancellationToken);
             }
 
-            var normalizedSignature = string.IsNullOrWhiteSpace(state.CartSignature) ? null : state.CartSignature.Trim();
-            if (!string.IsNullOrWhiteSpace(normalizedSignature) && !string.IsNullOrWhiteSpace(buyerId))
+            if (existingOrder == null && !string.IsNullOrWhiteSpace(normalizedSignature) && !string.IsNullOrWhiteSpace(buyerId))
             {
-                var existingBySignature = await _dbContext.Orders.AsNoTracking().FirstOrDefaultAsync(
+                existingOrder = await _dbContext.Orders.FirstOrDefaultAsync(
                     o => o.BuyerId == buyerId && o.CartSignature == normalizedSignature,
                     cancellationToken);
-                if (existingBySignature != null)
+                if (existingOrder != null && string.IsNullOrWhiteSpace(existingOrder.PaymentReference) && !string.IsNullOrWhiteSpace(normalizedReference))
                 {
-                    return new OrderCreationResult(existingBySignature, false);
+                    existingOrder.PaymentReference = normalizedReference;
                 }
             }
 
             var normalizedInitialStatus = OrderStatuses.Normalize(initialStatus);
+            var normalizedPaymentStatus = PaymentStatuses.Normalize(paymentStatus);
+            if (string.Equals(normalizedPaymentStatus, PaymentStatuses.Paid, StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.Equals(normalizedInitialStatus, OrderStatuses.Failed, StringComparison.OrdinalIgnoreCase))
+                {
+                    normalizedPaymentStatus = PaymentStatuses.Failed;
+                }
+                else if (string.Equals(normalizedInitialStatus, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase))
+                {
+                    normalizedPaymentStatus = PaymentStatuses.Refunded;
+                }
+                else if (string.Equals(normalizedInitialStatus, OrderStatuses.New, StringComparison.OrdinalIgnoreCase))
+                {
+                    normalizedPaymentStatus = PaymentStatuses.Pending;
+                }
+            }
+
+            var normalizedPaymentMessage = string.IsNullOrWhiteSpace(paymentMessage)
+                ? PaymentStatusMapper.BuildBuyerMessage(normalizedPaymentStatus)
+                : paymentMessage.Trim();
+            var normalizedRefunded = Math.Max(0, paymentRefundedAmount);
+            if (existingOrder != null)
+            {
+                var updated = await UpdateOrderPaymentAsync(existingOrder, normalizedInitialStatus, normalizedPaymentStatus, normalizedPaymentMessage, normalizedRefunded, normalizedReference, cancellationToken);
+                return new OrderCreationResult(updated, false);
+            }
+
             var orderNumber = GenerateOrderNumber();
-            var details = BuildDetailsPayload(orderNumber, quote, normalizedInitialStatus, normalizedReference);
+            var details = BuildDetailsPayload(orderNumber, quote, normalizedInitialStatus, normalizedReference, normalizedPaymentStatus, normalizedPaymentMessage, normalizedRefunded);
             var order = new OrderRecord
             {
                 OrderNumber = orderNumber,
@@ -388,12 +423,65 @@ namespace SD.ProjectName.WebApp.Services
             _dbContext.Orders.Add(order);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            if (!string.Equals(order.Status, OrderStatuses.Failed, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(details.PaymentStatus, PaymentStatuses.Paid, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(order.Status, OrderStatuses.Failed, StringComparison.OrdinalIgnoreCase))
             {
                 await SendConfirmationEmailAsync(order, address, details, cancellationToken);
             }
 
             return new OrderCreationResult(order, true);
+        }
+
+        private async Task<OrderRecord> UpdateOrderPaymentAsync(
+            OrderRecord order,
+            string normalizedInitialStatus,
+            string normalizedPaymentStatus,
+            string paymentMessage,
+            decimal paymentRefundedAmount,
+            string? paymentReference,
+            CancellationToken cancellationToken)
+        {
+            var details = DeserializeDetails(order.DetailsJson);
+            var normalizedMessage = string.IsNullOrWhiteSpace(paymentMessage)
+                ? PaymentStatusMapper.BuildBuyerMessage(normalizedPaymentStatus)
+                : paymentMessage.Trim();
+            var paymentRefunded = Math.Max(details.PaymentRefundedAmount, paymentRefundedAmount);
+            var hasChanges = false;
+            var updatedDetails = details;
+
+            if (!string.Equals(details.PaymentStatus, normalizedPaymentStatus, StringComparison.OrdinalIgnoreCase)
+                || paymentRefunded > details.PaymentRefundedAmount
+                || !string.Equals(details.PaymentStatusMessage ?? string.Empty, normalizedMessage, StringComparison.Ordinal))
+            {
+                updatedDetails = updatedDetails with
+                {
+                    PaymentStatus = normalizedPaymentStatus,
+                    PaymentStatusMessage = normalizedMessage,
+                    PaymentRefundedAmount = paymentRefunded
+                };
+                hasChanges = true;
+            }
+
+            if (ShouldApplyFulfillmentStatus(order.Status, normalizedInitialStatus, updatedDetails.SubOrders))
+            {
+                updatedDetails = ApplyStatusToDetails(updatedDetails, normalizedInitialStatus);
+                order.Status = CalculateOrderStatus(updatedDetails.SubOrders, normalizedInitialStatus);
+                hasChanges = true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(paymentReference) && !string.Equals(order.PaymentReference, paymentReference, StringComparison.OrdinalIgnoreCase))
+            {
+                order.PaymentReference = paymentReference;
+                hasChanges = true;
+            }
+
+            if (hasChanges)
+            {
+                order.DetailsJson = JsonSerializer.Serialize(updatedDetails, _serializerOptions);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            return order;
         }
 
         public async Task<OrderView?> GetOrderAsync(int id, string? currentUserId, CancellationToken cancellationToken = default)
@@ -416,17 +504,30 @@ namespace SD.ProjectName.WebApp.Services
                 ? details.DiscountTotal
                 : Math.Max(0, order.ItemsSubtotal + order.ShippingTotal - order.GrandTotal);
             var promoCode = string.IsNullOrWhiteSpace(details.PromoCode) ? null : details.PromoCode;
+            var paymentStatus = PaymentStatuses.Normalize(details.PaymentStatus);
+            var paymentRefunded = Math.Max(details.PaymentRefundedAmount, details.SubOrders.Sum(s => Math.Max(0, s.RefundedAmount)));
+            if (paymentRefunded > 0 && !string.Equals(paymentStatus, PaymentStatuses.Refunded, StringComparison.OrdinalIgnoreCase))
+            {
+                paymentStatus = PaymentStatuses.Refunded;
+            }
 
-            return new OrderView(
+            var paymentMessage = string.IsNullOrWhiteSpace(details.PaymentStatusMessage)
+                ? PaymentStatusMapper.BuildBuyerMessage(paymentStatus)
+                : details.PaymentStatusMessage;
+
+                return new OrderView(
                 order.Id,
                 order.OrderNumber,
                 orderStatus,
                 order.CreatedOn,
                 string.IsNullOrWhiteSpace(order.PaymentMethodLabel) ? order.PaymentMethodId : order.PaymentMethodLabel,
                 order.PaymentReference,
+                paymentStatus,
+                paymentMessage,
                 order.ItemsSubtotal,
                 order.ShippingTotal,
                 order.GrandTotal,
+                paymentRefunded,
                 discountTotal,
                 promoCode,
                 order.TotalQuantity,
@@ -435,6 +536,54 @@ namespace SD.ProjectName.WebApp.Services
                 details.Shipping,
                 details.SubOrders,
                 details.Escrow ?? new List<EscrowAllocation>());
+        }
+
+        public async Task<PaymentStatusUpdateResult> UpdatePaymentStatusAsync(
+            string paymentReference,
+            string providerStatus,
+            decimal? refundedAmount = null,
+            string? providerMessage = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(paymentReference))
+            {
+                return new PaymentStatusUpdateResult(false, "Payment reference is required.");
+            }
+
+            var reference = paymentReference.Trim();
+            var order = await _dbContext.Orders.FirstOrDefaultAsync(o => o.PaymentReference == reference, cancellationToken);
+            if (order == null)
+            {
+                return new PaymentStatusUpdateResult(false, "Order not found for this payment reference.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(providerMessage))
+            {
+                _logger.LogInformation("Payment webhook status {Status} for {Reference}: {Message}", providerStatus, reference, providerMessage);
+            }
+
+            var targetPaymentStatus = PaymentStatusMapper.MapProviderStatus(providerStatus);
+            var buyerMessage = PaymentStatusMapper.BuildBuyerMessage(targetPaymentStatus);
+            var normalizedOrderStatus = OrderStatuses.Normalize(order.Status);
+            var targetFulfillmentStatus = normalizedOrderStatus;
+            if (targetPaymentStatus == PaymentStatuses.Paid && string.Equals(normalizedOrderStatus, OrderStatuses.New, StringComparison.OrdinalIgnoreCase))
+            {
+                targetFulfillmentStatus = OrderStatuses.Paid;
+            }
+            else if (targetPaymentStatus == PaymentStatuses.Failed && string.Equals(normalizedOrderStatus, OrderStatuses.New, StringComparison.OrdinalIgnoreCase))
+            {
+                targetFulfillmentStatus = OrderStatuses.Failed;
+            }
+            else if (targetPaymentStatus == PaymentStatuses.Refunded && string.Equals(normalizedOrderStatus, OrderStatuses.Paid, StringComparison.OrdinalIgnoreCase))
+            {
+                targetFulfillmentStatus = OrderStatuses.Refunded;
+            }
+
+            var refunded = Math.Max(0, refundedAmount ?? 0);
+            var updated = await UpdateOrderPaymentAsync(order, targetFulfillmentStatus, targetPaymentStatus, buyerMessage, refunded, reference, cancellationToken);
+            var details = DeserializeDetails(updated.DetailsJson);
+
+            return new PaymentStatusUpdateResult(true, null, details.PaymentStatus, details.PaymentRefundedAmount);
         }
 
         public async Task<ReturnRequestResult> CreateReturnRequestAsync(
@@ -801,6 +950,7 @@ namespace SD.ProjectName.WebApp.Services
                 string.Equals(e.SubOrderNumber, subOrder.SubOrderNumber, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(e.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
             var address = DeserializeAddress(order.DeliveryAddressJson);
+            var paymentStatus = ResolvePaymentStatusForSubOrder(details, subOrder);
             return new SellerOrderView(
                 order.Id,
                 order.OrderNumber,
@@ -823,7 +973,7 @@ namespace SD.ProjectName.WebApp.Services
                 order.BuyerName,
                 order.BuyerEmail,
                 address.Phone,
-                OrderStatuses.Normalize(order.Status),
+                paymentStatus,
                 subOrder.Return,
                 escrow);
         }
@@ -935,6 +1085,16 @@ namespace SD.ProjectName.WebApp.Services
 
             details.SubOrders[subOrderIndex] = updatedSubOrder;
 
+            var totalRefunded = details.SubOrders.Sum(s => Math.Max(0, s.RefundedAmount));
+            if (totalRefunded > 0 && !string.Equals(details.PaymentStatus, PaymentStatuses.Refunded, StringComparison.OrdinalIgnoreCase))
+            {
+                details = details with { PaymentStatus = PaymentStatuses.Refunded, PaymentRefundedAmount = totalRefunded };
+            }
+            else
+            {
+                details = details with { PaymentRefundedAmount = Math.Max(details.PaymentRefundedAmount, totalRefunded) };
+            }
+
             var updatedEscrow = UpdateEscrowAllocations(details.Escrow, details.SubOrders, updatedSubOrder, order.PaymentReference);
             details = details with { Escrow = updatedEscrow };
             order.Status = CalculateOrderStatus(details.SubOrders, order.Status);
@@ -944,7 +1104,7 @@ namespace SD.ProjectName.WebApp.Services
             return new SubOrderStatusUpdateResult(true, null, updatedSubOrder, order.Status);
         }
 
-        private OrderDetailsPayload BuildDetailsPayload(string orderNumber, ShippingQuote quote, string initialStatus, string? paymentReference)
+        private OrderDetailsPayload BuildDetailsPayload(string orderNumber, ShippingQuote quote, string initialStatus, string? paymentReference, string paymentStatus, string paymentMessage, decimal paymentRefundedAmount)
         {
             var items = new List<OrderItemDetail>();
             var shipping = new List<OrderShippingDetail>();
@@ -1000,7 +1160,17 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             var escrow = BuildEscrowAllocations(quote, subOrders, initialStatus, paymentReference);
-            return new OrderDetailsPayload(items, shipping, quote.Summary.TotalQuantity, quote.Summary.DiscountTotal, quote.Summary.AppliedPromoCode, subOrders, escrow);
+            return new OrderDetailsPayload(
+                items,
+                shipping,
+                quote.Summary.TotalQuantity,
+                quote.Summary.DiscountTotal,
+                quote.Summary.AppliedPromoCode,
+                subOrders,
+                escrow,
+                paymentStatus,
+                paymentMessage,
+                Math.Max(0, paymentRefundedAmount));
         }
 
         private static OrderShippingDetail ResolveShippingDetail(ShippingQuote quote, string sellerId, string sellerName, decimal fallbackCost)
@@ -1393,14 +1563,106 @@ namespace SD.ProjectName.WebApp.Services
                 .Select(NormalizeSubOrder)
                 .ToList();
             var normalizedEscrow = NormalizeEscrow(details.Escrow, normalizedSubOrders);
+            var normalizedPaymentStatus = PaymentStatuses.Normalize(details.PaymentStatus);
+            var paymentRefunded = Math.Max(0, details.PaymentRefundedAmount);
+            if (paymentRefunded <= 0 && normalizedSubOrders.Count > 0)
+            {
+                paymentRefunded = normalizedSubOrders.Sum(s => Math.Max(0, s.RefundedAmount));
+            }
+
+            if (paymentRefunded > 0 && !string.Equals(normalizedPaymentStatus, PaymentStatuses.Refunded, StringComparison.OrdinalIgnoreCase))
+            {
+                normalizedPaymentStatus = PaymentStatuses.Refunded;
+            }
+
+            var paymentMessage = string.IsNullOrWhiteSpace(details.PaymentStatusMessage)
+                ? PaymentStatusMapper.BuildBuyerMessage(normalizedPaymentStatus)
+                : details.PaymentStatusMessage!.Trim();
 
             return details with
             {
                 Items = normalizedItems,
                 Shipping = normalizedShipping,
                 SubOrders = normalizedSubOrders,
-                Escrow = normalizedEscrow
+                Escrow = normalizedEscrow,
+                PaymentStatus = normalizedPaymentStatus,
+                PaymentStatusMessage = paymentMessage,
+                PaymentRefundedAmount = paymentRefunded
             };
+        }
+
+        private static OrderDetailsPayload ApplyStatusToDetails(OrderDetailsPayload details, string status)
+        {
+            var normalizedStatus = OrderStatuses.Normalize(status);
+            var updatedSubOrders = (details.SubOrders ?? new List<OrderSubOrder>())
+                .Select(sub =>
+                {
+                    var updatedItems = (sub.Items ?? new List<OrderItemDetail>())
+                        .Select(i => i with { Status = normalizedStatus })
+                        .ToList();
+                    return sub with { Status = normalizedStatus, Items = updatedItems };
+                })
+                .ToList();
+
+            var updatedItems = updatedSubOrders.SelectMany(s => s.Items).ToList();
+            return details with
+            {
+                SubOrders = updatedSubOrders,
+                Items = updatedItems
+            };
+        }
+
+        private static bool ShouldApplyFulfillmentStatus(string currentStatus, string targetStatus, List<OrderSubOrder> subOrders)
+        {
+            var normalizedCurrent = OrderStatuses.Normalize(currentStatus);
+            var normalizedTarget = OrderStatuses.Normalize(targetStatus);
+            if (string.Equals(normalizedCurrent, normalizedTarget, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!OrderStatuses.CanTransition(normalizedCurrent, normalizedTarget))
+            {
+                return false;
+            }
+
+            return subOrders.All(s =>
+            {
+                var status = OrderStatuses.Normalize(s.Status);
+                return string.Equals(status, OrderStatuses.New, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, OrderStatuses.Failed, StringComparison.OrdinalIgnoreCase);
+            });
+        }
+
+        private static string ResolvePaymentStatusForSubOrder(OrderDetailsPayload details, OrderSubOrder subOrder)
+        {
+            if (subOrder == null)
+            {
+                return PaymentStatuses.Paid;
+            }
+
+            if (subOrder.RefundedAmount > 0 || string.Equals(subOrder.Status, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase))
+            {
+                return PaymentStatuses.Refunded;
+            }
+
+            var baseStatus = PaymentStatuses.Normalize(details.PaymentStatus);
+            if (string.Equals(baseStatus, PaymentStatuses.Refunded, StringComparison.OrdinalIgnoreCase))
+            {
+                return PaymentStatuses.Refunded;
+            }
+
+            if (string.Equals(baseStatus, PaymentStatuses.Failed, StringComparison.OrdinalIgnoreCase))
+            {
+                return PaymentStatuses.Failed;
+            }
+
+            if (string.Equals(baseStatus, PaymentStatuses.Pending, StringComparison.OrdinalIgnoreCase))
+            {
+                return PaymentStatuses.Pending;
+            }
+
+            return PaymentStatuses.Paid;
         }
 
         private static OrderSubOrder NormalizeSubOrder(OrderSubOrder subOrder)

@@ -34,7 +34,26 @@ else
                 {
                     <div class="text-muted small">Payment ref: @Model.Order.PaymentReference</div>
                 }
-                <div class="text-muted small">Payment status: @Model.Order.PaymentStatus</div>
+                @{
+                    var paymentBadge = "bg-secondary";
+                    if (Model.Order.PaymentStatus.Equals(PaymentStatuses.Paid, StringComparison.OrdinalIgnoreCase))
+                    {
+                        paymentBadge = "bg-success";
+                    }
+                    else if (Model.Order.PaymentStatus.Equals(PaymentStatuses.Pending, StringComparison.OrdinalIgnoreCase))
+                    {
+                        paymentBadge = "bg-warning text-dark";
+                    }
+                    else if (Model.Order.PaymentStatus.Equals(PaymentStatuses.Failed, StringComparison.OrdinalIgnoreCase))
+                    {
+                        paymentBadge = "bg-danger";
+                    }
+                    else if (Model.Order.PaymentStatus.Equals(PaymentStatuses.Refunded, StringComparison.OrdinalIgnoreCase))
+                    {
+                        paymentBadge = "bg-info text-dark";
+                    }
+                }
+                <div class="text-muted small">Payment status: <span class="badge @paymentBadge">@Model.Order.PaymentStatus</span></div>
                 <div class="text-muted small">Paid with: @Model.Order.PaymentMethodLabel</div>
             </div>
             <div class="text-end">

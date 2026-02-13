@@ -57,6 +57,15 @@ else
         <div class="alert alert-success">@Model.StatusMessage</div>
     }
 
+    @if (order.PaymentStatus.Equals(PaymentStatuses.Failed, StringComparison.OrdinalIgnoreCase))
+    {
+        <div class="alert alert-danger">Payment failed. No charge was captured. Please try again or choose another method.</div>
+    }
+    else if (order.PaymentStatus.Equals(PaymentStatuses.Pending, StringComparison.OrdinalIgnoreCase))
+    {
+        <div class="alert alert-info">Payment is pending confirmation. We'll update you once the provider responds.</div>
+    }
+
     <div asp-validation-summary="ModelOnly" class="text-danger small"></div>
 
     <div class="row">
@@ -379,6 +388,33 @@ else
                 <div class="card-header">Payment</div>
                 <div class="card-body">
                     <div class="mb-2">
+                        <div class="fw-semibold">Status</div>
+                        @{
+                            var paymentBadge = "bg-secondary";
+                            if (order.PaymentStatus.Equals(PaymentStatuses.Paid, StringComparison.OrdinalIgnoreCase))
+                            {
+                                paymentBadge = "bg-success";
+                            }
+                            else if (order.PaymentStatus.Equals(PaymentStatuses.Pending, StringComparison.OrdinalIgnoreCase))
+                            {
+                                paymentBadge = "bg-warning text-dark";
+                            }
+                            else if (order.PaymentStatus.Equals(PaymentStatuses.Failed, StringComparison.OrdinalIgnoreCase))
+                            {
+                                paymentBadge = "bg-danger";
+                            }
+                            else if (order.PaymentStatus.Equals(PaymentStatuses.Refunded, StringComparison.OrdinalIgnoreCase))
+                            {
+                                paymentBadge = "bg-info text-dark";
+                            }
+                        }
+                        <span class="badge @paymentBadge">@order.PaymentStatus</span>
+                        @if (!string.IsNullOrWhiteSpace(order.PaymentStatusMessage))
+                        {
+                            <div class="text-muted small mt-1">@order.PaymentStatusMessage</div>
+                        }
+                    </div>
+                    <div class="mb-2">
                         <div class="fw-semibold">Method</div>
                         <div class="text-muted">@order.PaymentMethodLabel</div>
                     </div>
@@ -387,6 +423,13 @@ else
                         <div class="mb-2">
                             <div class="fw-semibold">Reference</div>
                             <div class="text-muted">@order.PaymentReference</div>
+                        </div>
+                    }
+                    @if (order.PaymentRefundedAmount > 0)
+                    {
+                        <div class="mb-2 text-danger">
+                            <div class="fw-semibold">Refunded</div>
+                            <div class="text-muted">@order.PaymentRefundedAmount.ToString("C")</div>
                         </div>
                     }
                     <div class="mb-0">

@@ -200,7 +200,13 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 }
 
                 await RecordFailedPaymentAsync(quote, updatedState, ResolvePaymentLabel(selected.Id));
-                ModelState.AddModelError(string.Empty, authorization.Error ?? "Payment authorization failed. Please try again or choose another method.");
+                var error = PaymentStatusMapper.BuildBuyerMessage(PaymentStatuses.Failed);
+                if (string.IsNullOrWhiteSpace(error))
+                {
+                    error = "Payment authorization failed. Please try again or choose another method.";
+                }
+
+                ModelState.AddModelError(string.Empty, error);
                 return Page();
             }
 
@@ -256,9 +262,11 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             }
 
             await RecordFailedPaymentAsync(quote, updatedState, ResolvePaymentLabel(selectedMethod.Id));
-            var error = string.IsNullOrWhiteSpace(validation.Error)
-                ? "Payment authorization failed. Please try again or choose another method."
-                : validation.Error;
+            var error = PaymentStatusMapper.BuildBuyerMessage(PaymentStatuses.Failed);
+            if (string.IsNullOrWhiteSpace(error))
+            {
+                error = "Payment authorization failed. Please try again or choose another method.";
+            }
             ModelState.AddModelError(string.Empty, error);
             return Page();
         }
@@ -301,7 +309,10 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 paymentLabel ?? state.PaymentMethod,
                 state.PaymentMethod,
                 OrderStatuses.Failed,
-                HttpContext.RequestAborted);
+                PaymentStatuses.Failed,
+                PaymentStatusMapper.BuildBuyerMessage(PaymentStatuses.Failed),
+                0,
+                cancellationToken: HttpContext.RequestAborted);
         }
 
         private async Task<Dictionary<string, string>> LoadSellerCountriesAsync(IEnumerable<string> sellerIds)
@@ -404,7 +415,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 paymentLabel,
                 state.PaymentMethod,
                 OrderStatuses.Paid,
-                HttpContext.RequestAborted);
+                cancellationToken: HttpContext.RequestAborted);
 
             _cartService.ReplaceCart(HttpContext, Array.Empty<CartItem>());
             if (buyer != null)
