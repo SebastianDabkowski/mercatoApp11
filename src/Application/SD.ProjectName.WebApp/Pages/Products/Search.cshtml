@@ -231,6 +231,17 @@ else
             var description = string.IsNullOrWhiteSpace(product.Description)
                 ? "No description provided."
                 : (product.Description.Length > 140 ? $"{product.Description[..140]}..." : product.Description);
+            var resultReturnUrl = Url.Page("/Products/Search", new
+            {
+                q = query,
+                condition = Model.Condition,
+                categoryId = Model.CategoryId,
+                sellerId = Model.SellerId,
+                minPrice = Model.MinPrice,
+                maxPrice = Model.MaxPrice,
+                sort = Model.Sort,
+                page = Model.PageNumber
+            });
 
             <div class="col">
                 <div class="card h-100 shadow-sm">
@@ -258,7 +269,7 @@ else
                         <p class="card-text flex-grow-1">@description</p>
                         <div class="d-flex align-items-center justify-content-between pt-2">
                             <span class="text-muted small">Stock: @product.Stock</span>
-                            <a class="btn btn-sm btn-outline-primary" asp-page="/Products/Details" asp-route-id="@product.Id">View</a>
+                            <a class="btn btn-sm btn-outline-primary" asp-page="/Products/Details" asp-route-id="@product.Id" asp-route-returnUrl="@resultReturnUrl">View</a>
                         </div>
                     </div>
                 </div>

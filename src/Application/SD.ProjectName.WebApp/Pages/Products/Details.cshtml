@@ -14,6 +14,10 @@
 }
 else
 {
+    @if (!string.IsNullOrWhiteSpace(Model.ReturnUrl))
+    {
+        <a class="btn btn-link px-0" href="@Model.ReturnUrl">Back to results</a>
+    }
     <h1>@Model.Product.Title</h1>
     @if (!string.IsNullOrWhiteSpace(Model.Product.MainImageUrl))
     {
@@ -117,7 +121,23 @@ else
         <dt class="col-sm-2">Price</dt>
         <dd class="col-sm-10"><span id="variant-price">@Model.Product.Price.ToString("C")</span></dd>
         <dt class="col-sm-2">Category</dt>
-        <dd class="col-sm-10">@Model.Product.Category</dd>
+        <dd class="col-sm-10">
+            @if (Model.Product.CategoryId.HasValue)
+            {
+                <a asp-page="/Products/Category" asp-route-id="@Model.Product.CategoryId">@Model.Product.Category</a>
+            }
+            else
+            {
+                @Model.Product.Category
+            }
+        </dd>
+        @if (Model.HasSellerLink)
+        {
+            <dt class="col-sm-2">Seller</dt>
+            <dd class="col-sm-10">
+                <a asp-page="/Store/Details" asp-route-storeSlug="@Model.SellerSlug">@Model.SellerDisplayName</a>
+            </dd>
+        }
         <dt class="col-sm-2">Stock</dt>
         <dd class="col-sm-10"><span id="variant-stock">@Model.Product.Stock</span></dd>
         @if (!string.IsNullOrWhiteSpace(Model.Product.Description))
