@@ -118,6 +118,36 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task EnsureOrderAsync_ShouldStoreShippingEstimate()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+
+            var product = new ProductModel { Id = 3, Title = "Courier Item", Price = 15, Stock = 2, SellerId = "seller-1" };
+            var displayItem = new CartDisplayItem(product, 1, "Default", 15, 15, true, 2, new Dictionary<string, string>());
+            var sellerGroup = new CartSellerGroup("seller-1", "Seller One", 15, 6, 21, new List<CartDisplayItem> { displayItem });
+            var summary = new CartSummary(new List<CartSellerGroup> { sellerGroup }, 15, 6, 21, 1, CartSettlementSummary.Empty);
+            var shippingOption = new ShippingMethodOption("courier", "Courier", 6, "Tracked courier", true, "2-3 business days");
+            var sellerOptions = new List<SellerShippingOptions> { new("seller-1", "Seller One", new List<ShippingMethodOption> { shippingOption }) };
+            var selections = new Dictionary<string, string> { ["seller-1"] = "courier" };
+            var quote = new ShippingQuote(summary, sellerOptions, selections);
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, selections, "card", CheckoutPaymentStatus.Confirmed, "ref-ship-quote", "sig-ship-quote");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-ship", "ship@example.com", "Buyer Ship", "Card", "card");
+
+            Assert.True(result.Created);
+            var view = await service.GetOrderAsync(result.Order.Id, "buyer-ship");
+            Assert.NotNull(view);
+            var shipping = Assert.Single(view!.SubOrders).ShippingDetail;
+            Assert.Equal("courier", shipping.MethodId);
+            Assert.Equal("Courier", shipping.MethodLabel);
+            Assert.Equal(6, shipping.Cost);
+            Assert.Equal("2-3 business days", shipping.DeliveryEstimate);
+            Assert.Equal("Tracked courier", shipping.Description);
+        }
+
+        [Fact]
         public async Task EnsureOrderAsync_ShouldStoreEscrowPerSeller()
         {
             await using var context = CreateContext();

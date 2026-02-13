@@ -85,9 +85,18 @@ else
                                         <div class="text-muted small">Sub-order @sub.SubOrderNumber</div>
                                         <div class="text-muted small">Status: @sub.Status</div>
                                         <div class="text-muted small">Shipping: @sub.ShippingDetail.MethodLabel (@sub.ShippingDetail.Cost.ToString("C"))</div>
-                                        @if (!string.IsNullOrWhiteSpace(sub.ShippingDetail.Description))
+                                        @{
+                                            var estimate = string.IsNullOrWhiteSpace(sub.ShippingDetail.DeliveryEstimate)
+                                                ? sub.ShippingDetail.Description
+                                                : sub.ShippingDetail.DeliveryEstimate;
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(estimate))
                                         {
-                                            <div class="text-muted small">Estimated: @sub.ShippingDetail.Description</div>
+                                            <div class="text-muted small">Estimated: @estimate</div>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(sub.ShippingDetail.Description) && !string.Equals(sub.ShippingDetail.Description, estimate, StringComparison.Ordinal))
+                                        {
+                                            <div class="text-muted small">@sub.ShippingDetail.Description</div>
                                         }
                                         @if (!string.IsNullOrWhiteSpace(sub.TrackingNumber))
                                         {

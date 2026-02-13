@@ -52,6 +52,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller
                         Id = method.Id,
                         Name = method.Name,
                         Description = method.Description,
+                        BaseCost = method.BaseCost,
+                        DeliveryEstimate = method.DeliveryEstimate,
                         Availability = method.Availability ?? string.Empty,
                         IsActive = method.IsActive && !method.IsDeleted
                     };
@@ -81,6 +83,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller
                 Input.Id,
                 Input.Name,
                 Input.Description,
+                Input.BaseCost,
+                Input.DeliveryEstimate,
                 Input.Availability,
                 Input.IsActive,
                 HttpContext.RequestAborted);
@@ -120,6 +124,14 @@ namespace SD.ProjectName.WebApp.Pages.Seller
         [StringLength(1024)]
         [Display(Name = "Description (optional)")]
         public string? Description { get; set; }
+
+        [Range(0, double.MaxValue)]
+        [Display(Name = "Base cost")]
+        public decimal BaseCost { get; set; }
+
+        [StringLength(128)]
+        [Display(Name = "Estimated delivery time")]
+        public string? DeliveryEstimate { get; set; }
 
         [StringLength(256)]
         [Display(Name = "Availability (countries/regions)")]

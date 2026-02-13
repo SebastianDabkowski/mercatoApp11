@@ -17,6 +17,12 @@ namespace SD.ProjectName.WebApp.Data
         [StringLength(1024)]
         public string? Description { get; set; }
 
+        [Range(0, double.MaxValue)]
+        public decimal BaseCost { get; set; }
+
+        [StringLength(128)]
+        public string? DeliveryEstimate { get; set; }
+
         [StringLength(256)]
         public string? Availability { get; set; }
 

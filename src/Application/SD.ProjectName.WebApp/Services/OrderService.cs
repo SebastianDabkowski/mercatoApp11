@@ -168,7 +168,7 @@ namespace SD.ProjectName.WebApp.Services
 
     public record OrderItemDetail(int ProductId, string Name, string Variant, int Quantity, decimal UnitPrice, decimal LineTotal, string SellerId, string SellerName, string Status = OrderStatuses.Paid, string Category = "", decimal? CommissionRate = null);
 
-    public record OrderShippingDetail(string SellerId, string SellerName, string MethodId, string MethodLabel, decimal Cost, string? Description);
+    public record OrderShippingDetail(string SellerId, string SellerName, string MethodId, string MethodLabel, decimal Cost, string? Description, string? DeliveryEstimate = null);
 
     public record ReturnRequestItem(int ProductId, int Quantity);
 
@@ -2087,7 +2087,7 @@ namespace SD.ProjectName.WebApp.Services
             var options = quote.SellerOptions.FirstOrDefault(o => string.Equals(o.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
             if (options == null || options.Options.Count == 0)
             {
-                return new OrderShippingDetail(sellerId, sellerName, "standard", "Standard", Math.Max(0, fallbackCost), null);
+                return new OrderShippingDetail(sellerId, sellerName, "standard", "Standard", Math.Max(0, fallbackCost), null, null);
             }
 
             var selected = quote.SelectedMethods.TryGetValue(sellerId, out var selection) ? selection : options.Options.FirstOrDefault()?.Id;
@@ -2100,7 +2100,8 @@ namespace SD.ProjectName.WebApp.Services
                 match.Id,
                 match.Label,
                 match.Cost,
-                match.Description);
+                match.Description,
+                match.DeliveryEstimate);
         }
 
         private static decimal CalculateDiscountShare(decimal remainingDiscount, decimal baseTotal, decimal totalBeforeDiscount, bool isLastSeller)

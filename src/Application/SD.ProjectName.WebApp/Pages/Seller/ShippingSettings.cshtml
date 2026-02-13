@@ -26,10 +26,24 @@
                 <span asp-validation-for="Input.Name" class="text-danger"></span>
             </div>
             <div class="col-md-6">
+                <label asp-for="Input.BaseCost" class="form-label"></label>
+                <div class="input-group">
+                    <span class="input-group-text">$</span>
+                    <input asp-for="Input.BaseCost" class="form-control" type="number" step="0.01" min="0" />
+                </div>
+                <span asp-validation-for="Input.BaseCost" class="text-danger"></span>
+            </div>
+            <div class="col-md-6">
                 <label asp-for="Input.Availability" class="form-label"></label>
                 <input asp-for="Input.Availability" class="form-control" placeholder="e.g. US, CA or Europe" />
                 <span class="form-text">Leave blank to make the method available everywhere.</span>
                 <span asp-validation-for="Input.Availability" class="text-danger"></span>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="Input.DeliveryEstimate" class="form-label"></label>
+                <input asp-for="Input.DeliveryEstimate" class="form-control" placeholder="e.g. 2-3 business days" />
+                <span class="form-text">Shown to buyers at checkout.</span>
+                <span asp-validation-for="Input.DeliveryEstimate" class="text-danger"></span>
             </div>
             <div class="col-12">
                 <label asp-for="Input.Description" class="form-label"></label>
@@ -87,6 +101,11 @@
                                     @if (!string.IsNullOrWhiteSpace(method.Description))
                                     {
                                         <div class="text-muted small">@method.Description</div>
+                                    }
+                                    <div class="text-muted small">Cost: @method.BaseCost.ToString("C")</div>
+                                    @if (!string.IsNullOrWhiteSpace(method.DeliveryEstimate))
+                                    {
+                                        <div class="text-muted small">Est. delivery: @method.DeliveryEstimate</div>
                                     }
                                 </td>
                                 <td>@(string.IsNullOrWhiteSpace(method.Availability) ? "All regions" : method.Availability)</td>

@@ -205,6 +205,11 @@ namespace SD.ProjectName.WebApp.Data
                     .HasMaxLength(128);
                 entity.Property(m => m.Description)
                     .HasMaxLength(1024);
+                entity.Property(m => m.BaseCost)
+                    .HasColumnType("decimal(18,2)")
+                    .HasDefaultValue(0m);
+                entity.Property(m => m.DeliveryEstimate)
+                    .HasMaxLength(128);
                 entity.Property(m => m.Availability)
                     .HasMaxLength(256);
                 entity.Property(m => m.IsActive)

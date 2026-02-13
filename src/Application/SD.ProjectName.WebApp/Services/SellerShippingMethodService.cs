@@ -72,6 +72,8 @@ namespace SD.ProjectName.WebApp.Services
             Guid? id,
             string name,
             string? description,
+            decimal baseCost,
+            string? deliveryEstimate,
             string? availability,
             bool isActive,
             CancellationToken cancellationToken = default)
@@ -83,12 +85,17 @@ namespace SD.ProjectName.WebApp.Services
 
             var now = _clock.GetUtcNow();
             SellerShippingMethod method;
+            var normalizedCost = NormalizeCost(baseCost);
+            var normalizedDescription = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+            var normalizedEstimate = string.IsNullOrWhiteSpace(deliveryEstimate) ? null : deliveryEstimate.Trim();
 
             if (id.HasValue && id.Value != Guid.Empty)
             {
                 method = await GetAsync(id.Value, storeOwnerId, cancellationToken) ?? throw new InvalidOperationException("Shipping method not found.");
                 method.Name = name.Trim();
-                method.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+                method.Description = normalizedDescription;
+                method.BaseCost = normalizedCost;
+                method.DeliveryEstimate = normalizedEstimate;
                 method.Availability = NormalizeAvailability(availability);
                 method.IsActive = isActive && !method.IsDeleted;
                 method.UpdatedOn = now;
@@ -100,7 +107,9 @@ namespace SD.ProjectName.WebApp.Services
                     Id = Guid.NewGuid(),
                     StoreOwnerId = storeOwnerId,
                     Name = name.Trim(),
-                    Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
+                    Description = normalizedDescription,
+                    BaseCost = normalizedCost,
+                    DeliveryEstimate = normalizedEstimate,
                     Availability = NormalizeAvailability(availability),
                     IsActive = isActive,
                     IsDeleted = false,
@@ -168,6 +177,12 @@ namespace SD.ProjectName.WebApp.Services
                 .ToList();
 
             return tokens.Count == 0 ? null : string.Join(", ", tokens);
+        }
+
+        private static decimal NormalizeCost(decimal cost)
+        {
+            var normalized = Math.Max(0, cost);
+            return Math.Round(normalized, 2, MidpointRounding.AwayFromZero);
         }
     }
 }

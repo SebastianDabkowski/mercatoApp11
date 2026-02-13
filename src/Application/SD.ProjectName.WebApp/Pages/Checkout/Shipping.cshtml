@@ -37,17 +37,21 @@
                                         <div>
                                             <strong>@option.Label</strong>
                                             @if (option.Recommended)
-                                            {
-                                                <span class="badge bg-success ms-2">Recommended</span>
-                                            }
-                                        </div>
-                                        <strong>@option.Cost.ToString("C")</strong>
-                                    </div>
-                                    @if (!string.IsNullOrWhiteSpace(option.Description))
                                     {
-                                        <div class="text-muted small">@option.Description</div>
+                                        <span class="badge bg-success ms-2">Recommended</span>
                                     }
                                 </div>
+                                <strong>@option.Cost.ToString("C")</strong>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(option.DeliveryEstimate))
+                            {
+                                <div class="text-muted small">Est. delivery: @option.DeliveryEstimate</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(option.Description))
+                            {
+                                <div class="text-muted small">@option.Description</div>
+                            }
+                        </div>
                             </label>
                         }
                     </div>

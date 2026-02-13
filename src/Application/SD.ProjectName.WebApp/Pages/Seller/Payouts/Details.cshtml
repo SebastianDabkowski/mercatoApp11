@@ -180,7 +180,19 @@ else
                 <div class="card-header">Shipping &amp; buyer</div>
                 <div class="card-body">
                     <div class="fw-semibold">@Model.Payout.SubOrder.ShippingDetail.MethodLabel</div>
-                    <div class="text-muted small mb-2">@Model.Payout.SubOrder.ShippingDetail.Description</div>
+                    @{
+                        var estimate = string.IsNullOrWhiteSpace(Model.Payout.SubOrder.ShippingDetail.DeliveryEstimate)
+                            ? Model.Payout.SubOrder.ShippingDetail.Description
+                            : Model.Payout.SubOrder.ShippingDetail.DeliveryEstimate;
+                    }
+                    @if (!string.IsNullOrWhiteSpace(estimate))
+                    {
+                        <div class="text-muted small mb-2">Estimated: @estimate</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Model.Payout.SubOrder.ShippingDetail.Description) && !string.Equals(Model.Payout.SubOrder.ShippingDetail.Description, estimate, StringComparison.Ordinal))
+                    {
+                        <div class="text-muted small mb-2">@Model.Payout.SubOrder.ShippingDetail.Description</div>
+                    }
                     <div class="fw-semibold">Buyer</div>
                     <div>@Model.Payout.BuyerName</div>
                     <div class="text-muted small">@Model.Payout.BuyerEmail</div>
