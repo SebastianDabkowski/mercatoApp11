@@ -54,7 +54,9 @@ namespace SD.ProjectName.WebApp.Services
 
     public record OrderShippingDetail(string SellerId, string SellerName, string MethodId, string MethodLabel, decimal Cost, string? Description);
 
-    public record OrderDetailsPayload(List<OrderItemDetail> Items, List<OrderShippingDetail> Shipping, int TotalQuantity, decimal DiscountTotal = 0, string? PromoCode = null);
+    public record OrderSubOrder(string SubOrderNumber, string SellerId, string SellerName, decimal ItemsSubtotal, decimal Shipping, decimal DiscountTotal, decimal GrandTotal, int TotalQuantity, List<OrderItemDetail> Items, OrderShippingDetail ShippingDetail);
+
+    public record OrderDetailsPayload(List<OrderItemDetail> Items, List<OrderShippingDetail> Shipping, int TotalQuantity, decimal DiscountTotal = 0, string? PromoCode = null, List<OrderSubOrder> SubOrders = null!);
 
     public record OrderView(
         int Id,
@@ -71,9 +73,29 @@ namespace SD.ProjectName.WebApp.Services
         int TotalQuantity,
         DeliveryAddress Address,
         List<OrderItemDetail> Items,
-        List<OrderShippingDetail> Shipping);
+        List<OrderShippingDetail> Shipping,
+        List<OrderSubOrder> SubOrders);
 
     public record OrderSummaryView(int Id, string OrderNumber, DateTimeOffset CreatedOn, string Status, decimal GrandTotal, int TotalQuantity);
+
+    public record SellerOrderSummaryView(int Id, string OrderNumber, string SubOrderNumber, DateTimeOffset CreatedOn, string Status, decimal GrandTotal, int TotalQuantity, string SellerName);
+
+    public record SellerOrderView(
+        int Id,
+        string OrderNumber,
+        string SubOrderNumber,
+        string Status,
+        DateTimeOffset CreatedOn,
+        string PaymentMethodLabel,
+        string? PaymentReference,
+        decimal ItemsSubtotal,
+        decimal ShippingTotal,
+        decimal DiscountTotal,
+        decimal GrandTotal,
+        int TotalQuantity,
+        DeliveryAddress Address,
+        List<OrderItemDetail> Items,
+        OrderShippingDetail Shipping);
 
     public record OrderCreationResult(OrderRecord Order, bool Created);
 
@@ -127,10 +149,11 @@ namespace SD.ProjectName.WebApp.Services
                 }
             }
 
-            var details = BuildDetailsPayload(quote);
+            var orderNumber = GenerateOrderNumber();
+            var details = BuildDetailsPayload(orderNumber, quote);
             var order = new OrderRecord
             {
-                OrderNumber = GenerateOrderNumber(),
+                OrderNumber = orderNumber,
                 Status = OrderStatuses.Confirmed,
                 BuyerId = buyerId,
                 BuyerEmail = buyerEmail ?? string.Empty,
@@ -191,7 +214,8 @@ namespace SD.ProjectName.WebApp.Services
                 order.TotalQuantity,
                 address,
                 details.Items,
-                details.Shipping);
+                details.Shipping,
+                details.SubOrders);
         }
 
         public async Task<List<OrderSummaryView>> GetSummariesForBuyerAsync(string buyerId, CancellationToken cancellationToken = default)
@@ -203,14 +227,94 @@ namespace SD.ProjectName.WebApp.Services
                 .ToListAsync(cancellationToken);
         }
 
-        private OrderDetailsPayload BuildDetailsPayload(ShippingQuote quote)
+        public async Task<List<SellerOrderSummaryView>> GetSummariesForSellerAsync(string sellerId, CancellationToken cancellationToken = default)
+        {
+            var sellerToken = $"\"sellerId\":\"{sellerId}\"";
+            var candidates = await _dbContext.Orders.AsNoTracking()
+                .Where(o => o.DetailsJson.Contains(sellerToken))
+                .OrderByDescending(o => o.CreatedOn)
+                .ToListAsync(cancellationToken);
+
+            var summaries = new List<SellerOrderSummaryView>();
+            foreach (var order in candidates)
+            {
+                var details = DeserializeDetails(order.DetailsJson);
+                var match = details.SubOrders.FirstOrDefault(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
+                if (match == null)
+                {
+                    continue;
+                }
+
+                summaries.Add(new SellerOrderSummaryView(
+                    order.Id,
+                    order.OrderNumber,
+                    match.SubOrderNumber,
+                    order.CreatedOn,
+                    order.Status,
+                    match.GrandTotal,
+                    match.TotalQuantity,
+                    match.SellerName));
+            }
+
+            return summaries;
+        }
+
+        public async Task<SellerOrderView?> GetSellerOrderAsync(int id, string sellerId, CancellationToken cancellationToken = default)
+        {
+            var sellerToken = $"\"sellerId\":\"{sellerId}\"";
+            var order = await _dbContext.Orders.AsNoTracking()
+                .FirstOrDefaultAsync(o => o.Id == id && o.DetailsJson.Contains(sellerToken), cancellationToken);
+            if (order == null)
+            {
+                return null;
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            var subOrder = details.SubOrders.FirstOrDefault(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
+            if (subOrder == null)
+            {
+                return null;
+            }
+
+            var address = DeserializeAddress(order.DeliveryAddressJson);
+            return new SellerOrderView(
+                order.Id,
+                order.OrderNumber,
+                subOrder.SubOrderNumber,
+                order.Status,
+                order.CreatedOn,
+                string.IsNullOrWhiteSpace(order.PaymentMethodLabel) ? order.PaymentMethodId : order.PaymentMethodLabel,
+                order.PaymentReference,
+                subOrder.ItemsSubtotal,
+                subOrder.Shipping,
+                Math.Max(0, subOrder.DiscountTotal),
+                subOrder.GrandTotal,
+                subOrder.TotalQuantity,
+                address,
+                subOrder.Items,
+                subOrder.ShippingDetail);
+        }
+
+        private OrderDetailsPayload BuildDetailsPayload(string orderNumber, ShippingQuote quote)
         {
             var items = new List<OrderItemDetail>();
+            var shipping = new List<OrderShippingDetail>();
+            var subOrders = new List<OrderSubOrder>();
+
+            var sellerTotals = quote.Summary.SellerGroups
+                .Select(g => Math.Max(0, g.Subtotal + g.Shipping))
+                .ToList();
+            var remainingDiscount = Math.Max(0, quote.Summary.DiscountTotal);
+            var totalBeforeDiscount = sellerTotals.Sum();
+            var sellerIndex = 0;
+
             foreach (var group in quote.Summary.SellerGroups)
             {
+                sellerIndex++;
+                var groupItems = new List<OrderItemDetail>();
                 foreach (var item in group.Items)
                 {
-                    items.Add(new OrderItemDetail(
+                    var detail = new OrderItemDetail(
                         item.Product.Id,
                         item.Product.Title,
                         item.VariantLabel,
@@ -218,26 +322,71 @@ namespace SD.ProjectName.WebApp.Services
                         item.UnitPrice,
                         item.LineTotal,
                         group.SellerId,
-                        group.SellerName));
+                        group.SellerName);
+                    items.Add(detail);
+                    groupItems.Add(detail);
                 }
+
+                var ship = ResolveShippingDetail(quote, group.SellerId, group.SellerName, group.Shipping);
+                shipping.Add(ship);
+
+                var baseTotal = Math.Max(0, group.Subtotal + ship.Cost);
+                var discountShare = CalculateDiscountShare(remainingDiscount, baseTotal, totalBeforeDiscount, sellerIndex == quote.Summary.SellerGroups.Count);
+                remainingDiscount -= discountShare;
+                totalBeforeDiscount -= baseTotal;
+
+                subOrders.Add(new OrderSubOrder(
+                    $"{orderNumber}-{sellerIndex:00}",
+                    group.SellerId,
+                    group.SellerName,
+                    group.Subtotal,
+                    ship.Cost,
+                    discountShare,
+                    Math.Max(0, baseTotal - discountShare),
+                    groupItems.Sum(i => i.Quantity),
+                    groupItems,
+                    ship));
             }
 
-            var shipping = new List<OrderShippingDetail>();
-            foreach (var options in quote.SellerOptions)
+            return new OrderDetailsPayload(items, shipping, quote.Summary.TotalQuantity, quote.Summary.DiscountTotal, quote.Summary.AppliedPromoCode, subOrders);
+        }
+
+        private static OrderShippingDetail ResolveShippingDetail(ShippingQuote quote, string sellerId, string sellerName, decimal fallbackCost)
+        {
+            var options = quote.SellerOptions.FirstOrDefault(o => string.Equals(o.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
+            if (options == null || options.Options.Count == 0)
             {
-                var selected = quote.SelectedMethods.TryGetValue(options.SellerId, out var selection) ? selection : options.Options.FirstOrDefault()?.Id;
-                var match = options.Options.FirstOrDefault(o => string.Equals(o.Id, selected, StringComparison.OrdinalIgnoreCase))
-                    ?? options.Options.First();
-                shipping.Add(new OrderShippingDetail(
-                    options.SellerId,
-                    options.SellerName,
-                    match.Id,
-                    match.Label,
-                    match.Cost,
-                    match.Description));
+                return new OrderShippingDetail(sellerId, sellerName, "standard", "Standard", Math.Max(0, fallbackCost), null);
             }
 
-            return new OrderDetailsPayload(items, shipping, quote.Summary.TotalQuantity, quote.Summary.DiscountTotal, quote.Summary.AppliedPromoCode);
+            var selected = quote.SelectedMethods.TryGetValue(sellerId, out var selection) ? selection : options.Options.FirstOrDefault()?.Id;
+            var match = options.Options.FirstOrDefault(o => string.Equals(o.Id, selected, StringComparison.OrdinalIgnoreCase))
+                ?? options.Options.First();
+
+            return new OrderShippingDetail(
+                sellerId,
+                sellerName,
+                match.Id,
+                match.Label,
+                match.Cost,
+                match.Description);
+        }
+
+        private static decimal CalculateDiscountShare(decimal remainingDiscount, decimal baseTotal, decimal totalBeforeDiscount, bool isLastSeller)
+        {
+            if (remainingDiscount <= 0 || baseTotal <= 0 || totalBeforeDiscount <= 0)
+            {
+                return 0;
+            }
+
+            if (isLastSeller)
+            {
+                return Math.Min(remainingDiscount, baseTotal);
+            }
+
+            var proportional = remainingDiscount * (baseTotal / totalBeforeDiscount);
+            var rounded = Math.Round(proportional, 2, MidpointRounding.AwayFromZero);
+            return Math.Min(rounded, baseTotal);
         }
 
         private async Task SendConfirmationEmailAsync(OrderRecord order, DeliveryAddress address, OrderDetailsPayload details, CancellationToken cancellationToken)
@@ -319,14 +468,28 @@ namespace SD.ProjectName.WebApp.Services
                 var details = JsonSerializer.Deserialize<OrderDetailsPayload>(payload, _serializerOptions);
                 if (details != null)
                 {
-                    return details;
+                    return NormalizeDetails(details);
                 }
             }
             catch
             {
             }
 
-            return new OrderDetailsPayload(new List<OrderItemDetail>(), new List<OrderShippingDetail>(), 0, 0, null);
+            return new OrderDetailsPayload(new List<OrderItemDetail>(), new List<OrderShippingDetail>(), 0, 0, null, new List<OrderSubOrder>());
+        }
+
+        private static OrderDetailsPayload NormalizeDetails(OrderDetailsPayload details)
+        {
+            var normalizedItems = details.Items ?? new List<OrderItemDetail>();
+            var normalizedShipping = details.Shipping ?? new List<OrderShippingDetail>();
+            var normalizedSubOrders = details.SubOrders ?? new List<OrderSubOrder>();
+
+            return details with
+            {
+                Items = normalizedItems,
+                Shipping = normalizedShipping,
+                SubOrders = normalizedSubOrders
+            };
         }
 
         private static string GenerateOrderNumber()

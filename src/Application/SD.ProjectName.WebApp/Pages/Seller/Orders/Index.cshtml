@@ -1,0 +1,47 @@
+@page
+@model SD.ProjectName.WebApp.Pages.Seller.Orders.IndexModel
+@{
+    ViewData["Title"] = "Orders";
+}
+
+<h1 class="mb-3">Orders</h1>
+<p class="text-muted">Each entry represents your sub-order for a buyer’s purchase.</p>
+
+@if (Model.Orders.Count == 0)
+{
+    <div class="alert alert-info">No orders yet. New orders will appear here once buyers purchase your products.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">Sub-order</th>
+                    <th scope="col">Parent order</th>
+                    <th scope="col">Placed</th>
+                    <th scope="col">Status</th>
+                    <th scope="col" class="text-end">Total</th>
+                    <th scope="col" class="text-end">Qty</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var order in Model.Orders)
+                {
+                    <tr>
+                        <td class="fw-semibold">@order.SubOrderNumber</td>
+                        <td>@order.OrderNumber</td>
+                        <td>@order.CreatedOn.ToLocalTime().ToString("g")</td>
+                        <td>@order.Status</td>
+                        <td class="text-end">@order.GrandTotal.ToString("C")</td>
+                        <td class="text-end">@order.TotalQuantity</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary" asp-page="/Seller/Orders/Details" asp-route-orderId="@order.Id">Details</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
