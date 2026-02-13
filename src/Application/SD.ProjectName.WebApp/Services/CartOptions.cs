@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
@@ -25,6 +26,13 @@ namespace SD.ProjectName.WebApp.Services
 
         [Range(0, 1)]
         public decimal PlatformCommissionRate { get; set; } = 0.1m;
+
+        [Range(2, 6)]
+        public int CommissionPrecision { get; set; } = 4;
+
+        public Dictionary<string, decimal> SellerCommissionOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public Dictionary<string, decimal> CategoryCommissionRates { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
         public List<CartShippingRule> ShippingRules { get; set; } = new();
     }

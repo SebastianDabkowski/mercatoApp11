@@ -264,6 +264,32 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task UpdateSubOrderStatusAsync_ShouldRecalculateCommissionOnPartialRefund()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var cartOptions = new CartOptions { PlatformCommissionRate = 0.1m, CommissionPrecision = 4 };
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, null, cartOptions);
+            var quote = BuildMultiItemQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-commission-refund", "sig-commission-refund");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-commission-refund", "commissionrefund@example.com", "Commission Refund", "Card", "card");
+            var initial = await service.GetOrderAsync(result.Order.Id, "buyer-commission-refund");
+            var initialAllocation = Assert.Single(initial!.Escrow);
+            Assert.Equal(2.8m, initialAllocation.CommissionAmount);
+            Assert.Equal(30.2m, initialAllocation.SellerPayoutAmount);
+
+            var refund = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Refunded, null, null, null, new[] { 2 });
+            Assert.True(refund.Success);
+
+            var refreshed = await service.GetOrderAsync(result.Order.Id, "buyer-commission-refund");
+            var allocation = Assert.Single(refreshed!.Escrow);
+            Assert.Equal(16, allocation.ReleasedToBuyer);
+            Assert.Equal(1.2m, allocation.CommissionAmount);
+            Assert.Equal(15.8m, allocation.SellerPayoutAmount);
+        }
+
+        [Fact]
         public async Task UpdateSubOrderStatusAsync_ShouldMarkEscrowPayoutEligibleFromConfig()
         {
             await using var context = CreateContext();

@@ -7,10 +7,12 @@ namespace SD.ProjectName.WebApp.Services
     public class CartTotalsCalculator
     {
         private readonly CartOptions _options;
+        private readonly CommissionCalculator _commissionCalculator;
 
         public CartTotalsCalculator(CartOptions options)
         {
             _options = options;
+            _commissionCalculator = new CommissionCalculator(options);
         }
 
         public CartSummary Calculate(IReadOnlyCollection<CartSellerGroup> sellerGroups)
@@ -41,14 +43,17 @@ namespace SD.ProjectName.WebApp.Services
                 itemsSubtotal += group.Subtotal;
                 shippingTotal += shipping;
 
-                var commission = CalculateCommission(group.Subtotal);
-                var payout = Math.Max(0, group.Subtotal + shipping - commission);
+                var commission = _commissionCalculator.CalculateForCartGroup(group);
+                var payout = _commissionCalculator.Round(Math.Max(0, group.Subtotal + shipping - commission));
                 settlements.Add(new CartSellerSettlement(group.SellerId, group.Subtotal, shipping, commission, payout));
             }
 
             var grandTotal = itemsSubtotal + shippingTotal;
             var totalQuantity = sellerGroups.Sum(g => g.Items.Sum(i => i.Quantity));
-            var settlementSummary = new CartSettlementSummary(settlements, settlements.Sum(s => s.Commission), settlements.Sum(s => s.Payout));
+            var settlementSummary = new CartSettlementSummary(
+                settlements,
+                _commissionCalculator.Round(settlements.Sum(s => s.Commission)),
+                _commissionCalculator.Round(settlements.Sum(s => s.Payout)));
 
             return new CartSummary(calculatedGroups, itemsSubtotal, shippingTotal, grandTotal, totalQuantity, settlementSummary);
         }
@@ -65,22 +70,6 @@ namespace SD.ProjectName.WebApp.Services
             var perItemRate = Math.Max(0, rule.PerItemRate);
             var normalizedQuantity = Math.Max(0, quantity);
             return baseRate + perItemRate * normalizedQuantity;
-        }
-
-        private decimal CalculateCommission(decimal subtotal)
-        {
-            var rate = _options.PlatformCommissionRate;
-            if (rate < 0)
-            {
-                rate = 0;
-            }
-
-            if (rate > 1)
-            {
-                rate = 1;
-            }
-            var commission = subtotal * rate;
-            return Math.Round(commission, 2, MidpointRounding.AwayFromZero);
         }
 
         private CartShippingRule ResolveShippingRule(string sellerId)

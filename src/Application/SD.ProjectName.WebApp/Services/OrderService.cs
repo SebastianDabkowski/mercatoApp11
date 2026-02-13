@@ -164,7 +164,7 @@ namespace SD.ProjectName.WebApp.Services
         public string DetailsJson { get; set; } = string.Empty;
     }
 
-    public record OrderItemDetail(int ProductId, string Name, string Variant, int Quantity, decimal UnitPrice, decimal LineTotal, string SellerId, string SellerName, string Status = OrderStatuses.Paid);
+    public record OrderItemDetail(int ProductId, string Name, string Variant, int Quantity, decimal UnitPrice, decimal LineTotal, string SellerId, string SellerName, string Status = OrderStatuses.Paid, string Category = "", decimal? CommissionRate = null);
 
     public record OrderShippingDetail(string SellerId, string SellerName, string MethodId, string MethodLabel, decimal Cost, string? Description);
 
@@ -323,17 +323,21 @@ namespace SD.ProjectName.WebApp.Services
         private readonly IEmailSender _emailSender;
         private readonly ILogger<OrderService> _logger;
         private readonly EscrowOptions _escrowOptions;
+        private readonly CartOptions _cartOptions;
+        private readonly CommissionCalculator _commissionCalculator;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        public OrderService(ApplicationDbContext dbContext, IEmailSender emailSender, ILogger<OrderService> logger, EscrowOptions? escrowOptions = null)
+        public OrderService(ApplicationDbContext dbContext, IEmailSender emailSender, ILogger<OrderService> logger, EscrowOptions? escrowOptions = null, CartOptions? cartOptions = null)
         {
             _dbContext = dbContext;
             _emailSender = emailSender;
             _logger = logger;
             _escrowOptions = escrowOptions ?? new EscrowOptions();
+            _cartOptions = cartOptions ?? new CartOptions();
+            _commissionCalculator = new CommissionCalculator(_cartOptions);
         }
 
         public async Task<OrderCreationResult> EnsureOrderAsync(
@@ -466,6 +470,18 @@ namespace SD.ProjectName.WebApp.Services
             {
                 updatedDetails = ApplyStatusToDetails(updatedDetails, normalizedInitialStatus);
                 order.Status = CalculateOrderStatus(updatedDetails.SubOrders, normalizedInitialStatus);
+                hasChanges = true;
+            }
+
+            if (string.Equals(normalizedInitialStatus, OrderStatuses.Paid, StringComparison.OrdinalIgnoreCase)
+                && (updatedDetails.Escrow == null || updatedDetails.Escrow.Count == 0)
+                && updatedDetails.SubOrders.Count > 0)
+            {
+                var reference = !string.IsNullOrWhiteSpace(paymentReference) ? paymentReference : order.PaymentReference;
+                updatedDetails = updatedDetails with
+                {
+                    Escrow = BuildEscrowAllocations(updatedDetails.SubOrders, normalizedInitialStatus, reference)
+                };
                 hasChanges = true;
             }
 
@@ -1123,6 +1139,7 @@ namespace SD.ProjectName.WebApp.Services
                 var groupItems = new List<OrderItemDetail>();
                 foreach (var item in group.Items)
                 {
+                    var rate = _commissionCalculator.ResolveRate(group.SellerId, item.Product.Category);
                     var detail = new OrderItemDetail(
                         item.Product.Id,
                         item.Product.Title,
@@ -1132,7 +1149,9 @@ namespace SD.ProjectName.WebApp.Services
                         item.LineTotal,
                         group.SellerId,
                         group.SellerName,
-                        initialStatus);
+                        initialStatus,
+                        item.Product.Category,
+                        rate);
                     items.Add(detail);
                     groupItems.Add(detail);
                 }
@@ -1159,7 +1178,7 @@ namespace SD.ProjectName.WebApp.Services
                     initialStatus));
             }
 
-            var escrow = BuildEscrowAllocations(quote, subOrders, initialStatus, paymentReference);
+            var escrow = BuildEscrowAllocations(subOrders, initialStatus, paymentReference);
             return new OrderDetailsPayload(
                 items,
                 shipping,
@@ -1211,7 +1230,7 @@ namespace SD.ProjectName.WebApp.Services
             return Math.Min(rounded, baseTotal);
         }
 
-        private List<EscrowAllocation> BuildEscrowAllocations(ShippingQuote quote, List<OrderSubOrder> subOrders, string initialStatus, string? paymentReference)
+        private List<EscrowAllocation> BuildEscrowAllocations(List<OrderSubOrder> subOrders, string initialStatus, string? paymentReference)
         {
             var allocations = new List<EscrowAllocation>();
             if (!string.Equals(initialStatus, OrderStatuses.Paid, StringComparison.OrdinalIgnoreCase))
@@ -1219,17 +1238,13 @@ namespace SD.ProjectName.WebApp.Services
                 return allocations;
             }
 
-            var settlementLookup = quote?.Summary?.Settlement?.Sellers?
-                .ToDictionary(s => s.SellerId, StringComparer.OrdinalIgnoreCase)
-                ?? new Dictionary<string, CartSellerSettlement>(StringComparer.OrdinalIgnoreCase);
             var now = DateTimeOffset.UtcNow;
 
             foreach (var subOrder in subOrders)
             {
-                settlementLookup.TryGetValue(subOrder.SellerId, out var settlement);
                 var holdAmount = Math.Max(0, subOrder.GrandTotal);
-                var commission = Math.Max(0, settlement?.Commission ?? 0);
-                var payout = settlement?.Payout ?? Math.Max(0, holdAmount - commission);
+                var commission = _commissionCalculator.CalculateForOrderItems(subOrder.Items);
+                var payout = _commissionCalculator.Round(Math.Max(0, holdAmount - commission));
                 var payoutEligible = IsPayoutEligible(subOrder.Status);
                 var ledger = new List<EscrowLedgerEntry>
                 {
@@ -1281,6 +1296,16 @@ namespace SD.ProjectName.WebApp.Services
             var ledger = allocation.Ledger ?? new List<EscrowLedgerEntry>();
             var now = DateTimeOffset.UtcNow;
             var payoutEligible = allocation.PayoutEligible;
+            var holdAmount = Math.Max(0, updatedSubOrder.GrandTotal);
+            var refundAmount = Math.Max(0, updatedSubOrder.RefundedAmount);
+            if (refundAmount <= 0 && ShouldReleaseToBuyer(updatedSubOrder.Status))
+            {
+                refundAmount = holdAmount;
+            }
+
+            refundAmount = Math.Min(refundAmount, holdAmount);
+            var commission = _commissionCalculator.CalculateForOrderItems(updatedSubOrder.Items);
+            var releaseDelta = Math.Max(0, refundAmount - allocation.ReleasedToBuyer);
 
             if (IsPayoutEligible(updatedSubOrder.Status) && !allocation.PayoutEligible)
             {
@@ -1289,35 +1314,39 @@ namespace SD.ProjectName.WebApp.Services
                     updatedSubOrder.SubOrderNumber,
                     updatedSubOrder.SellerId,
                     EscrowEntryTypes.PayoutEligible,
-                    allocation.SellerPayoutAmount,
+                    Math.Max(0, holdAmount - refundAmount - commission),
                     $"Status {OrderStatuses.Normalize(updatedSubOrder.Status)} allows payout",
                     now,
                     paymentReference));
             }
 
-            if (ShouldReleaseToBuyer(updatedSubOrder.Status))
+            if (releaseDelta > 0)
             {
-                var remaining = Math.Max(0, allocation.HeldAmount - allocation.ReleasedToBuyer - allocation.ReleasedToSeller);
-                if (remaining > 0)
+                ledger.Add(new EscrowLedgerEntry(
+                    updatedSubOrder.SubOrderNumber,
+                    updatedSubOrder.SellerId,
+                    EscrowEntryTypes.ReleaseToBuyer,
+                    releaseDelta,
+                    $"Released after {OrderStatuses.Normalize(updatedSubOrder.Status)}",
+                    now,
+                    paymentReference));
+                allocation = allocation with
                 {
-                    ledger.Add(new EscrowLedgerEntry(
-                        updatedSubOrder.SubOrderNumber,
-                        updatedSubOrder.SellerId,
-                        EscrowEntryTypes.ReleaseToBuyer,
-                        remaining,
-                        $"Released after {OrderStatuses.Normalize(updatedSubOrder.Status)}",
-                        now,
-                        paymentReference));
-                    allocation = allocation with
-                    {
-                        ReleasedToBuyer = allocation.ReleasedToBuyer + remaining,
-                        PayoutEligible = false
-                    };
-                }
+                    ReleasedToBuyer = allocation.ReleasedToBuyer + releaseDelta
+                };
+            }
+
+            var sellerPayout = _commissionCalculator.Round(Math.Max(0, holdAmount - allocation.ReleasedToBuyer - commission));
+            if (sellerPayout <= 0)
+            {
+                payoutEligible = false;
             }
 
             normalized[index] = allocation with
             {
+                HeldAmount = holdAmount,
+                CommissionAmount = commission,
+                SellerPayoutAmount = sellerPayout,
                 Ledger = ledger,
                 PayoutEligible = payoutEligible
             };
@@ -1379,8 +1408,8 @@ namespace SD.ProjectName.WebApp.Services
                     SubOrderNumber = string.IsNullOrWhiteSpace(allocation.SubOrderNumber) ? subOrder.SubOrderNumber : allocation.SubOrderNumber,
                     SellerId = string.IsNullOrWhiteSpace(allocation.SellerId) ? subOrder.SellerId : allocation.SellerId,
                     HeldAmount = Math.Max(0, allocation.HeldAmount),
-                    CommissionAmount = Math.Max(0, allocation.CommissionAmount),
-                    SellerPayoutAmount = Math.Max(0, allocation.SellerPayoutAmount),
+                    CommissionAmount = _commissionCalculator.Round(Math.Max(0, allocation.CommissionAmount)),
+                    SellerPayoutAmount = _commissionCalculator.Round(Math.Max(0, allocation.SellerPayoutAmount)),
                     ReleasedToBuyer = Math.Max(0, allocation.ReleasedToBuyer),
                     ReleasedToSeller = Math.Max(0, allocation.ReleasedToSeller),
                     PayoutEligible = allocation.PayoutEligible,
@@ -1698,7 +1727,20 @@ namespace SD.ProjectName.WebApp.Services
                 normalizedStatus = OrderStatuses.Normalize(fallbackStatus);
             }
 
-            return item with { Status = string.IsNullOrWhiteSpace(normalizedStatus) ? OrderStatuses.Paid : normalizedStatus };
+            var normalizedCategory = string.IsNullOrWhiteSpace(item.Category) ? string.Empty : item.Category.Trim();
+            decimal? rate = item.CommissionRate;
+            if (rate.HasValue)
+            {
+                var clamped = rate.Value < 0 ? 0 : rate.Value;
+                rate = clamped > 1 ? 1 : clamped;
+            }
+
+            return item with
+            {
+                Status = string.IsNullOrWhiteSpace(normalizedStatus) ? OrderStatuses.Paid : normalizedStatus,
+                Category = normalizedCategory,
+                CommissionRate = rate
+            };
         }
 
         private static string CalculateSubOrderStatusFromItems(List<OrderItemDetail> items, string fallbackStatus)
