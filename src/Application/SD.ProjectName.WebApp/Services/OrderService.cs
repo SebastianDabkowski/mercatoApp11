@@ -1033,6 +1033,10 @@ namespace SD.ProjectName.WebApp.Services
                 && !string.Equals(order.Status, OrderStatuses.Failed, StringComparison.OrdinalIgnoreCase))
             {
                 await SendConfirmationEmailAsync(order, address, details, cancellationToken);
+                foreach (var subOrder in details.SubOrders)
+                {
+                    await SendSellerNewOrderEmailAsync(order, subOrder, cancellationToken);
+                }
             }
 
             return new OrderCreationResult(order, true);
@@ -2109,7 +2113,9 @@ namespace SD.ProjectName.WebApp.Services
             details.SubOrders[subOrderIndex] = subOrder with { Return = request };
             order.DetailsJson = JsonSerializer.Serialize(details, _serializerOptions);
 
+            var updatedSubOrder = details.SubOrders[subOrderIndex];
             await _dbContext.SaveChangesAsync(cancellationToken);
+            await SendReturnCreatedEmailAsync(order, updatedSubOrder, request, cancellationToken);
             return new ReturnRequestResult(true, null, request);
         }
 
@@ -4386,6 +4392,7 @@ namespace SD.ProjectName.WebApp.Services
             decimal processedAmount = 0;
             string? errorRef = null;
             var runStatus = PayoutStatuses.Scheduled;
+            var processedPayouts = new List<(OrderRecord Order, OrderSubOrder SubOrder, EscrowAllocation Allocation, decimal ReleasedAmount)>();
 
             foreach (var order in orders)
             {
@@ -4402,6 +4409,9 @@ namespace SD.ProjectName.WebApp.Services
                         continue;
                     }
 
+                    var subOrder = details.SubOrders.FirstOrDefault(s =>
+                        string.Equals(s.SubOrderNumber, allocation.SubOrderNumber, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(s.SellerId, allocation.SellerId, StringComparison.OrdinalIgnoreCase));
                     var payoutStatus = PayoutStatuses.Normalize(allocation.PayoutStatus);
                     var remaining = Math.Max(0, allocation.SellerPayoutAmount - allocation.ReleasedToSeller);
                     if (!allocation.PayoutEligible || remaining <= 0)
@@ -4461,14 +4471,20 @@ namespace SD.ProjectName.WebApp.Services
 
                     processed++;
                     processedAmount += remaining;
-                    updatedEscrow.Add(allocation with
+                    var updatedAllocation = allocation with
                     {
                         ReleasedToSeller = allocation.ReleasedToSeller + remaining,
                         PayoutStatus = PayoutStatuses.Paid,
                         PayoutErrorReference = null,
                         PayoutSchedule = normalizedSchedule,
                         Ledger = ledger
-                    });
+                    };
+                    updatedEscrow.Add(updatedAllocation);
+                    if (subOrder != null)
+                    {
+                        processedPayouts.Add((order, subOrder, updatedAllocation, remaining));
+                    }
+
                     changed = true;
                 }
 
@@ -4490,6 +4506,11 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
+            foreach (var payout in processedPayouts)
+            {
+                await SendSellerPayoutEmailAsync(payout.Order, payout.SubOrder, payout.Allocation, payout.ReleasedAmount, cancellationToken);
+            }
+
             return new PayoutRunResult(errorRef == null, runStatus, processedAmount, errorRef);
         }
 
@@ -5696,6 +5717,103 @@ namespace SD.ProjectName.WebApp.Services
             }
         }
 
+        private string BuildLoginLink(string path)
+        {
+            var normalizedPath = string.IsNullOrWhiteSpace(path) ? "/Seller/Orders" : (path.StartsWith("/") ? path : $"/{path}");
+            var encoded = Uri.EscapeDataString(normalizedPath);
+            return $"/Identity/Account/Login?returnUrl={encoded}";
+        }
+
+        private async Task SendSellerEmailAsync(string? to, string subject, string bodyHtml, string category, CultureInfo? culture = null)
+        {
+            if (string.IsNullOrWhiteSpace(to))
+            {
+                return;
+            }
+
+            var wrappedBody = EmailTemplateBuilder.Wrap(subject, bodyHtml, _emailOptions, culture);
+            _logger.LogInformation("Sending {Category} email to seller {Recipient} from {Sender}", category, to, _emailOptions.FromAddress);
+            try
+            {
+                await _emailSender.SendEmailAsync(to, subject, wrappedBody);
+                _logger.LogInformation("{Category} email sent to seller {Recipient}", category, to);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send {Category} email to seller {Recipient}", category, to);
+            }
+        }
+
+        private async Task SendSellerNewOrderEmailAsync(OrderRecord order, OrderSubOrder subOrder, CancellationToken cancellationToken)
+        {
+            var sellerEmail = await GetSellerEmailAsync(subOrder.SellerId, cancellationToken);
+            if (string.IsNullOrWhiteSpace(sellerEmail))
+            {
+                return;
+            }
+
+            var culture = CultureInfo.CurrentCulture;
+            var builder = new StringBuilder();
+            builder.Append($"<p>You received a new order {order.OrderNumber}.</p>");
+            builder.Append($"<p>Sub-order: {subOrder.SubOrderNumber} · Total: {EmailTemplateBuilder.FormatCurrency(subOrder.GrandTotal, culture)}.</p>");
+            if (!string.IsNullOrWhiteSpace(order.BuyerName) || !string.IsNullOrWhiteSpace(order.BuyerEmail))
+            {
+                var buyerLabel = string.IsNullOrWhiteSpace(order.BuyerName) ? order.BuyerEmail : $"{order.BuyerName} ({order.BuyerEmail})";
+                builder.Append($"<p>Buyer: {buyerLabel}</p>");
+            }
+
+            var link = BuildLoginLink($"/Seller/Orders/Details/{order.Id}");
+            builder.Append($"<p><a href=\"{link}\">View order</a></p>");
+
+            await SendSellerEmailAsync(sellerEmail, $"New order {subOrder.SubOrderNumber}", builder.ToString(), "seller_order", culture);
+        }
+
+        private async Task SendReturnCreatedEmailAsync(OrderRecord order, OrderSubOrder subOrder, ReturnRequest request, CancellationToken cancellationToken)
+        {
+            var sellerEmail = await GetSellerEmailAsync(subOrder.SellerId, cancellationToken);
+            if (string.IsNullOrWhiteSpace(sellerEmail))
+            {
+                return;
+            }
+
+            var caseId = string.IsNullOrWhiteSpace(request.CaseId) ? subOrder.SubOrderNumber : request.CaseId;
+            var builder = new StringBuilder();
+            builder.Append($"<p>A {ReturnRequestTypes.Normalize(request.Type)} was opened for sub-order {subOrder.SubOrderNumber} on order {order.OrderNumber}.</p>");
+            builder.Append($"<p>Reason: {request.Reason}</p>");
+            if (!string.IsNullOrWhiteSpace(request.Description))
+            {
+                builder.Append($"<p>Details: {request.Description}</p>");
+            }
+
+            var link = BuildLoginLink($"/Seller/Cases/Details/{caseId}");
+            builder.Append($"<p><a href=\"{link}\">Review case</a></p>");
+
+            await SendSellerEmailAsync(sellerEmail, $"New case {caseId}", builder.ToString(), "seller_case");
+        }
+
+        private async Task SendSellerPayoutEmailAsync(OrderRecord order, OrderSubOrder subOrder, EscrowAllocation allocation, decimal releasedAmount, CancellationToken cancellationToken)
+        {
+            if (releasedAmount <= 0)
+            {
+                return;
+            }
+
+            var sellerEmail = await GetSellerEmailAsync(subOrder.SellerId, cancellationToken);
+            if (string.IsNullOrWhiteSpace(sellerEmail))
+            {
+                return;
+            }
+
+            var culture = CultureInfo.CurrentCulture;
+            var builder = new StringBuilder();
+            builder.Append($"<p>Payout processed for sub-order {subOrder.SubOrderNumber} on order {order.OrderNumber}.</p>");
+            builder.Append($"<p>Amount: {EmailTemplateBuilder.FormatCurrency(releasedAmount, culture)}</p>");
+            var link = BuildLoginLink($"/Seller/Payouts/Details/{order.Id}");
+            builder.Append($"<p><a href=\"{link}\">View payout</a></p>");
+
+            await SendSellerEmailAsync(sellerEmail, $"Payout processed for {subOrder.SubOrderNumber}", builder.ToString(), "seller_payout", culture);
+        }
+
         private async Task SendRefundEmailAsync(OrderRecord order, decimal refundedAmount, string? message)
         {
             if (refundedAmount <= 0 || string.IsNullOrWhiteSpace(order.BuyerEmail))
@@ -5825,7 +5943,9 @@ namespace SD.ProjectName.WebApp.Services
                 }
 
                 builder.Append($"<p>Sub-order: {subOrder.SubOrderNumber}</p>");
-                await _emailSender.SendEmailAsync(order.BuyerEmail, $"Case update {caseId}", builder.ToString());
+                var buyerLink = BuildLoginLink($"/Buyer/Cases/Details/{caseId}");
+                builder.Append($"<p><a href=\"{buyerLink}\">View case</a></p>");
+                await SendBuyerEmailAsync(order.BuyerEmail, $"Case update {caseId}", builder.ToString(), "case_update", CultureInfo.CurrentCulture);
 
                 if (!string.IsNullOrWhiteSpace(sellerEmail))
                 {
@@ -5837,7 +5957,9 @@ namespace SD.ProjectName.WebApp.Services
                     }
 
                     sellerBuilder.Append($"<p>Sub-order: {subOrder.SubOrderNumber}</p>");
-                    await _emailSender.SendEmailAsync(sellerEmail, $"Case update {caseId}", sellerBuilder.ToString());
+                    var sellerLink = BuildLoginLink($"/Seller/Cases/Details/{caseId}");
+                    sellerBuilder.Append($"<p><a href=\"{sellerLink}\">Review case</a></p>");
+                    await SendSellerEmailAsync(sellerEmail, $"Case update {caseId}", sellerBuilder.ToString(), "seller_case_update", CultureInfo.CurrentCulture);
                 }
             }
             catch (Exception ex)
