@@ -77,7 +77,9 @@ else
                     {
                         foreach (var sub in order.SubOrders)
                         {
-                            var trackingLink = Model.BuildTrackingLink(sub.TrackingNumber, sub.TrackingCarrier);
+                            var trackingLink = string.IsNullOrWhiteSpace(sub.TrackingUrl)
+                                ? Model.BuildTrackingLink(sub.TrackingNumber, sub.TrackingCarrier)
+                                : sub.TrackingUrl;
                             <div class="border rounded p-3 mb-3">
                                 <div class="d-flex justify-content-between align-items-start mb-2">
                                     <div>
@@ -129,19 +131,19 @@ else
                                         {
                                             <div class="text-muted small">@sub.ShippingDetail.Description</div>
                                         }
-                                        @if (!string.IsNullOrWhiteSpace(sub.TrackingNumber))
+                                        @if (!string.IsNullOrWhiteSpace(sub.TrackingNumber) || !string.IsNullOrWhiteSpace(trackingLink))
                                         {
                                             if (!string.IsNullOrWhiteSpace(trackingLink))
                                             {
                                                 <div class="small">
-                                                    <a href="@trackingLink" target="_blank" rel="noopener">Tracking: @sub.TrackingNumber</a>
+                                                    <a href="@trackingLink" target="_blank" rel="noopener">Tracking: @(string.IsNullOrWhiteSpace(sub.TrackingNumber) ? "View shipment" : sub.TrackingNumber)</a>
                                                     @if (!string.IsNullOrWhiteSpace(sub.TrackingCarrier))
                                                     {
                                                         <span class="text-muted"> • @sub.TrackingCarrier</span>
                                                     }
                                                 </div>
                                             }
-                                            else
+                                            else if (!string.IsNullOrWhiteSpace(sub.TrackingNumber))
                                             {
                                                 <div class="text-muted small">
                                                     Tracking: @sub.TrackingNumber

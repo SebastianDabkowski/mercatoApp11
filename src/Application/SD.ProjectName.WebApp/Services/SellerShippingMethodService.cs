@@ -7,11 +7,13 @@ namespace SD.ProjectName.WebApp.Services
     {
         private readonly ApplicationDbContext _dbContext;
         private readonly TimeProvider _clock;
+        private readonly ShippingProviderService _shippingProviderService;
 
-        public SellerShippingMethodService(ApplicationDbContext dbContext, TimeProvider clock)
+        public SellerShippingMethodService(ApplicationDbContext dbContext, TimeProvider clock, ShippingProviderService shippingProviderService)
         {
             _dbContext = dbContext;
             _clock = clock;
+            _shippingProviderService = shippingProviderService;
         }
 
         public async Task<List<SellerShippingMethod>> GetForStoreAsync(string storeOwnerId, CancellationToken cancellationToken = default)
@@ -42,6 +44,10 @@ namespace SD.ProjectName.WebApp.Services
             var methods = await _dbContext.SellerShippingMethods
                 .Where(m => ids.Contains(m.StoreOwnerId) && !m.IsDeleted && m.IsActive)
                 .ToListAsync(cancellationToken);
+
+            methods = methods
+                .Where(IsMethodEnabled)
+                .ToList();
 
             var grouped = new Dictionary<string, List<SellerShippingMethod>>(StringComparer.OrdinalIgnoreCase);
             foreach (var group in methods.GroupBy(m => m.StoreOwnerId, StringComparer.OrdinalIgnoreCase))
@@ -76,6 +82,8 @@ namespace SD.ProjectName.WebApp.Services
             string? deliveryEstimate,
             string? availability,
             bool isActive,
+            string? providerId = null,
+            string? providerServiceCode = null,
             CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(storeOwnerId))
@@ -88,6 +96,15 @@ namespace SD.ProjectName.WebApp.Services
             var normalizedCost = NormalizeCost(baseCost);
             var normalizedDescription = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
             var normalizedEstimate = string.IsNullOrWhiteSpace(deliveryEstimate) ? null : deliveryEstimate.Trim();
+            var normalizedProviderId = NormalizeProvider(providerId);
+            var normalizedServiceCode = NormalizeProvider(providerServiceCode);
+            var providerService = normalizedProviderId == null || normalizedServiceCode == null
+                ? null
+                : _shippingProviderService.GetService(normalizedProviderId, normalizedServiceCode);
+            if (normalizedProviderId != null && normalizedServiceCode != null && providerService == null)
+            {
+                return null;
+            }
 
             if (id.HasValue && id.Value != Guid.Empty)
             {
@@ -99,6 +116,8 @@ namespace SD.ProjectName.WebApp.Services
                 method.Availability = NormalizeAvailability(availability);
                 method.IsActive = isActive && !method.IsDeleted;
                 method.UpdatedOn = now;
+                method.ProviderId = normalizedProviderId;
+                method.ProviderServiceCode = providerService?.Code ?? normalizedServiceCode;
             }
             else
             {
@@ -111,6 +130,8 @@ namespace SD.ProjectName.WebApp.Services
                     BaseCost = normalizedCost,
                     DeliveryEstimate = normalizedEstimate,
                     Availability = NormalizeAvailability(availability),
+                    ProviderId = normalizedProviderId,
+                    ProviderServiceCode = providerService?.Code ?? normalizedServiceCode,
                     IsActive = isActive,
                     IsDeleted = false,
                     CreatedOn = now,
@@ -161,6 +182,21 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             return false;
+        }
+
+        private bool IsMethodEnabled(SellerShippingMethod method)
+        {
+            if (string.IsNullOrWhiteSpace(method.ProviderId))
+            {
+                return true;
+            }
+
+            return _shippingProviderService.GetService(method.ProviderId, method.ProviderServiceCode) != null;
+        }
+
+        private static string? NormalizeProvider(string? provider)
+        {
+            return string.IsNullOrWhiteSpace(provider) ? null : provider.Trim();
         }
 
         private static string? NormalizeAvailability(string? availability)

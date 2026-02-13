@@ -26,6 +26,20 @@
                 <span asp-validation-for="Input.Name" class="text-danger"></span>
             </div>
             <div class="col-md-6">
+                <label asp-for="Input.ProviderServiceKey" class="form-label"></label>
+                <select asp-for="Input.ProviderServiceKey" class="form-select">
+                    <option value="">Custom / no provider integration</option>
+                    @foreach (var service in Model.ProviderServices)
+                    {
+                        var optionValue = $"{service.ProviderId}:{service.ServiceCode}";
+                        var optionLabel = $"{service.ProviderName} — {service.ServiceName}";
+                        <option value="@optionValue">@optionLabel</option>
+                    }
+                </select>
+                <span class="form-text">Choose an integrated provider to auto-create shipments and tracking.</span>
+                <span asp-validation-for="Input.ProviderServiceKey" class="text-danger"></span>
+            </div>
+            <div class="col-md-6">
                 <label asp-for="Input.BaseCost" class="form-label"></label>
                 <div class="input-group">
                     <span class="input-group-text">$</span>
@@ -106,6 +120,15 @@
                                     @if (!string.IsNullOrWhiteSpace(method.DeliveryEstimate))
                                     {
                                         <div class="text-muted small">Est. delivery: @method.DeliveryEstimate</div>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(method.ProviderId))
+                                    {
+                                        var provider = Model.ProviderServices.FirstOrDefault(p =>
+                                            p.ProviderId.Equals(method.ProviderId, StringComparison.OrdinalIgnoreCase)
+                                            && p.ServiceCode.Equals(method.ProviderServiceCode ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+                                        var providerLabel = provider?.ProviderName ?? method.ProviderId;
+                                        var serviceLabel = provider?.ServiceName ?? method.ProviderServiceCode;
+                                        <div class="text-primary small">Integrated: @providerLabel (@serviceLabel)</div>
                                     }
                                 </td>
                                 <td>@(string.IsNullOrWhiteSpace(method.Availability) ? "All regions" : method.Availability)</td>
