@@ -106,6 +106,16 @@ else
                 <div asp-validation-summary="All" class="text-danger" role="alert"></div>
 
                 <div class="mb-3">
+                    <label asp-for="Payout.PayoutSchedule" class="form-label"></label>
+                    <select asp-for="Payout.PayoutSchedule" class="form-select">
+                        <option value="Weekly">Weekly</option>
+                        <option value="Manual">Manual</option>
+                    </select>
+                    <div class="form-text">Choose how often we should schedule payouts.</div>
+                    <span asp-validation-for="Payout.PayoutSchedule" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
                     <label asp-for="Payout.PayoutMethod" class="form-label"></label>
                     <select asp-for="Payout.PayoutMethod" class="form-select">
                         <option value="BankTransfer">Bank transfer</option>

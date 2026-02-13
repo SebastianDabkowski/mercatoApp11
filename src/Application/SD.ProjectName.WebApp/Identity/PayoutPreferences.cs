@@ -17,12 +17,29 @@ public static class PayoutMethods
         Allowed.Contains(method, StringComparer.OrdinalIgnoreCase);
 }
 
+public static class PayoutSchedules
+{
+    public const string Weekly = "Weekly";
+    public const string Manual = "Manual";
+
+    public static readonly string[] Allowed = [Weekly, Manual];
+
+    public static bool IsValid(string? schedule) =>
+        !string.IsNullOrWhiteSpace(schedule) &&
+        Allowed.Contains(schedule, StringComparer.OrdinalIgnoreCase);
+}
+
 public class PayoutPreferencesInput
 {
     [Required]
     [Display(Name = "Default payout method")]
     [StringLength(64)]
     public string PayoutMethod { get; set; } = PayoutMethods.BankTransfer;
+
+    [Required]
+    [Display(Name = "Payout schedule")]
+    [StringLength(32)]
+    public string PayoutSchedule { get; set; } = PayoutSchedules.Weekly;
 
     [Display(Name = "Payout account or email")]
     [StringLength(256)]
@@ -39,6 +56,7 @@ public class PayoutPreferencesInput
     public void TrimAll()
     {
         PayoutMethod = PayoutMethod?.Trim() ?? string.Empty;
+        PayoutSchedule = PayoutSchedule?.Trim() ?? string.Empty;
         PayoutAccount = string.IsNullOrWhiteSpace(PayoutAccount) ? null : PayoutAccount.Trim();
         BankAccountNumber = string.IsNullOrWhiteSpace(BankAccountNumber) ? null : BankAccountNumber.Replace(" ", string.Empty).Trim();
         BankRoutingNumber = string.IsNullOrWhiteSpace(BankRoutingNumber) ? null : BankRoutingNumber.Trim();
@@ -55,6 +73,11 @@ public static class PayoutValidation
     {
         input.TrimAll();
         var prefix = string.IsNullOrWhiteSpace(fieldPrefix) ? string.Empty : $"{fieldPrefix}.";
+
+        if (!PayoutSchedules.IsValid(input.PayoutSchedule))
+        {
+            modelState.AddModelError($"{prefix}{nameof(PayoutPreferencesInput.PayoutSchedule)}", "Select a supported payout schedule.");
+        }
 
         if (!PayoutMethods.IsValid(input.PayoutMethod))
         {
@@ -100,6 +123,11 @@ public static class PayoutValidation
         input.TrimAll();
 
         if (!PayoutMethods.IsValid(input.PayoutMethod))
+        {
+            return false;
+        }
+
+        if (!PayoutSchedules.IsValid(input.PayoutSchedule))
         {
             return false;
         }

@@ -15,17 +15,20 @@ namespace SD.ProjectName.WebApp.Pages.Seller
         private readonly IOptions<KycOptions> _kycOptions;
         private readonly IPayoutEncryptionService _payoutEncryption;
         private readonly IOptions<SellerInternalUserOptions> _internalUserOptions;
+        private readonly OrderService _orderService;
 
         public DashboardModel(
             UserManager<ApplicationUser> userManager,
             IOptions<KycOptions> kycOptions,
             IPayoutEncryptionService payoutEncryption,
-            IOptions<SellerInternalUserOptions> internalUserOptions)
+            IOptions<SellerInternalUserOptions> internalUserOptions,
+            OrderService orderService)
         {
             _userManager = userManager;
             _kycOptions = kycOptions;
             _payoutEncryption = payoutEncryption;
             _internalUserOptions = internalUserOptions;
+            _orderService = orderService;
         }
 
         public string AccountStatus { get; private set; } = AccountStatuses.Unverified;
@@ -69,11 +72,23 @@ namespace SD.ProjectName.WebApp.Pages.Seller
 
         public string? PayoutMethod { get; private set; }
 
+        public string? PayoutSchedule { get; private set; }
+
         public string? MaskedBankAccount { get; private set; }
 
         public string? MaskedPayoutAccount { get; private set; }
 
-        public async Task<IActionResult> OnGetAsync()
+        public string? PayoutStatus { get; private set; }
+
+        public decimal PayoutEligibleAmount { get; private set; }
+
+        public decimal PayoutPaidAmount { get; private set; }
+
+        public decimal PayoutThreshold { get; private set; }
+
+        public string? PayoutErrorReference { get; private set; }
+
+        public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
         {
             var user = await _userManager.GetUserAsync(User);
             if (user == null)
@@ -92,6 +107,12 @@ namespace SD.ProjectName.WebApp.Pages.Seller
             ContactWebsite = user.ContactWebsite;
             StoreLogoPath = user.StoreLogoPath;
             PopulatePayout(user);
+            var payoutView = await _orderService.GetSellerPayoutScheduleAsync(user.Id, PayoutSchedule ?? PayoutSchedules.Weekly, cancellationToken);
+            PayoutStatus = payoutView.Status;
+            PayoutEligibleAmount = payoutView.EligibleAmount;
+            PayoutPaidAmount = payoutView.PaidAmount;
+            PayoutThreshold = payoutView.Threshold;
+            PayoutErrorReference = payoutView.ErrorReference;
             if (InternalUsersEnabled)
             {
                 IsStoreOwner = await _userManager.IsInRoleAsync(user, SellerInternalRoles.StoreOwner);
@@ -104,6 +125,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller
             var payout = new PayoutPreferencesInput
             {
                 PayoutMethod = PayoutMethods.IsValid(user.PayoutMethod) ? user.PayoutMethod : PayoutMethods.BankTransfer,
+                PayoutSchedule = PayoutSchedules.IsValid(user.PayoutSchedule) ? user.PayoutSchedule : PayoutSchedules.Weekly,
                 PayoutAccount = _payoutEncryption.Reveal(user.PayoutAccount),
                 BankAccountNumber = _payoutEncryption.Reveal(user.PayoutBankAccount),
                 BankRoutingNumber = _payoutEncryption.Reveal(user.PayoutBankRouting)
@@ -111,6 +133,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller
 
             HasValidPayoutSettings = PayoutValidation.IsComplete(payout);
             PayoutMethod = payout.PayoutMethod;
+            PayoutSchedule = payout.PayoutSchedule;
             MaskedBankAccount = MaskValue(payout.BankAccountNumber);
             MaskedPayoutAccount = string.IsNullOrWhiteSpace(payout.BankAccountNumber)
                 ? MaskValue(payout.PayoutAccount)

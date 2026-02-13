@@ -199,6 +199,27 @@ namespace SD.ProjectName.WebApp.Services
 
     public record EscrowLedgerEntry(string SubOrderNumber, string SellerId, string Type, decimal Amount, string? Note, DateTimeOffset RecordedOn, string? Reference = null);
 
+    public static class PayoutStatuses
+    {
+        public const string Scheduled = "Scheduled";
+        public const string Processing = "Processing";
+        public const string Paid = "Paid";
+        public const string Failed = "Failed";
+
+        private static readonly string[] Ordered = { Scheduled, Processing, Paid, Failed };
+
+        public static string Normalize(string? status)
+        {
+            if (string.IsNullOrWhiteSpace(status))
+            {
+                return Scheduled;
+            }
+
+            var match = Ordered.FirstOrDefault(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+            return match ?? status.Trim();
+        }
+    }
+
     public record EscrowAllocation(
         string SubOrderNumber,
         string SellerId,
@@ -208,7 +229,10 @@ namespace SD.ProjectName.WebApp.Services
         decimal ReleasedToBuyer,
         decimal ReleasedToSeller,
         bool PayoutEligible,
-        List<EscrowLedgerEntry> Ledger);
+        List<EscrowLedgerEntry> Ledger,
+        string PayoutSchedule = PayoutSchedules.Weekly,
+        string PayoutStatus = PayoutStatuses.Scheduled,
+        string? PayoutErrorReference = null);
 
     public record OrderDetailsPayload(
         List<OrderItemDetail> Items,
@@ -284,6 +308,10 @@ namespace SD.ProjectName.WebApp.Services
         string PaymentStatus,
         ReturnRequest? ReturnRequest,
         EscrowAllocation? Escrow);
+
+    public record SellerPayoutScheduleView(string Schedule, string Status, decimal EligibleAmount, decimal ProcessingAmount, decimal PaidAmount, decimal Threshold, string? ErrorReference);
+
+    public record PayoutRunResult(bool Success, string Status, decimal ProcessedAmount, string? ErrorReference = null);
 
     public record OrderCreationResult(OrderRecord Order, bool Created);
 
@@ -994,6 +1022,187 @@ namespace SD.ProjectName.WebApp.Services
                 escrow);
         }
 
+        public async Task<SellerPayoutScheduleView> GetSellerPayoutScheduleAsync(string sellerId, string payoutSchedule, CancellationToken cancellationToken = default)
+        {
+            var normalizedSchedule = PayoutSchedules.IsValid(payoutSchedule) ? payoutSchedule : _escrowOptions.DefaultPayoutSchedule;
+            var threshold = Math.Max(0, _escrowOptions.MinimumPayoutAmount);
+            var orders = await _dbContext.Orders.AsNoTracking().OrderByDescending(o => o.CreatedOn).ToListAsync(cancellationToken);
+            decimal eligible = 0;
+            decimal processing = 0;
+            decimal paid = 0;
+            var status = PayoutStatuses.Scheduled;
+            string? errorRef = null;
+
+            foreach (var order in orders)
+            {
+                var details = DeserializeDetails(order.DetailsJson);
+                var allocations = details.Escrow ?? new List<EscrowAllocation>();
+                foreach (var allocation in allocations.Where(e => string.Equals(e.SellerId, sellerId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    if (!allocation.PayoutEligible)
+                    {
+                        continue;
+                    }
+
+                    var payoutStatus = PayoutStatuses.Normalize(allocation.PayoutStatus);
+                    var remaining = Math.Max(0, allocation.SellerPayoutAmount - allocation.ReleasedToSeller);
+                    switch (payoutStatus)
+                    {
+                        case PayoutStatuses.Failed:
+                            status = PayoutStatuses.Failed;
+                            errorRef ??= allocation.PayoutErrorReference;
+                            eligible += remaining;
+                            break;
+                        case PayoutStatuses.Processing:
+                            if (status != PayoutStatuses.Failed)
+                            {
+                                status = PayoutStatuses.Processing;
+                            }
+
+                            processing += remaining;
+                            break;
+                        case PayoutStatuses.Paid:
+                            paid += allocation.ReleasedToSeller > 0 ? allocation.ReleasedToSeller : allocation.SellerPayoutAmount;
+                            if (status == PayoutStatuses.Scheduled)
+                            {
+                                status = PayoutStatuses.Paid;
+                            }
+
+                            break;
+                        default:
+                            eligible += remaining;
+                            if (status == PayoutStatuses.Paid)
+                            {
+                                status = PayoutStatuses.Processing;
+                            }
+
+                            break;
+                    }
+                }
+            }
+
+            return new SellerPayoutScheduleView(normalizedSchedule, status, eligible, processing, paid, threshold, errorRef);
+        }
+
+        public async Task<PayoutRunResult> RunSellerPayoutsAsync(string sellerId, CancellationToken cancellationToken = default)
+        {
+            var normalizedSchedule = _escrowOptions.DefaultPayoutSchedule;
+            var batchSize = Math.Max(1, _escrowOptions.PayoutBatchSize);
+            var threshold = Math.Max(0, _escrowOptions.MinimumPayoutAmount);
+            var orders = await _dbContext.Orders.OrderBy(o => o.CreatedOn).ToListAsync(cancellationToken);
+            var seller = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == sellerId, cancellationToken);
+            var payoutReady = seller == null || seller.PayoutUpdatedOn != null;
+            var processed = 0;
+            decimal processedAmount = 0;
+            string? errorRef = null;
+            var runStatus = PayoutStatuses.Scheduled;
+
+            foreach (var order in orders)
+            {
+                var details = DeserializeDetails(order.DetailsJson);
+                var updatedEscrow = new List<EscrowAllocation>();
+                var changed = false;
+
+                var allocations = details.Escrow ?? new List<EscrowAllocation>();
+                foreach (var allocation in allocations)
+                {
+                    if (!string.Equals(allocation.SellerId, sellerId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        updatedEscrow.Add(allocation);
+                        continue;
+                    }
+
+                    var payoutStatus = PayoutStatuses.Normalize(allocation.PayoutStatus);
+                    var remaining = Math.Max(0, allocation.SellerPayoutAmount - allocation.ReleasedToSeller);
+                    if (!allocation.PayoutEligible || remaining <= 0)
+                    {
+                        updatedEscrow.Add(allocation with
+                        {
+                            PayoutStatus = remaining <= 0 ? PayoutStatuses.Paid : payoutStatus,
+                            PayoutErrorReference = null
+                        });
+                        continue;
+                    }
+
+                    if (!payoutReady)
+                    {
+                        if (seller != null)
+                        {
+                            errorRef ??= "payout_details_missing";
+                            runStatus = PayoutStatuses.Failed;
+                        }
+
+                        updatedEscrow.Add(allocation with
+                        {
+                            PayoutStatus = seller == null ? PayoutStatuses.Scheduled : PayoutStatuses.Failed,
+                            PayoutErrorReference = errorRef
+                        });
+                        changed = true;
+                        continue;
+                    }
+
+                    if (remaining < threshold)
+                    {
+                        updatedEscrow.Add(allocation with
+                        {
+                            PayoutStatus = PayoutStatuses.Scheduled,
+                            PayoutErrorReference = null,
+                            PayoutSchedule = normalizedSchedule
+                        });
+                        continue;
+                    }
+
+                    if (processed >= batchSize)
+                    {
+                        updatedEscrow.Add(allocation);
+                        continue;
+                    }
+
+                    runStatus = PayoutStatuses.Processing;
+                    var ledger = allocation.Ledger ?? new List<EscrowLedgerEntry>();
+                    ledger.Add(new EscrowLedgerEntry(
+                        allocation.SubOrderNumber,
+                        allocation.SellerId,
+                        EscrowEntryTypes.PayoutEligible,
+                        remaining,
+                        "Payout processing",
+                        DateTimeOffset.UtcNow,
+                        seller?.PayoutMethod));
+
+                    processed++;
+                    processedAmount += remaining;
+                    updatedEscrow.Add(allocation with
+                    {
+                        ReleasedToSeller = allocation.ReleasedToSeller + remaining,
+                        PayoutStatus = PayoutStatuses.Paid,
+                        PayoutErrorReference = null,
+                        PayoutSchedule = normalizedSchedule,
+                        Ledger = ledger
+                    });
+                    changed = true;
+                }
+
+                if (changed)
+                {
+                    var normalized = NormalizeDetails(details with { Escrow = updatedEscrow });
+                    order.DetailsJson = JsonSerializer.Serialize(normalized, _serializerOptions);
+                }
+            }
+
+            if (processedAmount > 0 && errorRef == null)
+            {
+                runStatus = PayoutStatuses.Paid;
+            }
+
+            if (runStatus == PayoutStatuses.Scheduled && errorRef != null)
+            {
+                runStatus = PayoutStatuses.Failed;
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return new PayoutRunResult(errorRef == null, runStatus, processedAmount, errorRef);
+        }
+
         public async Task<SubOrderStatusUpdateResult> UpdateSubOrderStatusAsync(
             int orderId,
             string sellerId,
@@ -1265,7 +1474,9 @@ namespace SD.ProjectName.WebApp.Services
                     0,
                     0,
                     payoutEligible,
-                    ledger));
+                    ledger,
+                    _escrowOptions.DefaultPayoutSchedule,
+                    payoutEligible ? PayoutStatuses.Scheduled : PayoutStatuses.Scheduled));
             }
 
             return allocations;
@@ -1288,7 +1499,9 @@ namespace SD.ProjectName.WebApp.Services
                     0,
                     0,
                     IsPayoutEligible(updatedSubOrder.Status),
-                    new List<EscrowLedgerEntry>()));
+                    new List<EscrowLedgerEntry>(),
+                    _escrowOptions.DefaultPayoutSchedule,
+                    PayoutStatuses.Scheduled));
                 index = normalized.Count - 1;
             }
 
@@ -1389,13 +1602,15 @@ namespace SD.ProjectName.WebApp.Services
                     normalized.Add(new EscrowAllocation(
                         subOrder.SubOrderNumber,
                         subOrder.SellerId,
-                        Math.Max(0, subOrder.GrandTotal),
-                        0,
-                        Math.Max(0, subOrder.GrandTotal),
-                        0,
-                        0,
-                        IsPayoutEligible(subOrder.Status),
-                        new List<EscrowLedgerEntry>()));
+                    Math.Max(0, subOrder.GrandTotal),
+                    0,
+                    Math.Max(0, subOrder.GrandTotal),
+                    0,
+                    0,
+                    IsPayoutEligible(subOrder.Status),
+                    new List<EscrowLedgerEntry>(),
+                    _escrowOptions.DefaultPayoutSchedule,
+                    PayoutStatuses.Scheduled));
                     continue;
                 }
 
@@ -1413,7 +1628,10 @@ namespace SD.ProjectName.WebApp.Services
                     ReleasedToBuyer = Math.Max(0, allocation.ReleasedToBuyer),
                     ReleasedToSeller = Math.Max(0, allocation.ReleasedToSeller),
                     PayoutEligible = allocation.PayoutEligible,
-                    Ledger = ledger
+                    Ledger = ledger,
+                    PayoutSchedule = PayoutSchedules.IsValid(allocation.PayoutSchedule) ? allocation.PayoutSchedule : PayoutSchedules.Weekly,
+                    PayoutStatus = PayoutStatuses.Normalize(allocation.PayoutStatus),
+                    PayoutErrorReference = string.IsNullOrWhiteSpace(allocation.PayoutErrorReference) ? null : allocation.PayoutErrorReference.Trim()
                 });
             }
 

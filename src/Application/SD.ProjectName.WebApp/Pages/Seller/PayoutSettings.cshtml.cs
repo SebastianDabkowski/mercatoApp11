@@ -64,6 +64,7 @@ public class PayoutSettingsModel : PageModel
 
         Input.TrimAll();
         user.PayoutMethod = Input.PayoutMethod;
+        user.PayoutSchedule = Input.PayoutSchedule;
         user.PayoutAccount = _payoutEncryption.Protect(Input.PayoutAccount);
         user.PayoutBankAccount = _payoutEncryption.Protect(Input.BankAccountNumber);
         user.PayoutBankRouting = _payoutEncryption.Protect(Input.BankRoutingNumber);
@@ -79,6 +80,7 @@ public class PayoutSettingsModel : PageModel
         Input = new PayoutPreferencesInput
         {
             PayoutMethod = PayoutMethods.IsValid(user.PayoutMethod) ? user.PayoutMethod : PayoutMethods.BankTransfer,
+            PayoutSchedule = PayoutSchedules.IsValid(user.PayoutSchedule) ? user.PayoutSchedule : PayoutSchedules.Weekly,
             PayoutAccount = _payoutEncryption.Reveal(user.PayoutAccount),
             BankAccountNumber = _payoutEncryption.Reveal(user.PayoutBankAccount),
             BankRoutingNumber = _payoutEncryption.Reveal(user.PayoutBankRouting)

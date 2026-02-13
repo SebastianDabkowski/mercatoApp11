@@ -110,6 +110,10 @@ namespace SD.ProjectName.WebApp.Data
                     .HasMaxLength(64)
                     .HasDefaultValue("BankTransfer");
 
+                entity.Property(u => u.PayoutSchedule)
+                    .HasMaxLength(32)
+                    .HasDefaultValue("Weekly");
+
                 entity.Property(u => u.PayoutAccount)
                     .HasMaxLength(256);
 

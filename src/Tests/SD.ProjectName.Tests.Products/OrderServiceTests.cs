@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.WebApp.Data;
+using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.Tests.Products
@@ -311,6 +312,68 @@ namespace SD.ProjectName.Tests.Products
             var allocation = Assert.Single(view!.Escrow);
             Assert.True(allocation.PayoutEligible);
             Assert.Contains(allocation.Ledger, e => e.Type == EscrowEntryTypes.PayoutEligible);
+        }
+
+        [Fact]
+        public async Task RunSellerPayoutsAsync_ShouldProcessEligibleWeeklyPayout()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var escrowOptions = new EscrowOptions
+            {
+                PayoutEligibleStatuses = new List<string> { OrderStatuses.Delivered },
+                DefaultPayoutSchedule = PayoutSchedules.Weekly,
+                MinimumPayoutAmount = 0,
+                PayoutBatchSize = 10
+            };
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, escrowOptions);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-payout-1", "sig-payout-1");
+
+            var creation = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-payout", "payout@example.com", "Payout Buyer", "Card", "card", OrderStatuses.Delivered, PaymentStatuses.Paid);
+            Assert.True(creation.Created);
+
+            var payout = await service.RunSellerPayoutsAsync("seller-1");
+
+            Assert.True(payout.Success);
+            Assert.Equal(PayoutStatuses.Paid, payout.Status);
+            Assert.True(payout.ProcessedAmount > 0);
+            var sellerOrder = await service.GetSellerOrderAsync(creation.Order.Id, "seller-1");
+            Assert.NotNull(sellerOrder);
+            Assert.NotNull(sellerOrder!.Escrow);
+            Assert.Equal(PayoutStatuses.Paid, sellerOrder.Escrow!.PayoutStatus);
+            Assert.Equal(sellerOrder.Escrow.SellerPayoutAmount, sellerOrder.Escrow.ReleasedToSeller);
+        }
+
+        [Fact]
+        public async Task RunSellerPayoutsAsync_ShouldRolloverBelowThreshold()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var escrowOptions = new EscrowOptions
+            {
+                PayoutEligibleStatuses = new List<string> { OrderStatuses.Delivered },
+                DefaultPayoutSchedule = PayoutSchedules.Weekly,
+                MinimumPayoutAmount = 100,
+                PayoutBatchSize = 10
+            };
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, escrowOptions);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-payout-2", "sig-payout-2");
+
+            var creation = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-payout-threshold", "payout-th@example.com", "Payout Buyer", "Card", "card", OrderStatuses.Delivered, PaymentStatuses.Paid);
+            Assert.True(creation.Created);
+
+            var payout = await service.RunSellerPayoutsAsync("seller-1");
+
+            Assert.True(payout.Success);
+            Assert.Equal(PayoutStatuses.Scheduled, payout.Status);
+            Assert.Equal(0, payout.ProcessedAmount);
+            var sellerOrder = await service.GetSellerOrderAsync(creation.Order.Id, "seller-1");
+            Assert.NotNull(sellerOrder);
+            Assert.NotNull(sellerOrder!.Escrow);
+            Assert.Equal(PayoutStatuses.Scheduled, sellerOrder.Escrow!.PayoutStatus);
+            Assert.Equal(0, sellerOrder.Escrow.ReleasedToSeller);
         }
 
         [Fact]
