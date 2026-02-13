@@ -1,0 +1,240 @@
+@page "/Admin/Reports/Orders"
+@model SD.ProjectName.WebApp.Pages.Admin.Reports.OrdersModel
+@{
+    ViewData["Title"] = "Order & revenue report";
+    var firstRow = Model.TotalRows == 0 ? 0 : ((Model.PageNumber - 1) * Model.PageSize) + 1;
+    var lastRow = Model.TotalRows == 0 ? 0 : Math.Min(Model.TotalRows, Model.PageNumber * Model.PageSize);
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div>
+        <h1 class="mb-1">Order & revenue report</h1>
+        <p class="text-muted mb-0">Filter by date, seller, status, and payment state. Each row represents a seller sub-order.</p>
+    </div>
+    <form method="get" asp-page-handler="Export" class="d-flex align-items-start gap-2">
+        @foreach (var status in Model.StatusFilters)
+        {
+            <input type="hidden" name="status" value="@status" />
+        }
+        @foreach (var payment in Model.PaymentStatusFilters)
+        {
+            <input type="hidden" name="paymentStatus" value="@payment" />
+        }
+        @if (Model.FromDate.HasValue)
+        {
+            <input type="hidden" name="FromDate" value="@(Model.FromDate?.ToString("yyyy-MM-dd"))" />
+        }
+        @if (Model.ToDate.HasValue)
+        {
+            <input type="hidden" name="ToDate" value="@(Model.ToDate?.ToString("yyyy-MM-dd"))" />
+        }
+        @if (!string.IsNullOrWhiteSpace(Model.SellerId))
+        {
+            <input type="hidden" name="SellerId" value="@Model.SellerId" />
+        }
+        <button type="submit" class="btn btn-outline-secondary">Export CSV</button>
+    </form>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success mt-3">@statusMessage</div>
+}
+@if (TempData["ErrorMessage"] is string errorMessage)
+{
+    <div class="alert alert-warning mt-3">@errorMessage</div>
+}
+
+<div class="card my-3">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-sm-3">
+                <label for="fromDate" class="form-label">From</label>
+                <input id="fromDate" class="form-control" type="date" name="FromDate" value="@(Model.FromDate?.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-sm-3">
+                <label for="toDate" class="form-label">To</label>
+                <input id="toDate" class="form-control" type="date" name="ToDate" value="@(Model.ToDate?.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-sm-3">
+                <label for="sellerInput" class="form-label">Seller (optional)</label>
+                <input id="sellerInput" class="form-control" name="SellerId" value="@Model.SellerId" placeholder="Seller id to filter" />
+            </div>
+            <div class="col-sm-12">
+                <label class="form-label">Order status</label>
+                <div class="d-flex flex-wrap gap-2">
+                    @foreach (var status in Model.AvailableStatuses)
+                    {
+                        var statusId = $"status-{status.Replace(" ", "-")}";
+                        var isChecked = Model.StatusFilters.Any(s => s.Equals(status, StringComparison.OrdinalIgnoreCase));
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" id="@statusId" name="status" value="@status" @(isChecked ? "checked" : string.Empty) />
+                            <label class="form-check-label" for="@statusId">@status</label>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="col-sm-12">
+                <label class="form-label">Payment status</label>
+                <div class="d-flex flex-wrap gap-2">
+                    @foreach (var payment in Model.AvailablePaymentStatuses)
+                    {
+                        var paymentId = $"payment-{payment.Replace(" ", "-")}";
+                        var isChecked = Model.PaymentStatusFilters.Any(p => p.Equals(payment, StringComparison.OrdinalIgnoreCase));
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" id="@paymentId" name="paymentStatus" value="@payment" @(isChecked ? "checked" : string.Empty) />
+                            <label class="form-check-label" for="@paymentId">@payment</label>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="col-sm-12 d-flex justify-content-end gap-2">
+                <button type="submit" class="btn btn-primary">Apply</button>
+                <a class="btn btn-outline-secondary" asp-page="/Admin/Reports/Orders">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-body">
+                <div class="text-muted small">Order value (GMV)</div>
+                <div class="fs-4 fw-semibold">@Model.TotalOrderValue.ToString("C")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-body">
+                <div class="text-muted small">Commission</div>
+                <div class="fs-4 fw-semibold">@Model.TotalCommission.ToString("C")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-body">
+                <div class="text-muted small">Payout amount</div>
+                <div class="fs-4 fw-semibold">@Model.TotalPayout.ToString("C")</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div>
+            <div class="fw-semibold">Results</div>
+            <div class="text-muted small">
+                Showing @firstRow&ndash;@lastRow of @Model.TotalRows
+            </div>
+        </div>
+        <div class="text-muted small">Page @Model.PageNumber of @Math.Max(Model.TotalPages, 1)</div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-striped align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Order</th>
+                    <th>Placed on</th>
+                    <th>Buyer</th>
+                    <th>Seller</th>
+                    <th>Status</th>
+                    <th>Payment</th>
+                    <th class="text-end">Order value</th>
+                    <th class="text-end">Commission</th>
+                    <th class="text-end">Payout</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Rows.Count == 0)
+                {
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-4">No orders match the current filters.</td>
+                    </tr>
+                }
+                else
+                {
+                    foreach (var row in Model.Rows)
+                    {
+                        <tr>
+                            <td>
+                                <div class="fw-semibold">@row.OrderNumber</div>
+                                <div class="text-muted small">Sub-order @row.SubOrderNumber</div>
+                            </td>
+                            <td class="text-muted">@row.CreatedOn.ToLocalTime().ToString("g")</td>
+                            <td>
+                                <div>@row.Buyer</div>
+                                <div class="text-muted small">@row.BuyerEmail</div>
+                            </td>
+                            <td>
+                                <div class="fw-semibold">@row.SellerName</div>
+                                <div class="text-muted small">@row.SellerId</div>
+                            </td>
+                            <td>@row.Status</td>
+                            <td>@row.PaymentStatus</td>
+                            <td class="text-end fw-semibold">@row.OrderValue.ToString("C")</td>
+                            <td class="text-end text-muted">@row.Commission.ToString("C")</td>
+                            <td class="text-end">@row.Payout.ToString("C")</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer d-flex justify-content-between align-items-center">
+        <div class="text-muted small">Showing @firstRow&ndash;@lastRow of @Model.TotalRows</div>
+        <div class="d-flex gap-2">
+            <form method="get" class="d-inline">
+                @foreach (var status in Model.StatusFilters)
+                {
+                    <input type="hidden" name="status" value="@status" />
+                }
+                @foreach (var payment in Model.PaymentStatusFilters)
+                {
+                    <input type="hidden" name="paymentStatus" value="@payment" />
+                }
+                @if (Model.FromDate.HasValue)
+                {
+                    <input type="hidden" name="FromDate" value="@(Model.FromDate?.ToString("yyyy-MM-dd"))" />
+                }
+                @if (Model.ToDate.HasValue)
+                {
+                    <input type="hidden" name="ToDate" value="@(Model.ToDate?.ToString("yyyy-MM-dd"))" />
+                }
+                @if (!string.IsNullOrWhiteSpace(Model.SellerId))
+                {
+                    <input type="hidden" name="SellerId" value="@Model.SellerId" />
+                }
+                <input type="hidden" name="page" value="@(Model.PageNumber - 1)" />
+                <button type="submit" class="btn btn-outline-secondary btn-sm" @(Model.PageNumber <= 1 ? "disabled" : string.Empty)>Previous</button>
+            </form>
+            <form method="get" class="d-inline">
+                @foreach (var status in Model.StatusFilters)
+                {
+                    <input type="hidden" name="status" value="@status" />
+                }
+                @foreach (var payment in Model.PaymentStatusFilters)
+                {
+                    <input type="hidden" name="paymentStatus" value="@payment" />
+                }
+                @if (Model.FromDate.HasValue)
+                {
+                    <input type="hidden" name="FromDate" value="@(Model.FromDate?.ToString("yyyy-MM-dd"))" />
+                }
+                @if (Model.ToDate.HasValue)
+                {
+                    <input type="hidden" name="ToDate" value="@(Model.ToDate?.ToString("yyyy-MM-dd"))" />
+                }
+                @if (!string.IsNullOrWhiteSpace(Model.SellerId))
+                {
+                    <input type="hidden" name="SellerId" value="@Model.SellerId" />
+                }
+                <input type="hidden" name="page" value="@(Model.PageNumber + 1)" />
+                <button type="submit" class="btn btn-outline-secondary btn-sm" @(Model.PageNumber >= Model.TotalPages ? "disabled" : string.Empty)>Next</button>
+            </form>
+        </div>
+    </div>
+</div>

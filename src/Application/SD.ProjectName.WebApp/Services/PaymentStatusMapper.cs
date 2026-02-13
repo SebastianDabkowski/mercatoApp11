@@ -16,6 +16,8 @@ namespace SD.ProjectName.WebApp.Services
             Pending, Paid, Failed, Refunded
         };
 
+        public static IReadOnlyList<string> All => OrderedStatuses;
+
         public static string Normalize(string? status)
         {
             if (string.IsNullOrWhiteSpace(status))

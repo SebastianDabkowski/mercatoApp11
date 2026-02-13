@@ -89,6 +89,11 @@ builder.Services.AddOptions<SettlementOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<SettlementOptions>(sp => sp.GetRequiredService<IOptions<SettlementOptions>>().Value);
+builder.Services.AddOptions<AdminReportOptions>()
+    .Bind(builder.Configuration.GetSection(AdminReportOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<AdminReportOptions>(sp => sp.GetRequiredService<IOptions<AdminReportOptions>>().Value);
 builder.Services.AddOptions<InvoiceOptions>()
     .Bind(builder.Configuration.GetSection(InvoiceOptions.SectionName))
     .ValidateDataAnnotations()
