@@ -249,6 +249,8 @@ Automates documentation and ADR currency so architecture and agent records alway
 
 \- Keep ADR Traceability in `ARCHITECTURE.md` aligned with ADR statuses (Proposed/Accepted/Superseded) and ensure new decisions are captured before merge.
 
+\- DocSync validation pipeline: detect architecture deltas, regenerate `ARCHITECTURE.md` and `AGENT.md` from the current module/agent inventory, validate ADR coverage, and backfill any missing ADRs before merge.
+
 
 
 \*\*Rules\*\*
