@@ -58,6 +58,11 @@ builder.Services.AddOptions<CartOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<CartOptions>(sp => sp.GetRequiredService<IOptions<CartOptions>>().Value);
+builder.Services.AddOptions<CheckoutOptions>()
+    .Bind(builder.Configuration.GetSection(CheckoutOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<CheckoutOptions>(sp => sp.GetRequiredService<IOptions<CheckoutOptions>>().Value);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<ISessionTokenService, DistributedSessionTokenService>();
 builder.Services.AddScoped<ILoginAuditService, LoginAuditService>();
@@ -69,6 +74,7 @@ builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<CartTotalsCalculator>();
 builder.Services.AddScoped<CartViewService>();
 builder.Services.AddScoped<IUserCartService, UserCartService>();
+builder.Services.AddScoped<CheckoutStateService>();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {

@@ -1,0 +1,126 @@
+@page "/Checkout/Address"
+@model SD.ProjectName.WebApp.Pages.Checkout.AddressModel
+@{
+    ViewData["Title"] = "Delivery address";
+}
+
+<h1 class="mb-4">Delivery address</h1>
+
+@if (TempData["CheckoutAddressSaved"] != null)
+{
+    <div class="alert alert-success">Address saved for this order.</div>
+}
+
+<form method="post" novalidate>
+    <div class="row">
+        <div class="col-lg-8">
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+            @if (Model.SavedAddresses.Any())
+            {
+                <div class="card mb-3">
+                    <div class="card-header">Saved addresses</div>
+                    <div class="card-body">
+                        @foreach (var address in Model.SavedAddresses)
+                        {
+                            var optionId = $"saved-{address.Key}";
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="Input.SavedAddressKey" id="@optionId" value="@address.Key" @(Model.Input.SavedAddressKey == address.Key ? "checked" : "") />
+                                <label class="form-check-label" for="@optionId">
+                                    <strong>@address.Label</strong><br />
+                                    <span class="text-muted">@address.Address.Line1</span>
+                                    @if (!string.IsNullOrWhiteSpace(address.Address.City) || !string.IsNullOrWhiteSpace(address.Address.State))
+                                    {
+                                        <br />
+                                        <span class="text-muted">@string.Join(", ", new[] { address.Address.City, address.Address.State }.Where(p => !string.IsNullOrWhiteSpace(p)))</span>
+                                    }
+                                    <br />
+                                    <span class="text-muted">@address.Address.PostalCode @address.Address.Country</span>
+                                </label>
+                            </div>
+                        }
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="Input.SavedAddressKey" id="saved-new" value="new" @(string.IsNullOrWhiteSpace(Model.Input.SavedAddressKey) || Model.Input.SavedAddressKey == "new" ? "checked" : "") />
+                            <label class="form-check-label" for="saved-new">Use a new address</label>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <div class="card mb-3">
+                <div class="card-header">New delivery address</div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label asp-for="Input.NewAddress.Recipient" class="form-label"></label>
+                            <input asp-for="Input.NewAddress.Recipient" class="form-control" autocomplete="name" />
+                            <span asp-validation-for="Input.NewAddress.Recipient" class="text-danger"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Input.NewAddress.Phone" class="form-label"></label>
+                            <input asp-for="Input.NewAddress.Phone" class="form-control" autocomplete="tel" />
+                            <span asp-validation-for="Input.NewAddress.Phone" class="text-danger"></span>
+                        </div>
+                        <div class="col-12">
+                            <label asp-for="Input.NewAddress.Line1" class="form-label"></label>
+                            <input asp-for="Input.NewAddress.Line1" class="form-control" autocomplete="address-line1" />
+                            <span asp-validation-for="Input.NewAddress.Line1" class="text-danger"></span>
+                        </div>
+                        <div class="col-12">
+                            <label asp-for="Input.NewAddress.Line2" class="form-label"></label>
+                            <input asp-for="Input.NewAddress.Line2" class="form-control" autocomplete="address-line2" />
+                            <span asp-validation-for="Input.NewAddress.Line2" class="text-danger"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Input.NewAddress.City" class="form-label"></label>
+                            <input asp-for="Input.NewAddress.City" class="form-control" autocomplete="address-level2" />
+                            <span asp-validation-for="Input.NewAddress.City" class="text-danger"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Input.NewAddress.State" class="form-label"></label>
+                            <input asp-for="Input.NewAddress.State" class="form-control" autocomplete="address-level1" />
+                            <span asp-validation-for="Input.NewAddress.State" class="text-danger"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Input.NewAddress.PostalCode" class="form-label"></label>
+                            <input asp-for="Input.NewAddress.PostalCode" class="form-control" autocomplete="postal-code" />
+                            <span asp-validation-for="Input.NewAddress.PostalCode" class="text-danger"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Input.NewAddress.Country" class="form-label"></label>
+                            <input asp-for="Input.NewAddress.Country" class="form-control" autocomplete="country-name" />
+                            <span asp-validation-for="Input.NewAddress.Country" class="text-danger"></span>
+                        </div>
+                        <div class="col-12 form-check mt-2">
+                            <input asp-for="Input.SaveToProfile" class="form-check-input" />
+                            <label asp-for="Input.SaveToProfile" class="form-check-label">Save to my profile for next time</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Save and continue</button>
+        </div>
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">Order summary</div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Items subtotal</span>
+                        <span>@Model.Summary.ItemsSubtotal.ToString("C")</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Shipping</span>
+                        <span>@Model.Summary.ShippingTotal.ToString("C")</span>
+                    </div>
+                    <hr />
+                    <div class="d-flex justify-content-between">
+                        <strong>Total</strong>
+                        <strong>@Model.Summary.GrandTotal.ToString("C")</strong>
+                    </div>
+                    <div class="text-muted small mt-2">@Model.Summary.TotalQuantity item(s)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
