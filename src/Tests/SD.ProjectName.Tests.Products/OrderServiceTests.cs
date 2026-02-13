@@ -46,6 +46,26 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task EnsureOrderAsync_ShouldCreateFailedOrder_WhenPaymentFails()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "blik", CheckoutPaymentStatus.Failed, "ref-failed-1", "sig-failed-1");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-failed", "buyerfailed@example.com", "Buyer Failed", "BLIK", "blik", OrderStatuses.Failed);
+
+            Assert.True(result.Created);
+            Assert.Equal(OrderStatuses.Failed, result.Order.Status);
+            var view = await service.GetOrderAsync(result.Order.Id, "buyer-failed");
+            Assert.NotNull(view);
+            Assert.Equal(OrderStatuses.Failed, view!.Status);
+            Assert.All(view.SubOrders, s => Assert.Equal(OrderStatuses.Failed, s.Status));
+            emailSender.Verify(e => e.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
         public async Task EnsureOrderAsync_ShouldBeIdempotent_ForPaymentReference()
         {
             await using var context = CreateContext();

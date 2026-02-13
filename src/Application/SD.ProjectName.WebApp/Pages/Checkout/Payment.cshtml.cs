@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -21,6 +22,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         private readonly OrderService _orderService;
         private readonly CartService _cartService;
         private readonly PromoCodeService _promoCodeService;
+        private readonly PaymentProviderService _paymentProvider;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -46,7 +48,8 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             UserManager<ApplicationUser> userManager,
             OrderService orderService,
             CartService cartService,
-            PromoCodeService promoCodeService)
+            PromoCodeService promoCodeService,
+            PaymentProviderService paymentProvider)
         {
             _cartViewService = cartViewService;
             _userCartService = userCartService;
@@ -57,9 +60,10 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             _orderService = orderService;
             _cartService = cartService;
             _promoCodeService = promoCodeService;
+            _paymentProvider = paymentProvider;
         }
 
-        public async Task<IActionResult> OnGetAsync(string? providerResult = null, string? method = null)
+        public async Task<IActionResult> OnGetAsync(string? providerToken = null, string? method = null)
         {
             await _userCartService.EnsureUserCartAsync(HttpContext, HttpContext.RequestAborted);
             var summary = await _cartViewService.BuildAsync(HttpContext);
@@ -85,13 +89,19 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             Summary = quote.Summary;
             Input.CartSignature = ComputeQuoteSignature(quote);
 
-            Methods = _checkoutOptions.PaymentMethods ?? new List<PaymentMethodOption>();
+            Methods = GetEnabledMethods();
             PaymentStatus = state.PaymentStatus;
             PaymentReference = state.PaymentReference;
 
-            if (!string.IsNullOrWhiteSpace(providerResult))
+            if (Methods.Count == 0)
             {
-                var result = await HandleProviderReturn(providerResult, method ?? state.PaymentMethod, state, quote);
+                ModelState.AddModelError(string.Empty, "No payment methods are available.");
+                return Page();
+            }
+
+            if (!string.IsNullOrWhiteSpace(providerToken))
+            {
+                var result = await HandleProviderReturn(providerToken, method ?? state.PaymentMethod, state, quote);
                 if (result != null)
                 {
                     return result;
@@ -136,9 +146,15 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             var signature = ComputeQuoteSignature(quote);
             Input.CartSignature = signature;
 
-            Methods = _checkoutOptions.PaymentMethods ?? new List<PaymentMethodOption>();
+            Methods = GetEnabledMethods();
             PaymentStatus = state.PaymentStatus;
             PaymentReference = state.PaymentReference;
+
+            if (Methods.Count == 0)
+            {
+                ModelState.AddModelError(string.Empty, "No payment methods are available.");
+                return Page();
+            }
 
             var cartChanged = string.IsNullOrWhiteSpace(previousSignature) || !string.Equals(previousSignature, signature, StringComparison.Ordinal);
             if (cartChanged)
@@ -154,24 +170,49 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 return Page();
             }
 
+            var currency = ResolveCurrency();
             if (selected.RequiresRedirect)
             {
-                _checkoutStateService.SavePaymentSelection(HttpContext, selected.Id, CheckoutPaymentStatus.Pending, null, signature);
-                var callbackUrl = Url.Page("/Checkout/Payment", null, new { providerResult = "success", method = selected.Id }, Request.Scheme);
-                var cancelUrl = Url.Page("/Checkout/Payment", null, new { providerResult = "cancel", method = selected.Id }, Request.Scheme);
+                var callbackUrl = Url.Page("/Checkout/Payment", null, new { method = selected.Id }, Request.Scheme) ?? "/Checkout/Payment";
+                var cancelUrl = Url.Page("/Checkout/Payment", null, new { method = selected.Id }, Request.Scheme) ?? "/Checkout/Payment";
+                var redirect = _paymentProvider.CreateRedirectPayment(new PaymentRedirectRequest(selected.Id, Summary.GrandTotal, currency, callbackUrl, cancelUrl));
+                _checkoutStateService.SavePaymentSelection(HttpContext, selected.Id, CheckoutPaymentStatus.Pending, redirect.PaymentReference, signature);
+                PaymentStatus = CheckoutPaymentStatus.Pending;
+                PaymentReference = redirect.PaymentReference;
                 TempData["PaymentRedirect"] = $"Redirecting to {selected.Provider ?? "payment provider"}...";
-                TempData["PaymentCancelUrl"] = cancelUrl;
-                return Redirect(callbackUrl ?? "/Checkout/Payment");
+                TempData["PaymentCancelUrl"] = redirect.CancelUrl;
+                return Redirect(string.IsNullOrWhiteSpace(redirect.RedirectUrl) ? callbackUrl : redirect.RedirectUrl);
             }
 
-            var updatedState = _checkoutStateService.SavePaymentSelection(HttpContext, selected.Id, CheckoutPaymentStatus.Confirmed, GenerateReference(selected.Id), signature);
+            if (string.Equals(selected.Id, "blik", StringComparison.OrdinalIgnoreCase))
+            {
+                var authorization = _paymentProvider.AuthorizeBlik(selected.Id, Summary.GrandTotal, currency, Input.BlikCode);
+                var updatedState = _checkoutStateService.SavePaymentSelection(HttpContext, selected.Id, authorization.Status, authorization.PaymentReference, signature);
+                PaymentStatus = authorization.Status;
+                PaymentReference = authorization.PaymentReference;
+                Input.SelectedMethodId = selected.Id;
+                Input.CartSignature = signature;
+
+                if (authorization.Status == CheckoutPaymentStatus.Confirmed)
+                {
+                    StoreSnapshot(quote);
+                    return await FinalizeOrderAsync(quote, updatedState);
+                }
+
+                await RecordFailedPaymentAsync(quote, updatedState, ResolvePaymentLabel(selected.Id));
+                ModelState.AddModelError(string.Empty, authorization.Error ?? "Payment authorization failed. Please try again or choose another method.");
+                return Page();
+            }
+
+            var confirmedState = _checkoutStateService.SavePaymentSelection(HttpContext, selected.Id, CheckoutPaymentStatus.Confirmed, GenerateReference(selected.Id), signature);
+            PaymentStatus = CheckoutPaymentStatus.Confirmed;
+            PaymentReference = confirmedState.PaymentReference;
             StoreSnapshot(quote);
-            return await FinalizeOrderAsync(quote, updatedState);
+            return await FinalizeOrderAsync(quote, confirmedState);
         }
 
-        private async Task<IActionResult?> HandleProviderReturn(string providerResult, string? methodId, CheckoutState state, ShippingQuote quote)
+        private async Task<IActionResult?> HandleProviderReturn(string providerToken, string? methodId, CheckoutState state, ShippingQuote quote)
         {
-            var normalized = providerResult.Trim().ToLowerInvariant();
             var selectedMethod = Methods.FirstOrDefault(m => string.Equals(m.Id, methodId, StringComparison.OrdinalIgnoreCase))
                 ?? Methods.FirstOrDefault(m => string.Equals(m.Id, state.PaymentMethod, StringComparison.OrdinalIgnoreCase));
 
@@ -183,39 +224,84 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             }
 
             var currentSignature = ComputeQuoteSignature(quote);
+            var currency = ResolveCurrency();
+            var validation = _paymentProvider.ValidateReturn(providerToken, quote.Summary.GrandTotal, currency, selectedMethod.Id);
+
             if (string.IsNullOrWhiteSpace(state.CartSignature) || !string.Equals(state.CartSignature, currentSignature, StringComparison.Ordinal))
             {
                 PaymentStatus = CheckoutPaymentStatus.Failed;
-                _checkoutStateService.SavePaymentSelection(HttpContext, selectedMethod.Id, CheckoutPaymentStatus.Failed, null, currentSignature);
+                _checkoutStateService.SavePaymentSelection(HttpContext, selectedMethod.Id, CheckoutPaymentStatus.Failed, validation.PaymentReference, currentSignature);
                 Input.SelectedMethodId = selectedMethod.Id;
                 Input.CartSignature = currentSignature;
                 ModelState.AddModelError(string.Empty, "Cart changed because of price or stock updates. Review totals and retry payment.");
                 return Page();
             }
 
-            if (normalized == "success")
+            var updatedState = _checkoutStateService.SavePaymentSelection(HttpContext, selectedMethod.Id, validation.Status, validation.PaymentReference, currentSignature);
+            PaymentStatus = validation.Status;
+            PaymentReference = validation.PaymentReference;
+            Input.SelectedMethodId = selectedMethod.Id;
+            Input.CartSignature = currentSignature;
+
+            if (validation.Status == CheckoutPaymentStatus.Confirmed)
             {
-                var updatedState = _checkoutStateService.SavePaymentSelection(HttpContext, selectedMethod.Id, CheckoutPaymentStatus.Confirmed, GenerateReference(selectedMethod.Id), currentSignature);
                 StoreSnapshot(quote);
                 return await FinalizeOrderAsync(quote, updatedState);
             }
 
-            if (normalized is "cancel" or "canceled")
+            if (validation.Status == CheckoutPaymentStatus.Canceled)
             {
-                PaymentStatus = CheckoutPaymentStatus.Canceled;
-                _checkoutStateService.SavePaymentSelection(HttpContext, selectedMethod.Id, CheckoutPaymentStatus.Canceled, null, currentSignature);
-                Input.SelectedMethodId = selectedMethod.Id;
-                Input.CartSignature = currentSignature;
                 TempData["PaymentMessage"] = "Payment was cancelled. You can choose another method.";
                 return Page();
             }
 
-            PaymentStatus = CheckoutPaymentStatus.Failed;
-            _checkoutStateService.SavePaymentSelection(HttpContext, selectedMethod.Id, CheckoutPaymentStatus.Failed, null, currentSignature);
-            Input.SelectedMethodId = selectedMethod.Id;
-            Input.CartSignature = currentSignature;
-            ModelState.AddModelError(string.Empty, "Payment authorization failed. Please try again or choose another method.");
+            await RecordFailedPaymentAsync(quote, updatedState, ResolvePaymentLabel(selectedMethod.Id));
+            var error = string.IsNullOrWhiteSpace(validation.Error)
+                ? "Payment authorization failed. Please try again or choose another method."
+                : validation.Error;
+            ModelState.AddModelError(string.Empty, error);
             return Page();
+        }
+
+        private List<PaymentMethodOption> GetEnabledMethods()
+        {
+            return (_checkoutOptions.PaymentMethods ?? new List<PaymentMethodOption>())
+                .Where(m => m != null && m.Enabled)
+                .ToList();
+        }
+
+        private static string ResolveCurrency()
+        {
+            try
+            {
+                var region = new RegionInfo(CultureInfo.CurrentCulture.LCID);
+                return region.ISOCurrencySymbol;
+            }
+            catch
+            {
+                return "USD";
+            }
+        }
+
+        private async Task RecordFailedPaymentAsync(ShippingQuote quote, CheckoutState state, string? paymentLabel)
+        {
+            ApplicationUser? buyer = null;
+            if (User?.Identity?.IsAuthenticated ?? false)
+            {
+                buyer = await _userManager.GetUserAsync(User);
+            }
+
+            await _orderService.EnsureOrderAsync(
+                state,
+                quote,
+                state.Address!,
+                buyer?.Id,
+                buyer?.Email,
+                buyer?.FullName ?? buyer?.UserName,
+                paymentLabel ?? state.PaymentMethod,
+                state.PaymentMethod,
+                OrderStatuses.Failed,
+                HttpContext.RequestAborted);
         }
 
         private async Task<Dictionary<string, string>> LoadSellerCountriesAsync(IEnumerable<string> sellerIds)
@@ -317,6 +403,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 buyer?.FullName ?? buyer?.UserName,
                 paymentLabel,
                 state.PaymentMethod,
+                OrderStatuses.Paid,
                 HttpContext.RequestAborted);
 
             _cartService.ReplaceCart(HttpContext, Array.Empty<CartItem>());
@@ -347,5 +434,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         public string SelectedMethodId { get; set; } = string.Empty;
 
         public string CartSignature { get; set; } = string.Empty;
+
+        public string? BlikCode { get; set; }
     }
 }

@@ -75,6 +75,14 @@ else if (Model.PaymentStatus == SD.ProjectName.WebApp.Services.CheckoutPaymentSt
                         </label>
                     }
                 </div>
+                <div class="card-body">
+                    <div class="mb-3 @(string.Equals(Model.Input.SelectedMethodId, "blik", StringComparison.OrdinalIgnoreCase) ? string.Empty : "d-none")" id="blik-code-wrapper">
+                        <label asp-for="Input.BlikCode" class="form-label">BLIK code</label>
+                        <input asp-for="Input.BlikCode" class="form-control" maxlength="6" inputmode="numeric" pattern="\d{6}" autocomplete="one-time-code" />
+                        <div class="form-text">Enter the 6-digit BLIK code from your banking app.</div>
+                        <span asp-validation-for="Input.BlikCode" class="text-danger"></span>
+                    </div>
+                </div>
             </div>
 
             <div class="d-flex gap-2">
@@ -182,6 +190,20 @@ else if (Model.PaymentStatus == SD.ProjectName.WebApp.Services.CheckoutPaymentSt
                     .then(handleResponse)
                     .catch(() => handleResponse(null));
             });
+
+            const blikWrapper = document.getElementById('blik-code-wrapper');
+            const paymentInputs = document.querySelectorAll('input[name="Input.SelectedMethodId"]');
+            const toggleBlik = () => {
+                const selected = document.querySelector('input[name="Input.SelectedMethodId"]:checked');
+                if (selected?.value?.toLowerCase() === 'blik') {
+                    blikWrapper?.classList.remove('d-none');
+                } else if (blikWrapper) {
+                    blikWrapper.classList.add('d-none');
+                }
+            };
+
+            paymentInputs.forEach(input => input.addEventListener('change', toggleBlik));
+            toggleBlik();
         })();
     </script>
 }

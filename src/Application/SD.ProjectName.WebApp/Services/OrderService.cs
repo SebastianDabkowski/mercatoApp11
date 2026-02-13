@@ -19,21 +19,23 @@ namespace SD.ProjectName.WebApp.Services
         public const string Delivered = "Delivered";
         public const string Cancelled = "Cancelled";
         public const string Refunded = "Refunded";
+        public const string Failed = "Failed";
 
         private static readonly Dictionary<string, HashSet<string>> AllowedTransitions = new(StringComparer.OrdinalIgnoreCase)
         {
-            [New] = new HashSet<string>(new[] { Paid, Cancelled }, StringComparer.OrdinalIgnoreCase),
+            [New] = new HashSet<string>(new[] { Paid, Cancelled, Failed }, StringComparer.OrdinalIgnoreCase),
             [Paid] = new HashSet<string>(new[] { Preparing, Shipped, Delivered, Cancelled, Refunded }, StringComparer.OrdinalIgnoreCase),
             [Preparing] = new HashSet<string>(new[] { Shipped, Cancelled, Refunded }, StringComparer.OrdinalIgnoreCase),
             [Shipped] = new HashSet<string>(new[] { Delivered, Refunded }, StringComparer.OrdinalIgnoreCase),
             [Delivered] = new HashSet<string>(new[] { Refunded }, StringComparer.OrdinalIgnoreCase),
             [Cancelled] = new HashSet<string>(new[] { Refunded }, StringComparer.OrdinalIgnoreCase),
-            [Refunded] = new HashSet<string>(Array.Empty<string>(), StringComparer.OrdinalIgnoreCase)
+            [Refunded] = new HashSet<string>(Array.Empty<string>(), StringComparer.OrdinalIgnoreCase),
+            [Failed] = new HashSet<string>(Array.Empty<string>(), StringComparer.OrdinalIgnoreCase)
         };
 
         private static readonly IReadOnlyList<string> OrderedStatuses = new[]
         {
-            New, Paid, Preparing, Shipped, Delivered, Cancelled, Refunded
+            New, Paid, Preparing, Shipped, Delivered, Cancelled, Refunded, Failed
         };
 
         public static IReadOnlyList<string> All => OrderedStatuses;
@@ -48,6 +50,11 @@ namespace SD.ProjectName.WebApp.Services
             if (status.Trim().Equals("Confirmed", StringComparison.OrdinalIgnoreCase))
             {
                 return Paid;
+            }
+
+            if (status.Trim().Equals(Failed, StringComparison.OrdinalIgnoreCase))
+            {
+                return Failed;
             }
 
             var match = OrderedStatuses.FirstOrDefault(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
@@ -299,6 +306,7 @@ namespace SD.ProjectName.WebApp.Services
             string? buyerName,
             string? paymentMethodLabel,
             string? paymentMethodId,
+            string initialStatus = OrderStatuses.Paid,
             CancellationToken cancellationToken = default)
         {
             var normalizedReference = string.IsNullOrWhiteSpace(state.PaymentReference) ? null : state.PaymentReference.Trim();
@@ -323,12 +331,13 @@ namespace SD.ProjectName.WebApp.Services
                 }
             }
 
+            var normalizedInitialStatus = OrderStatuses.Normalize(initialStatus);
             var orderNumber = GenerateOrderNumber();
-            var details = BuildDetailsPayload(orderNumber, quote);
+            var details = BuildDetailsPayload(orderNumber, quote, normalizedInitialStatus);
             var order = new OrderRecord
             {
                 OrderNumber = orderNumber,
-                Status = CalculateOrderStatus(details.SubOrders, OrderStatuses.Paid),
+                Status = CalculateOrderStatus(details.SubOrders, normalizedInitialStatus),
                 BuyerId = buyerId,
                 BuyerEmail = buyerEmail ?? string.Empty,
                 BuyerName = buyerName ?? string.Empty,
@@ -348,7 +357,10 @@ namespace SD.ProjectName.WebApp.Services
             _dbContext.Orders.Add(order);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            await SendConfirmationEmailAsync(order, address, details, cancellationToken);
+            if (!string.Equals(order.Status, OrderStatuses.Failed, StringComparison.OrdinalIgnoreCase))
+            {
+                await SendConfirmationEmailAsync(order, address, details, cancellationToken);
+            }
 
             return new OrderCreationResult(order, true);
         }
@@ -894,7 +906,7 @@ namespace SD.ProjectName.WebApp.Services
             return new SubOrderStatusUpdateResult(true, null, updatedSubOrder, order.Status);
         }
 
-        private OrderDetailsPayload BuildDetailsPayload(string orderNumber, ShippingQuote quote)
+        private OrderDetailsPayload BuildDetailsPayload(string orderNumber, ShippingQuote quote, string initialStatus)
         {
             var items = new List<OrderItemDetail>();
             var shipping = new List<OrderShippingDetail>();
@@ -914,17 +926,18 @@ namespace SD.ProjectName.WebApp.Services
                 foreach (var item in group.Items)
                 {
                     var detail = new OrderItemDetail(
-                        item.Product.Id,
-                        item.Product.Title,
-                        item.VariantLabel,
-                        item.Quantity,
-                        item.UnitPrice,
-                        item.LineTotal,
-                        group.SellerId,
-                        group.SellerName);
-                    items.Add(detail);
-                    groupItems.Add(detail);
-                }
+                    item.Product.Id,
+                    item.Product.Title,
+                    item.VariantLabel,
+                    item.Quantity,
+                    item.UnitPrice,
+                    item.LineTotal,
+                    group.SellerId,
+                    group.SellerName,
+                    initialStatus);
+                items.Add(detail);
+                groupItems.Add(detail);
+            }
 
                 var ship = ResolveShippingDetail(quote, group.SellerId, group.SellerName, group.Shipping);
                 shipping.Add(ship);
@@ -943,9 +956,9 @@ namespace SD.ProjectName.WebApp.Services
                     discountShare,
                     Math.Max(0, baseTotal - discountShare),
                     groupItems.Sum(i => i.Quantity),
-                    groupItems,
-                    ship,
-                    OrderStatuses.Paid));
+                groupItems,
+                ship,
+                initialStatus));
             }
 
             return new OrderDetailsPayload(items, shipping, quote.Summary.TotalQuantity, quote.Summary.DiscountTotal, quote.Summary.AppliedPromoCode, subOrders);
@@ -1170,7 +1183,7 @@ namespace SD.ProjectName.WebApp.Services
             return subOrder with
             {
                 Items = normalizedItems,
-                Status = string.IsNullOrWhiteSpace(derivedStatus) ? OrderStatuses.Paid : derivedStatus,
+                Status = string.IsNullOrWhiteSpace(derivedStatus) ? status : derivedStatus,
                 TrackingNumber = tracking,
                 TrackingCarrier = carrier,
                 RefundedAmount = refunded,
@@ -1201,6 +1214,16 @@ namespace SD.ProjectName.WebApp.Services
             if (statuses.Count == 0)
             {
                 return normalizedFallback;
+            }
+
+            if (statuses.All(s => string.Equals(s, OrderStatuses.Failed, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Failed;
+            }
+
+            if (statuses.Any(s => string.Equals(s, OrderStatuses.Failed, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Failed;
             }
 
             if (statuses.All(s => string.Equals(s, OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase)))
@@ -1302,6 +1325,16 @@ namespace SD.ProjectName.WebApp.Services
             if (statuses.Count == 0)
             {
                 return string.IsNullOrWhiteSpace(fallbackStatus) ? OrderStatuses.New : OrderStatuses.Normalize(fallbackStatus);
+            }
+
+            if (statuses.All(s => string.Equals(s, OrderStatuses.Failed, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Failed;
+            }
+
+            if (statuses.Any(s => string.Equals(s, OrderStatuses.Failed, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Failed;
             }
 
             if (statuses.All(s => string.Equals(s, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase)))
