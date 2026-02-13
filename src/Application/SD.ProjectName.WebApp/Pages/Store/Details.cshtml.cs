@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.WebApp.Identity;
+using SD.ProjectName.WebApp.Services;
 using System.Text;
 
 namespace SD.ProjectName.WebApp.Pages.Store
@@ -13,11 +14,13 @@ namespace SD.ProjectName.WebApp.Pages.Store
     {
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly GetProducts _getProducts;
+        private readonly OrderService _orderService;
 
-        public DetailsModel(UserManager<ApplicationUser> userManager, GetProducts getProducts)
+        public DetailsModel(UserManager<ApplicationUser> userManager, GetProducts getProducts, OrderService orderService)
         {
             _userManager = userManager;
             _getProducts = getProducts;
+            _orderService = orderService;
         }
 
         public StoreView? Store { get; private set; }
@@ -73,6 +76,10 @@ namespace SD.ProjectName.WebApp.Pages.Store
                     : StatusCodes.Status404NotFound;
                 return Page();
             }
+
+            var ratingSummary = await _orderService.GetSellerRatingSummaryAsync(storeOwner.Id);
+            Store.AverageRating = ratingSummary.AverageRating;
+            Store.RatedOrderCount = ratingSummary.RatedOrderCount;
 
             IsPubliclyVisible = true;
             var products = await _getProducts.GetList(storeOwner.Id);
@@ -162,6 +169,10 @@ namespace SD.ProjectName.WebApp.Pages.Store
             public string? ContactPhone { get; set; }
 
             public string? ContactWebsite { get; set; }
+
+            public double? AverageRating { get; set; }
+
+            public int RatedOrderCount { get; set; }
         }
     }
 }

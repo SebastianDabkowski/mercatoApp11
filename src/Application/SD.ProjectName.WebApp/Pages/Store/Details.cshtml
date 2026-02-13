@@ -16,6 +16,17 @@
     <div class="row">
         <div class="col-md-8">
             <h1 class="display-6">@Model.Store?.Name</h1>
+            <div class="d-flex align-items-center gap-2 mb-2">
+                @if (Model.Store?.AverageRating != null)
+                {
+                    <span class="badge bg-warning text-dark">@Model.Store.AverageRating?.ToString("0.0")/5</span>
+                    <span class="text-muted small">@Model.Store.RatedOrderCount @((Model.Store.RatedOrderCount == 1) ? "rated order" : "rated orders")</span>
+                }
+                else
+                {
+                    <span class="text-muted small">No ratings yet</span>
+                }
+            </div>
             @if (!string.IsNullOrEmpty(Model.Store?.LogoPath))
             {
                 <img src="@Model.Store!.LogoPath" alt="@Model.Store.Name logo" class="img-fluid rounded border mb-3" />

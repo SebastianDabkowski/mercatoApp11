@@ -6,13 +6,18 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.EntityFrameworkCore;
 using Moq;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.Modules.Products.Domain.Interfaces;
+using SD.ProjectName.WebApp.Data;
 using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Pages.Store;
+using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.Tests.Products
 {
@@ -66,6 +71,8 @@ namespace SD.ProjectName.Tests.Products
         {
             var userManager = CreateUserManager(users);
             var getProducts = CreateGetProducts(products);
+            var dbContext = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+            var orderService = new OrderService(dbContext, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
 
             var httpContext = new DefaultHttpContext();
             var modelState = new ModelStateDictionary();
@@ -75,7 +82,7 @@ namespace SD.ProjectName.Tests.Products
                 ViewData = new ViewDataDictionary(new EmptyModelMetadataProvider(), modelState)
             };
 
-            var model = new DetailsModel(userManager.Object, getProducts)
+            var model = new DetailsModel(userManager.Object, getProducts, orderService)
             {
                 PageContext = pageContext
             };
