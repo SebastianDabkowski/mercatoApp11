@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Text;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -111,9 +112,10 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal(OrderStatuses.Paid, sellerOrder.Status);
 
             var sellerSummaries = await service.GetSummariesForSellerAsync("seller-2");
-            Assert.Single(sellerSummaries);
-            Assert.Equal(result.Order.Id, sellerSummaries[0].Id);
-            Assert.Equal(OrderStatuses.Paid, sellerSummaries[0].Status);
+            Assert.Equal(1, sellerSummaries.TotalCount);
+            var summary = Assert.Single(sellerSummaries.Items);
+            Assert.Equal(result.Order.Id, summary.Id);
+            Assert.Equal(OrderStatuses.Paid, summary.Status);
         }
 
         [Fact]
@@ -260,6 +262,150 @@ namespace SD.ProjectName.Tests.Products
                 .Select(o => o.Id)
                 .ToList();
             Assert.Equal(expectedIds, paged.Items.Select(i => i.Id).ToList());
+        }
+
+        [Fact]
+        public async Task GetSummariesForSellerAsync_ShouldFilterByStatusDateAndBuyer()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var now = DateTimeOffset.UtcNow;
+
+            var older = await service.EnsureOrderAsync(
+                new CheckoutState("profile", TestAddress, now, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-sf1", "sig-sf1"),
+                BuildQuote(),
+                TestAddress,
+                "buyer-sf-1",
+                "alice@example.com",
+                "Alice Buyer",
+                "Card",
+                "card");
+            older.Order.CreatedOn = now.AddDays(-5);
+
+            var match = await service.EnsureOrderAsync(
+                new CheckoutState("profile", TestAddress, now, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-sf2", "sig-sf2"),
+                BuildQuote(),
+                TestAddress,
+                "buyer-sf-2",
+                "bob@example.com",
+                "Bob Buyer",
+                "Card",
+                "card");
+            await service.UpdateSubOrderStatusAsync(match.Order.Id, "seller-1", OrderStatuses.Preparing);
+            match.Order.CreatedOn = now.AddHours(-12);
+
+            var differentStatus = await service.EnsureOrderAsync(
+                new CheckoutState("profile", TestAddress, now, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-sf3", "sig-sf3"),
+                BuildQuote(),
+                TestAddress,
+                "buyer-sf-3",
+                "bob@example.com",
+                "Bob Buyer",
+                "Card",
+                "card");
+            await service.UpdateSubOrderStatusAsync(differentStatus.Order.Id, "seller-1", OrderStatuses.Shipped);
+            differentStatus.Order.CreatedOn = now.AddHours(-4);
+
+            await context.SaveChangesAsync();
+
+            var filters = new SellerOrderFilterOptions
+            {
+                Statuses = new List<string> { OrderStatuses.Preparing },
+                FromDate = now.AddDays(-2),
+                ToDate = now,
+                BuyerQuery = "bob"
+            };
+
+            var paged = await service.GetSummariesForSellerAsync("seller-1", filters, 1, 10);
+
+            Assert.Equal(1, paged.TotalCount);
+            var summary = Assert.Single(paged.Items);
+            Assert.Equal(match.Order.Id, summary.Id);
+            Assert.Equal(OrderStatuses.Preparing, summary.Status);
+            Assert.Equal("Bob Buyer", summary.BuyerName);
+        }
+
+        [Fact]
+        public async Task GetSummariesForSellerAsync_ShouldPaginateNewestFirst()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var now = DateTimeOffset.UtcNow;
+
+            for (var i = 0; i < 12; i++)
+            {
+                var state = new CheckoutState("profile", TestAddress, now.AddMinutes(-i), new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, $"ref-sp{i}", $"sig-sp{i}");
+                var result = await service.EnsureOrderAsync(state, BuildQuote(), TestAddress, $"buyer-sp-{i}", "seller-page@example.com", "Seller Page", "Card", "card");
+                result.Order.CreatedOn = now.AddMinutes(-i);
+            }
+
+            await context.SaveChangesAsync();
+
+            var paged = await service.GetSummariesForSellerAsync("seller-1", null, 2, 5);
+
+            Assert.Equal(12, paged.TotalCount);
+            Assert.Equal(3, paged.TotalPages);
+            Assert.Equal(5, paged.Items.Count);
+            var expectedIds = context.Orders
+                .Where(o => o.DetailsJson.Contains("\"sellerId\":\"seller-1\""))
+                .OrderByDescending(o => o.CreatedOn)
+                .Skip(5)
+                .Take(5)
+                .Select(o => o.Id)
+                .ToList();
+            Assert.Equal(expectedIds, paged.Items.Select(i => i.Id).ToList());
+        }
+
+        [Fact]
+        public async Task ExportSellerOrdersAsync_ShouldRespectFilters()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var now = DateTimeOffset.UtcNow;
+
+            var first = await service.EnsureOrderAsync(
+                new CheckoutState("profile", TestAddress, now, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-se1", "sig-se1"),
+                BuildQuote(),
+                TestAddress,
+                "buyer-se-1",
+                "export-one@example.com",
+                "Export One",
+                "Card",
+                "card");
+            first.Order.CreatedOn = now.AddDays(-1);
+
+            var second = await service.EnsureOrderAsync(
+                new CheckoutState("profile", TestAddress, now, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-se2", "sig-se2"),
+                BuildQuote(),
+                TestAddress,
+                "buyer-se-2",
+                "export-two@example.com",
+                "Export Two",
+                "Card",
+                "card");
+            await service.UpdateSubOrderStatusAsync(second.Order.Id, "seller-1", OrderStatuses.Preparing);
+            second.Order.CreatedOn = now;
+
+            await context.SaveChangesAsync();
+
+            var csvBytes = await service.ExportSellerOrdersAsync("seller-1", new SellerOrderFilterOptions
+            {
+                Statuses = new List<string> { OrderStatuses.Preparing },
+                FromDate = now.AddDays(-2),
+                ToDate = now.AddDays(1)
+            });
+
+            var csv = Encoding.UTF8.GetString(csvBytes);
+            var lines = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            Assert.Equal(2, lines.Length);
+            var dataLine = lines[1].TrimEnd('\r');
+            Assert.Contains(OrderStatuses.Preparing, dataLine);
+            Assert.Contains(second.Order.OrderNumber, dataLine);
+            Assert.Contains("export-two@example.com", dataLine);
+            Assert.Contains("Standard", dataLine);
         }
 
         private static ShippingQuote BuildQuote()
