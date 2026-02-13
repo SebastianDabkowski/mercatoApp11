@@ -21,6 +21,11 @@ This solution uses a modular, layered architecture with a Razor Pages Web App an
 - Web App has `ApplicationDbContext` for Identity.
 - Products module has its own `ProductDbContext` with separate migrations.
 
+## Notifications & Communication
+- `NotificationService` keeps a per-user in-memory feed seeded per account type with pagination, unread counts, and mark-as-read support.
+- Real-time delivery uses `PushNotificationDispatcher` (Web Push with VAPID keys) backed by an in-memory `PushSubscriptionStore`, falling back to the in-app feed when push is unavailable.
+- Email flows share `EmailTemplateBuilder` and `EmailOptions` so outbound buyer and seller emails reuse consistent branding and from-address settings.
+
 ## ADR Traceability
 - ADR-001 (Modular Monolith, Accepted): Single deployable WebApp plus feature modules; each module owns its schema and DI registration.
 - ADR-002 (Przelewy24 escrow-like flow, Accepted): Payments and Settlements modules will own payment callbacks, commission, and payouts; the boundary is reserved for those flows.
@@ -113,6 +118,7 @@ Keep this list updated whenever ADRs are added or changed so this document mirro
 - Ensure unit tests cover new paths.
 
 ## Documentation Sync Rules
+- DocSync acceptance gates: architecture deltas regenerate `ARCHITECTURE.md`, agent responsibility deltas regenerate `AGENT.md`, and ADR validation auto-creates any missing ADRs before merge.
 - Architecture changes must trigger DocSync to regenerate `ARCHITECTURE.md` so it mirrors the current structure.
 - Agent additions or responsibility updates must trigger DocSync to refresh `AGENT.md` in the same change.
 - ADR validation must create or update missing ADRs to match the current architecture before merge.

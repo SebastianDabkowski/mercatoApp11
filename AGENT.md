@@ -238,7 +238,7 @@ Implements backend logic in C# aligned with architecture decisions.
 
 \*\*Role\*\*  
 Automates documentation and ADR currency so architecture and agent records always match implemented decisions.
-
+Acts as the enforcement gate that regenerates `ARCHITECTURE.md`/`AGENT.md` after structural or ownership changes and backfills ADRs when validation runs.
 
 
 \*\*Primary Responsibilities\*\*
