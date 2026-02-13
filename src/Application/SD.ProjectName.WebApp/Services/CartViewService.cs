@@ -127,14 +127,15 @@ namespace SD.ProjectName.WebApp.Services
                 return CartSummary.Empty;
             }
 
-            var sellerNames = await LoadSellerNamesAsync(displayItems.Select(d => d.Product.SellerId).Distinct());
+            var sellerProfiles = await LoadSellerProfilesAsync(displayItems.Select(d => d.Product.SellerId).Distinct());
             var sellerGroups = displayItems
                 .GroupBy(d => d.Product.SellerId)
                 .Select(group =>
                 {
-                    var sellerName = sellerNames.TryGetValue(group.Key, out var name) ? name : "Seller";
+                    var sellerName = sellerProfiles.TryGetValue(group.Key, out var profile) ? profile.Name : "Seller";
+                    var sellerType = sellerProfiles.TryGetValue(group.Key, out profile) ? profile.SellerType : string.Empty;
                     var subtotal = group.Sum(i => i.LineTotal);
-                    return new CartSellerGroup(group.Key, sellerName, subtotal, 0, subtotal, group.ToList());
+                    return new CartSellerGroup(group.Key, sellerName, subtotal, 0, subtotal, group.ToList(), sellerType);
                 })
                 .ToList();
 
@@ -143,21 +144,23 @@ namespace SD.ProjectName.WebApp.Services
             return promo.Summary;
         }
 
-        private async Task<Dictionary<string, string>> LoadSellerNamesAsync(IEnumerable<string> sellerIds)
+        private async Task<Dictionary<string, (string Name, string SellerType)>> LoadSellerProfilesAsync(IEnumerable<string> sellerIds)
         {
-            var names = new Dictionary<string, string>();
+            var profiles = new Dictionary<string, (string Name, string SellerType)>(StringComparer.OrdinalIgnoreCase);
             foreach (var sellerId in sellerIds)
             {
-                if (string.IsNullOrWhiteSpace(sellerId) || names.ContainsKey(sellerId))
+                if (string.IsNullOrWhiteSpace(sellerId) || profiles.ContainsKey(sellerId))
                 {
                     continue;
                 }
 
                 var seller = await _userManager.FindByIdAsync(sellerId);
-                names[sellerId] = string.IsNullOrWhiteSpace(seller?.BusinessName) ? "Seller" : seller.BusinessName;
+                var name = string.IsNullOrWhiteSpace(seller?.BusinessName) ? "Seller" : seller.BusinessName;
+                var type = seller?.SellerType ?? string.Empty;
+                profiles[sellerId] = (name, type);
             }
 
-            return names;
+            return profiles;
         }
 
         private static ProductVariant? FindVariant(ProductModel product, IReadOnlyDictionary<string, string> attributes)

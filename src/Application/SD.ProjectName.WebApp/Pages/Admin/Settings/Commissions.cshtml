@@ -1,0 +1,192 @@
+@page
+@using SD.ProjectName.WebApp.Identity
+@model SD.ProjectName.WebApp.Pages.Admin.Settings.CommissionsModel
+@{
+    ViewData["Title"] = "Commission & fees";
+}
+
+<h1 class="display-6">Commission and platform fees</h1>
+<p class="text-muted">Configure platform-wide commission rules, fixed fees, and category or seller-type overrides without code changes.</p>
+
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <div class="alert alert-success">@Model.SuccessMessage</div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">
+                <div class="fw-semibold">Current defaults</div>
+                <div class="text-muted small">These values apply when no rule overrides a transaction.</div>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>Default commission rate</div>
+                    <div class="fw-semibold">@Model.DefaultRate:P2</div>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <div>Default fixed fee (per seller order)</div>
+                    <div class="fw-semibold">@Model.DefaultFixedFee.ToString("C")</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <div class="fw-semibold">Category-specific defaults</div>
+                <div class="text-muted small">Applied when no dated rule exists for the category.</div>
+            </div>
+            <div class="list-group list-group-flush">
+                @if (Model.CategoryRates.Count == 0)
+                {
+                    <div class="list-group-item text-muted">No category overrides configured.</div>
+                }
+                else
+                {
+                    @foreach (var rate in Model.CategoryRates.OrderBy(r => r.Key))
+                    {
+                        <div class="list-group-item d-flex justify-content-between">
+                            <span>@rate.Key</span>
+                            <span class="fw-semibold">@rate.Value:P2</span>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="fw-semibold">Commission rules</div>
+                    <div class="text-muted small">Future-dated rules activate automatically on their start date.</div>
+                </div>
+                <div class="text-muted small">@Model.Rules.Count rule(s)</div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 align-middle">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Rate</th>
+                            <th>Fixed fee</th>
+                            <th>Category</th>
+                            <th>Seller type</th>
+                            <th>Effective</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @if (Model.Rules.Count == 0)
+                    {
+                        <tr><td colspan="7" class="text-muted text-center py-3">No commission rules yet.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var rule in Model.Rules)
+                        {
+                            <tr class="@(rule.EffectiveFrom > DateTimeOffset.UtcNow ? "table-warning" : string.Empty)">
+                                <td>@rule.Name</td>
+                                <td>@rule.Rate:P2</td>
+                                <td>@rule.FixedFee.ToString("C")</td>
+                                <td>@(string.IsNullOrWhiteSpace(rule.Category) ? "Any" : rule.Category)</td>
+                                <td>@(string.IsNullOrWhiteSpace(rule.SellerType) ? "Any" : rule.SellerType)</td>
+                                <td>
+                                    <div>@rule.EffectiveFrom.ToString("yyyy-MM-dd")</div>
+                                    <div class="text-muted small">@(rule.EffectiveTo?.ToString("yyyy-MM-dd") ?? "open-ended")</div>
+                                </td>
+                                <td class="text-end">
+                                    <a class="btn btn-sm btn-outline-primary" asp-page="/Admin/Settings/Commissions" asp-route-id="@rule.Id">Edit</a>
+                                </td>
+                            </tr>
+                        }
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <div class="fw-semibold">@((Model.Input.Id.HasValue ? "Edit" : "Create") + " rule")</div>
+                <div class="text-muted small">Validate overlapping windows before saving.</div>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+                    <input type="hidden" asp-for="Input.Id" />
+                    <div class="mb-3">
+                        <label asp-for="Input.Name" class="form-label">Name</label>
+                        <input asp-for="Input.Name" class="form-control" />
+                        <span asp-validation-for="Input.Name" class="text-danger"></span>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label asp-for="Input.Rate" class="form-label">Commission rate</label>
+                            <div class="input-group">
+                                <input asp-for="Input.Rate" class="form-control" step="0.01" min="0" max="1" />
+                                <span class="input-group-text">0-1</span>
+                            </div>
+                            <span asp-validation-for="Input.Rate" class="text-danger"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Input.FixedFee" class="form-label">Fixed fee</label>
+                            <input asp-for="Input.FixedFee" class="form-control" step="0.01" min="0" />
+                            <span asp-validation-for="Input.FixedFee" class="text-danger"></span>
+                        </div>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label asp-for="Input.Category" class="form-label">Category (optional)</label>
+                            <input asp-for="Input.Category" class="form-control" placeholder="Applies only to this category" />
+                            <span asp-validation-for="Input.Category" class="text-danger"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Input.SellerType" class="form-label">Seller type (optional)</label>
+                            <select asp-for="Input.SellerType" class="form-select">
+                                <option value="">Any seller type</option>
+                                @foreach (var type in SellerTypes.Allowed)
+                                {
+                                    <option value="@type">@type</option>
+                                }
+                            </select>
+                            <span asp-validation-for="Input.SellerType" class="text-danger"></span>
+                        </div>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label asp-for="Input.EffectiveFrom" class="form-label">Effective from</label>
+                            <input asp-for="Input.EffectiveFrom" class="form-control" type="date" />
+                            <span asp-validation-for="Input.EffectiveFrom" class="text-danger"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Input.EffectiveTo" class="form-label">Effective to (optional)</label>
+                            <input asp-for="Input.EffectiveTo" class="form-control" type="date" />
+                            <span asp-validation-for="Input.EffectiveTo" class="text-danger"></span>
+                        </div>
+                    </div>
+                    @if (Model.Errors.Count > 0)
+                    {
+                        <div class="alert alert-warning">
+                            <ul class="mb-0">
+                                @foreach (var err in Model.Errors)
+                                {
+                                    <li>@err</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">Save rule</button>
+                        <a asp-page="/Admin/Settings/Commissions" class="btn btn-outline-secondary">Reset</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

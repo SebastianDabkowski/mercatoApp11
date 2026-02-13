@@ -27,6 +27,9 @@ namespace SD.ProjectName.WebApp.Services
         [Range(0, 1)]
         public decimal PlatformCommissionRate { get; set; } = 0.1m;
 
+        [Range(0, double.MaxValue)]
+        public decimal PlatformFixedFee { get; set; } = 0;
+
         [Range(2, 6)]
         public int CommissionPrecision { get; set; } = 4;
 

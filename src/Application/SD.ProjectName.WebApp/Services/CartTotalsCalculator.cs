@@ -9,10 +9,10 @@ namespace SD.ProjectName.WebApp.Services
         private readonly CartOptions _options;
         private readonly CommissionCalculator _commissionCalculator;
 
-        public CartTotalsCalculator(CartOptions options)
+        public CartTotalsCalculator(CartOptions options, ICommissionRuleResolver? commissionRuleResolver = null)
         {
             _options = options;
-            _commissionCalculator = new CommissionCalculator(options);
+            _commissionCalculator = new CommissionCalculator(options, commissionRuleResolver);
         }
 
         public CartSummary Calculate(IReadOnlyCollection<CartSellerGroup> sellerGroups)
