@@ -5,9 +5,9 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Services;
 
-namespace SD.ProjectName.WebApp.Pages.Buyer.Cases
+namespace SD.ProjectName.WebApp.Pages.Seller.Cases
 {
-    [Authorize(Roles = AccountTypes.Buyer)]
+    [Authorize(Roles = AccountTypes.Seller)]
     public class IndexModel : PageModel
     {
         private readonly OrderService _orderService;
@@ -26,7 +26,7 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Cases
         [BindProperty(SupportsGet = true, Name = "page")]
         public int PageNumber { get; set; } = 1;
 
-        public List<BuyerCaseSummaryView> Cases { get; private set; } = new();
+        public List<SellerCaseSummaryView> Cases { get; private set; } = new();
 
         public int TotalCases { get; private set; }
 
@@ -54,15 +54,15 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Cases
 
         public async Task<IActionResult> OnGetAsync()
         {
-            var buyerId = _userManager.GetUserId(User);
-            if (string.IsNullOrWhiteSpace(buyerId))
+            var sellerId = _userManager.GetUserId(User);
+            if (string.IsNullOrWhiteSpace(sellerId))
             {
                 return Challenge();
             }
 
             PageNumber = Math.Max(1, PageNumber);
             var filters = BuildFilters();
-            var paged = await _orderService.GetReturnCasesForBuyerAsync(buyerId, filters, PageNumber, DefaultPageSize, HttpContext.RequestAborted);
+            var paged = await _orderService.GetReturnCasesForSellerAsync(sellerId, filters, PageNumber, DefaultPageSize, HttpContext.RequestAborted);
 
             Cases = paged.Items;
             TotalCases = paged.TotalCount;
