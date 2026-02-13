@@ -18,6 +18,7 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<SellerReputation> SellerReputations => Set<SellerReputation>();
         public DbSet<ProductReviewAudit> ProductReviewAudits => Set<ProductReviewAudit>();
         public DbSet<ProductReviewReport> ProductReviewReports => Set<ProductReviewReport>();
+        public DbSet<ProductQuestion> ProductQuestions => Set<ProductQuestion>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -414,6 +415,42 @@ namespace SD.ProjectName.WebApp.Data
 
                 entity.HasIndex(r => new { r.ReviewId, r.ReporterId })
                     .IsUnique();
+            });
+
+            builder.Entity<ProductQuestion>(entity =>
+            {
+                entity.Property(q => q.ProductId)
+                    .IsRequired();
+
+                entity.Property(q => q.SellerId)
+                    .IsRequired()
+                    .HasMaxLength(450);
+
+                entity.Property(q => q.BuyerId)
+                    .IsRequired()
+                    .HasMaxLength(450);
+
+                entity.Property(q => q.BuyerName)
+                    .IsRequired()
+                    .HasMaxLength(256);
+
+                entity.Property(q => q.Question)
+                    .IsRequired()
+                    .HasMaxLength(2000);
+
+                entity.Property(q => q.Answer)
+                    .HasMaxLength(2000);
+
+                entity.Property(q => q.Status)
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasDefaultValue(ProductQuestionStatuses.Open);
+
+                entity.Property(q => q.CreatedOn)
+                    .IsRequired();
+
+                entity.HasIndex(q => new { q.ProductId, q.Status, q.CreatedOn });
+                entity.HasIndex(q => q.SellerId);
             });
 
             builder.Entity<SellerRating>(entity =>

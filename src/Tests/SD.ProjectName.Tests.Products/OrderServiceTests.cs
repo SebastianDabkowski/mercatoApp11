@@ -2470,6 +2470,44 @@ namespace SD.ProjectName.Tests.Products
             Assert.DoesNotContain(tracked.Order.OrderNumber, csv);
         }
 
+        [Fact]
+        public async Task SubmitProductQuestionAsync_ShouldPersistQuestion()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance, notificationService: new NotificationService(TimeProvider.System));
+
+            var result = await service.SubmitProductQuestionAsync(10, "seller-1", "buyer-1", "Buyer One", "Is this available?", default);
+
+            Assert.True(result.Success);
+            Assert.Single(context.ProductQuestions);
+            var saved = await context.ProductQuestions.SingleAsync();
+            Assert.Equal("seller-1", saved.SellerId);
+            Assert.Equal("buyer-1", saved.BuyerId);
+            Assert.Equal(ProductQuestionStatuses.Open, saved.Status);
+        }
+
+        [Fact]
+        public async Task AddOrderMessageAsync_ShouldAttachMessageToOrder()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-msg", "sig-msg");
+
+            var created = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-msg", "buyer@example.com", "Buyer Msg", "Card", "card");
+            var view = await service.GetOrderAsync(created.Order.Id, "buyer-msg");
+            var subOrderNumber = view!.SubOrders.First().SubOrderNumber;
+
+            var result = await service.AddOrderMessageAsync(created.Order.Id, subOrderNumber, OrderMessageRoles.Buyer, "buyer-msg", "Hello seller", default);
+
+            Assert.True(result.Success);
+            var refreshedBuyer = await service.GetOrderAsync(created.Order.Id, "buyer-msg");
+            Assert.Single(refreshedBuyer!.Messages);
+            var sellerView = await service.GetSellerOrderAsync(created.Order.Id, "seller-1");
+            Assert.Single(sellerView!.Messages);
+        }
+
         private class FailingLabelShippingProviderService : ShippingProviderService
         {
             public FailingLabelShippingProviderService(ShippingProviderOptions options, TimeProvider clock, ILogger<ShippingProviderService> logger)

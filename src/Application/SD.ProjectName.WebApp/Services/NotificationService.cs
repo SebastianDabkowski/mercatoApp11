@@ -171,6 +171,41 @@ namespace SD.ProjectName.WebApp.Services
             }
         }
 
+        public Task<NotificationItem> AddNotificationAsync(
+            string userId,
+            string title,
+            string description,
+            string targetUrl,
+            string category = "Messages",
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                throw new ArgumentException("Value cannot be null or whitespace.", nameof(userId));
+            }
+
+            var notification = new NotificationItem
+            {
+                Id = Guid.NewGuid(),
+                Title = title?.Trim() ?? "Notification",
+                Description = description?.Trim() ?? string.Empty,
+                TargetUrl = string.IsNullOrWhiteSpace(targetUrl) ? "/" : targetUrl.Trim(),
+                Category = string.IsNullOrWhiteSpace(category) ? "Messages" : category.Trim(),
+                CreatedOn = _timeProvider.GetUtcNow(),
+                IsRead = false
+            };
+
+            var all = GetOrSeed(userId, null);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            lock (all)
+            {
+                all.Add(notification);
+            }
+
+            return Task.FromResult(notification);
+        }
+
         private List<NotificationItem> GetOrSeed(string userId, string? accountType)
         {
             return _store.GetOrAdd(userId, _ => SeedNotifications(accountType));

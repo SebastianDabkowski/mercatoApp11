@@ -70,6 +70,41 @@ else
     <div class="row">
         <div class="col-lg-8">
             <div class="card mb-3">
+                <div class="card-header">Messages with buyer</div>
+                <div class="card-body">
+                    <div asp-validation-summary="ModelOnly" class="text-danger small"></div>
+                    @{
+                        var thread = (Model.Order?.Messages ?? new List<OrderMessage>())
+                            .OrderBy(m => m.SentOn)
+                            .ToList();
+                    }
+                    @if (thread.Any())
+                    {
+                        <div class="mb-3">
+                            @foreach (var msg in thread)
+                            {
+                                <div class="mb-2">
+                                    <div class="small text-muted">@msg.SentOn.ToLocalTime().ToString("g") • @msg.SenderRole</div>
+                                    <div>@msg.Message</div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-muted small mb-3">No messages yet.</div>
+                    }
+                    <form method="post" asp-page-handler="Message" asp-route-orderId="@Model.Order?.Id">
+                        <div class="mb-2">
+                            <label class="form-label" asp-for="MessageContent">Send a message</label>
+                            <textarea class="form-control" asp-for="MessageContent" rows="2" placeholder="Reply to the buyer"></textarea>
+                            <span class="text-danger small" asp-validation-for="MessageContent"></span>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-outline-primary">Send</button>
+                    </form>
+                </div>
+            </div>
+            <div class="card mb-3">
                 <div class="card-header">Items</div>
                 <div class="card-body">
                     <div class="table-responsive">
@@ -86,7 +121,7 @@ else
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach (var item in Model.Order.Items)
+                                @foreach (var item in Model.Order!.Items)
                                 {
                                     var lineBase = item.UnitPrice * item.Quantity;
                                     var taxes = Math.Max(0, item.LineTotal - lineBase);

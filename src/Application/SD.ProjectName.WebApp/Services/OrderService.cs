@@ -216,6 +216,49 @@ namespace SD.ProjectName.WebApp.Services
         }
     }
 
+    public static class ProductQuestionStatuses
+    {
+        public const string Open = "Open";
+        public const string Answered = "Answered";
+        public const string Hidden = "Hidden";
+
+        private static readonly IReadOnlyList<string> Allowed = new[] { Open, Answered, Hidden };
+
+        public static string Normalize(string? status)
+        {
+            if (string.IsNullOrWhiteSpace(status))
+            {
+                return Open;
+            }
+
+            var match = Allowed.FirstOrDefault(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+            return match ?? Open;
+        }
+
+        public static bool IsVisible(string? status) =>
+            !string.Equals(Normalize(status), Hidden, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static class OrderMessageRoles
+    {
+        public const string Buyer = "Buyer";
+        public const string Seller = "Seller";
+        public const string Admin = "Admin";
+
+        private static readonly IReadOnlyList<string> Allowed = new[] { Buyer, Seller, Admin };
+
+        public static string Normalize(string? role)
+        {
+            if (string.IsNullOrWhiteSpace(role))
+            {
+                return Buyer;
+            }
+
+            var match = Allowed.FirstOrDefault(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase));
+            return match ?? Buyer;
+        }
+    }
+
     public class OrderRecord
     {
         public int Id { get; set; }
@@ -253,6 +296,29 @@ namespace SD.ProjectName.WebApp.Services
         public string DeliveryAddressJson { get; set; } = string.Empty;
 
         public string DetailsJson { get; set; } = string.Empty;
+    }
+
+    public class ProductQuestion
+    {
+        public int Id { get; set; }
+
+        public int ProductId { get; set; }
+
+        public string SellerId { get; set; } = string.Empty;
+
+        public string BuyerId { get; set; } = string.Empty;
+
+        public string BuyerName { get; set; } = string.Empty;
+
+        public string Question { get; set; } = string.Empty;
+
+        public string? Answer { get; set; }
+
+        public string Status { get; set; } = ProductQuestionStatuses.Open;
+
+        public DateTimeOffset CreatedOn { get; set; }
+
+        public DateTimeOffset? AnsweredOn { get; set; }
     }
 
     public class ProductReview
@@ -367,6 +433,16 @@ namespace SD.ProjectName.WebApp.Services
         double OnTimeShippingRate,
         double CancellationRate,
         DateTimeOffset CalculatedOn);
+
+    public record OrderMessage(
+        Guid Id,
+        string SubOrderNumber,
+        string SellerId,
+        string SenderRole,
+        string SenderId,
+        string Message,
+        DateTimeOffset SentOn,
+        bool IsHidden = false);
 
     public record OrderItemDetail(int ProductId, string Name, string Variant, int Quantity, decimal UnitPrice, decimal LineTotal, string SellerId, string SellerName, string Status = OrderStatuses.Paid, string Category = "", decimal? CommissionRate = null);
 
@@ -486,7 +562,8 @@ namespace SD.ProjectName.WebApp.Services
         List<EscrowAllocation>? Escrow = null,
         string PaymentStatus = PaymentStatuses.Paid,
         string? PaymentStatusMessage = null,
-        decimal PaymentRefundedAmount = 0);
+        decimal PaymentRefundedAmount = 0,
+        List<OrderMessage>? Messages = null);
 
     public record OrderView(
         int Id,
@@ -508,7 +585,8 @@ namespace SD.ProjectName.WebApp.Services
         List<OrderItemDetail> Items,
         List<OrderShippingDetail> Shipping,
         List<OrderSubOrder> SubOrders,
-        List<EscrowAllocation> Escrow);
+        List<EscrowAllocation> Escrow,
+        List<OrderMessage> Messages);
 
     public record SellerRatingResult(bool Success, string? Error = null, SellerRating? Rating = null, double? AverageRating = null);
 
@@ -520,6 +598,37 @@ namespace SD.ProjectName.WebApp.Services
         int PageSize,
         string Sort,
         double? AverageRating);
+
+    public record ProductQuestionView(
+        int Id,
+        int ProductId,
+        string SellerId,
+        string BuyerId,
+        string BuyerName,
+        string Question,
+        string? Answer,
+        string Status,
+        DateTimeOffset CreatedOn,
+        DateTimeOffset? AnsweredOn);
+
+    public record OrderMessageView(
+        Guid Id,
+        string SubOrderNumber,
+        string SellerId,
+        string SenderRole,
+        string Message,
+        DateTimeOffset SentOn);
+
+    public record OrderMessageAdminView(
+        int OrderId,
+        string OrderNumber,
+        Guid MessageId,
+        string SubOrderNumber,
+        string SellerId,
+        string SenderRole,
+        string Message,
+        DateTimeOffset SentOn,
+        bool IsHidden);
 
     public record OrderSummaryView(int Id, string OrderNumber, DateTimeOffset CreatedOn, string Status, decimal GrandTotal, int TotalQuantity);
 
@@ -565,7 +674,8 @@ namespace SD.ProjectName.WebApp.Services
         List<OrderStatusChange> StatusHistory,
         bool HasShippingLabel,
         string? ShippingLabelFileName,
-        DateTimeOffset? ShippingLabelExpiresOn);
+        DateTimeOffset? ShippingLabelExpiresOn,
+        List<OrderMessage> Messages);
 
     public record SellerPayoutScheduleView(string Schedule, string Status, decimal EligibleAmount, decimal ProcessingAmount, decimal PaidAmount, decimal Threshold, string? ErrorReference);
 
@@ -614,6 +724,10 @@ namespace SD.ProjectName.WebApp.Services
     public record ReviewReportResult(bool Success, string? Error);
 
     public record ReviewModerationResult(bool Success, string? Error);
+
+    public record ProductQuestionResult(bool Success, string? Error, ProductQuestionView? Question = null);
+
+    public record OrderMessageResult(bool Success, string? Error, OrderMessage? Message = null);
 
     public record ReviewModerationItem(
         int Id,
@@ -907,6 +1021,7 @@ namespace SD.ProjectName.WebApp.Services
         private readonly CommissionCalculator _commissionCalculator;
         private readonly ShippingProviderService _shippingProviderService;
         private readonly EmailOptions _emailOptions;
+        private readonly NotificationService? _notificationService;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -925,7 +1040,8 @@ namespace SD.ProjectName.WebApp.Services
             InvoiceOptions? invoiceOptions = null,
             ShippingProviderService? shippingProviderService = null,
             CaseSlaOptions? caseSlaOptions = null,
-            EmailOptions? emailOptions = null)
+            EmailOptions? emailOptions = null,
+            NotificationService? notificationService = null)
         {
             _dbContext = dbContext;
             _emailSender = emailSender;
@@ -939,6 +1055,7 @@ namespace SD.ProjectName.WebApp.Services
             _commissionCalculator = new CommissionCalculator(_cartOptions);
             _shippingProviderService = shippingProviderService ?? new ShippingProviderService(new ShippingProviderOptions(), TimeProvider.System, NullLogger<ShippingProviderService>.Instance);
             _emailOptions = emailOptions ?? new EmailOptions();
+            _notificationService = notificationService;
         }
 
         public async Task<OrderCreationResult> EnsureOrderAsync(
@@ -1158,8 +1275,12 @@ namespace SD.ProjectName.WebApp.Services
             var paymentMessage = string.IsNullOrWhiteSpace(details.PaymentStatusMessage)
                 ? PaymentStatusMapper.BuildBuyerMessage(paymentStatus)
                 : details.PaymentStatusMessage;
+            var messages = (details.Messages ?? new List<OrderMessage>())
+                .Where(m => !m.IsHidden)
+                .OrderBy(m => m.SentOn)
+                .ToList();
 
-                return new OrderView(
+            return new OrderView(
                 order.Id,
                 order.OrderNumber,
                 orderStatus,
@@ -1179,7 +1300,8 @@ namespace SD.ProjectName.WebApp.Services
                 details.Items,
                 details.Shipping,
                 details.SubOrders,
-                details.Escrow ?? new List<EscrowAllocation>());
+                details.Escrow ?? new List<EscrowAllocation>(),
+                messages);
         }
 
         public async Task<SellerRatingResult> SubmitSellerRatingAsync(
@@ -1778,6 +1900,208 @@ namespace SD.ProjectName.WebApp.Services
             _dbContext.ProductReviewAudits.Add(entry);
         }
 
+        public async Task<IReadOnlyList<ProductQuestionView>> GetProductQuestionsAsync(int productId, CancellationToken cancellationToken = default)
+        {
+            if (productId <= 0)
+            {
+                return Array.Empty<ProductQuestionView>();
+            }
+
+            var questions = await _dbContext.ProductQuestions.AsNoTracking()
+                .Where(q => q.ProductId == productId && ProductQuestionStatuses.IsVisible(q.Status))
+                .OrderByDescending(q => q.CreatedOn)
+                .ToListAsync(cancellationToken);
+
+            return questions.Select(ToQuestionView).ToList();
+        }
+
+        public async Task<IReadOnlyList<ProductQuestionView>> GetProductQuestionsForSellerAsync(string sellerId, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return Array.Empty<ProductQuestionView>();
+            }
+
+            var normalizedSeller = sellerId.Trim();
+            var questions = await _dbContext.ProductQuestions.AsNoTracking()
+                .Where(q => q.SellerId == normalizedSeller)
+                .OrderByDescending(q => q.CreatedOn)
+                .ToListAsync(cancellationToken);
+
+            return questions.Select(ToQuestionView).ToList();
+        }
+
+        public async Task<IReadOnlyList<ProductQuestionView>> GetRecentProductQuestionsAsync(int take = 50, CancellationToken cancellationToken = default)
+        {
+            var normalizedTake = Math.Clamp(take, 1, 100);
+            var questions = await _dbContext.ProductQuestions.AsNoTracking()
+                .OrderByDescending(q => q.CreatedOn)
+                .Take(normalizedTake)
+                .ToListAsync(cancellationToken);
+
+            return questions.Select(ToQuestionView).ToList();
+        }
+
+        public async Task<ProductQuestionResult> SubmitProductQuestionAsync(
+            int productId,
+            string sellerId,
+            string buyerId,
+            string buyerName,
+            string question,
+            CancellationToken cancellationToken = default)
+        {
+            if (productId <= 0)
+            {
+                return new ProductQuestionResult(false, "Product not found.");
+            }
+
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return new ProductQuestionResult(false, "Seller is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(buyerId))
+            {
+                return new ProductQuestionResult(false, "Buyer is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(question))
+            {
+                return new ProductQuestionResult(false, "Enter a question.");
+            }
+
+            var normalizedQuestion = question.Trim();
+            if (normalizedQuestion.Length > 2000)
+            {
+                normalizedQuestion = normalizedQuestion[..2000];
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var record = new ProductQuestion
+            {
+                ProductId = productId,
+                SellerId = sellerId.Trim(),
+                BuyerId = buyerId.Trim(),
+                BuyerName = string.IsNullOrWhiteSpace(buyerName) ? "Buyer" : buyerName.Trim(),
+                Question = normalizedQuestion,
+                Status = ProductQuestionStatuses.Open,
+                CreatedOn = now
+            };
+
+            _dbContext.ProductQuestions.Add(record);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            await SendProductQuestionNotificationAsync(record, answered: false, cancellationToken);
+            return new ProductQuestionResult(true, null, ToQuestionView(record));
+        }
+
+        public async Task<ProductQuestionResult> AnswerProductQuestionAsync(int questionId, string sellerId, string answer, CancellationToken cancellationToken = default)
+        {
+            if (questionId <= 0)
+            {
+                return new ProductQuestionResult(false, "Question not found.");
+            }
+
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return new ProductQuestionResult(false, "Seller is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(answer))
+            {
+                return new ProductQuestionResult(false, "Enter an answer.");
+            }
+
+            var normalizedSeller = sellerId.Trim();
+            var record = await _dbContext.ProductQuestions.FirstOrDefaultAsync(
+                q => q.Id == questionId && q.SellerId == normalizedSeller,
+                cancellationToken);
+            if (record == null)
+            {
+                return new ProductQuestionResult(false, "Question not found.");
+            }
+
+            var normalizedAnswer = answer.Trim();
+            if (normalizedAnswer.Length > 2000)
+            {
+                normalizedAnswer = normalizedAnswer[..2000];
+            }
+
+            record.Answer = normalizedAnswer;
+            record.AnsweredOn = DateTimeOffset.UtcNow;
+            record.Status = ProductQuestionStatuses.Answered;
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await SendProductQuestionNotificationAsync(record, answered: true, cancellationToken);
+            return new ProductQuestionResult(true, null, ToQuestionView(record));
+        }
+
+        public async Task<ProductQuestionResult> UpdateProductQuestionStatusAsync(
+            int questionId,
+            string status,
+            CancellationToken cancellationToken = default)
+        {
+            if (questionId <= 0)
+            {
+                return new ProductQuestionResult(false, "Question not found.");
+            }
+
+            var normalizedStatus = ProductQuestionStatuses.Normalize(status);
+            var record = await _dbContext.ProductQuestions.FirstOrDefaultAsync(q => q.Id == questionId, cancellationToken);
+            if (record == null)
+            {
+                return new ProductQuestionResult(false, "Question not found.");
+            }
+
+            record.Status = normalizedStatus;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            return new ProductQuestionResult(true, null, ToQuestionView(record));
+        }
+
+        private static ProductQuestionView ToQuestionView(ProductQuestion record)
+        {
+            return new ProductQuestionView(
+                record.Id,
+                record.ProductId,
+                record.SellerId,
+                record.BuyerId,
+                record.BuyerName,
+                record.Question,
+                record.Answer,
+                ProductQuestionStatuses.Normalize(record.Status),
+                record.CreatedOn,
+                record.AnsweredOn);
+        }
+
+        private Task SendProductQuestionNotificationAsync(ProductQuestion question, bool answered, CancellationToken cancellationToken)
+        {
+            if (_notificationService == null)
+            {
+                return Task.CompletedTask;
+            }
+
+            var targetUserId = answered ? question.BuyerId : question.SellerId;
+            if (string.IsNullOrWhiteSpace(targetUserId))
+            {
+                return Task.CompletedTask;
+            }
+
+            var title = answered ? "Your question was answered" : "New product question";
+            var description = answered
+                ? "Seller responded to your product question."
+                : "A buyer asked a question about your product.";
+            var targetUrl = answered ? $"/Products/Details/{question.ProductId}" : "/Seller/Questions";
+
+            return _notificationService.AddNotificationAsync(
+                targetUserId,
+                title,
+                description,
+                targetUrl,
+                "Messages",
+                cancellationToken);
+        }
+
         public async Task<Dictionary<string, int>> GetSellerRatingsForOrderAsync(int orderId, string buyerId, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(buyerId))
@@ -1817,6 +2141,228 @@ namespace SD.ProjectName.WebApp.Services
         {
             var summary = await GetSellerRatingSummaryAsync(sellerId, cancellationToken);
             return summary.AverageRating;
+        }
+
+        public async Task<OrderMessageResult> AddOrderMessageAsync(
+            int orderId,
+            string subOrderNumber,
+            string role,
+            string actorId,
+            string message,
+            CancellationToken cancellationToken = default)
+        {
+            if (orderId <= 0)
+            {
+                return new OrderMessageResult(false, "Order not found.");
+            }
+
+            if (string.IsNullOrWhiteSpace(actorId))
+            {
+                return new OrderMessageResult(false, "User is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(subOrderNumber))
+            {
+                return new OrderMessageResult(false, "Select a seller to message.");
+            }
+
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return new OrderMessageResult(false, "Enter a message.");
+            }
+
+            var normalizedRole = OrderMessageRoles.Normalize(role);
+            var normalizedSubOrder = subOrderNumber.Trim();
+            var normalizedActor = actorId.Trim();
+            var normalizedMessage = message.Trim();
+            if (normalizedMessage.Length > 2000)
+            {
+                normalizedMessage = normalizedMessage[..2000];
+            }
+
+            var order = await _dbContext.Orders.FirstOrDefaultAsync(o => o.Id == orderId, cancellationToken);
+            if (order == null)
+            {
+                return new OrderMessageResult(false, "Order not found.");
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            var subOrder = details.SubOrders.FirstOrDefault(s => string.Equals(s.SubOrderNumber, normalizedSubOrder, StringComparison.OrdinalIgnoreCase));
+            if (subOrder == null)
+            {
+                return new OrderMessageResult(false, "Sub-order not found.");
+            }
+
+            if (string.Equals(normalizedRole, OrderMessageRoles.Buyer, StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(order.BuyerId) || !string.Equals(order.BuyerId, normalizedActor, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new OrderMessageResult(false, "Order not found.");
+                }
+            }
+            else if (string.Equals(normalizedRole, OrderMessageRoles.Seller, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.Equals(subOrder.SellerId, normalizedActor, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new OrderMessageResult(false, "Sub-order not found for this seller.");
+                }
+            }
+
+            var entry = new OrderMessage(
+                Guid.NewGuid(),
+                subOrder.SubOrderNumber,
+                subOrder.SellerId,
+                normalizedRole,
+                normalizedActor,
+                normalizedMessage,
+                DateTimeOffset.UtcNow,
+                false);
+
+            var messages = details.Messages?.ToList() ?? new List<OrderMessage>();
+            messages.Add(entry);
+
+            details = details with { Messages = messages };
+            order.DetailsJson = JsonSerializer.Serialize(details, _serializerOptions);
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await SendOrderMessageNotificationAsync(order, subOrder, normalizedRole, normalizedActor, normalizedMessage, cancellationToken);
+
+            return new OrderMessageResult(true, null, entry);
+        }
+
+        public async Task<IReadOnlyList<OrderMessage>> GetOrderMessagesForAdminAsync(int orderId, CancellationToken cancellationToken = default)
+        {
+            var order = await _dbContext.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.Id == orderId, cancellationToken);
+            if (order == null)
+            {
+                return Array.Empty<OrderMessage>();
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            return (details.Messages ?? new List<OrderMessage>())
+                .OrderBy(m => m.SentOn)
+                .ToList();
+        }
+
+        public async Task<IReadOnlyList<OrderMessageAdminView>> GetRecentOrderMessagesForAdminAsync(int take = 20, CancellationToken cancellationToken = default)
+        {
+            var normalizedTake = Math.Clamp(take, 1, 50);
+            var orders = await _dbContext.Orders.AsNoTracking()
+                .OrderByDescending(o => o.CreatedOn)
+                .Take(100)
+                .ToListAsync(cancellationToken);
+
+            var collected = new List<OrderMessageAdminView>();
+            foreach (var order in orders)
+            {
+                var details = DeserializeDetails(order.DetailsJson);
+                var messages = (details.Messages ?? new List<OrderMessage>())
+                    .OrderByDescending(m => m.SentOn);
+                foreach (var message in messages)
+                {
+                    collected.Add(new OrderMessageAdminView(
+                        order.Id,
+                        order.OrderNumber,
+                        message.Id,
+                        message.SubOrderNumber,
+                        message.SellerId,
+                        message.SenderRole,
+                        message.Message,
+                        message.SentOn,
+                        message.IsHidden));
+                    if (collected.Count >= normalizedTake)
+                    {
+                        break;
+                    }
+                }
+
+                if (collected.Count >= normalizedTake)
+                {
+                    break;
+                }
+            }
+
+            return collected
+                .OrderByDescending(m => m.SentOn)
+                .Take(normalizedTake)
+                .ToList();
+        }
+
+        public async Task<OrderMessageResult> SetOrderMessageVisibilityAsync(
+            int orderId,
+            Guid messageId,
+            bool hidden,
+            CancellationToken cancellationToken = default)
+        {
+            var order = await _dbContext.Orders.FirstOrDefaultAsync(o => o.Id == orderId, cancellationToken);
+            if (order == null)
+            {
+                return new OrderMessageResult(false, "Order not found.");
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            var messages = details.Messages?.ToList() ?? new List<OrderMessage>();
+            var index = messages.FindIndex(m => m.Id == messageId);
+            if (index < 0)
+            {
+                return new OrderMessageResult(false, "Message not found.");
+            }
+
+            var updated = messages[index] with { IsHidden = hidden };
+            messages[index] = updated;
+            details = details with { Messages = messages };
+            order.DetailsJson = JsonSerializer.Serialize(details, _serializerOptions);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            return new OrderMessageResult(true, null, updated);
+        }
+
+        private Task SendOrderMessageNotificationAsync(
+            OrderRecord order,
+            OrderSubOrder subOrder,
+            string senderRole,
+            string actorId,
+            string message,
+            CancellationToken cancellationToken)
+        {
+            if (_notificationService == null)
+            {
+                return Task.CompletedTask;
+            }
+
+            if (string.Equals(senderRole, OrderMessageRoles.Buyer, StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(subOrder.SellerId))
+                {
+                    return Task.CompletedTask;
+                }
+
+                return _notificationService.AddNotificationAsync(
+                    subOrder.SellerId,
+                    "New order message",
+                    $"Buyer sent a message on order {order.OrderNumber}.",
+                    $"/Seller/Orders/Details/{order.Id}",
+                    "Messages",
+                    cancellationToken);
+            }
+
+            if (string.Equals(senderRole, OrderMessageRoles.Seller, StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(order.BuyerId))
+                {
+                    return Task.CompletedTask;
+                }
+
+                return _notificationService.AddNotificationAsync(
+                    order.BuyerId,
+                    "Order update",
+                    "Seller replied to your order message.",
+                    $"/Buyer/Orders/Details/{order.Id}",
+                    "Messages",
+                    cancellationToken);
+            }
+
+            return Task.CompletedTask;
         }
 
         public async Task<SellerReputationScore> RecalculateSellerReputationAsync(string sellerId, CancellationToken cancellationToken = default)
@@ -4109,6 +4655,10 @@ namespace SD.ProjectName.WebApp.Services
             var address = DeserializeAddress(order.DeliveryAddressJson);
             var paymentStatus = ResolvePaymentStatusForSubOrder(details, subOrder);
             var hasLabel = subOrder.ShippingLabel != null && !string.IsNullOrWhiteSpace(subOrder.ShippingLabel.Base64Content);
+            var messages = (details.Messages ?? new List<OrderMessage>())
+                .Where(m => !m.IsHidden && string.Equals(m.SubOrderNumber, subOrder.SubOrderNumber, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(m => m.SentOn)
+                .ToList();
             return new SellerOrderView(
                 order.Id,
                 order.OrderNumber,
@@ -4138,7 +4688,8 @@ namespace SD.ProjectName.WebApp.Services
                 subOrder.StatusHistory ?? new List<OrderStatusChange>(),
                 hasLabel,
                 subOrder.ShippingLabel?.FileName,
-                subOrder.ShippingLabel?.ExpiresOn);
+                subOrder.ShippingLabel?.ExpiresOn,
+                messages);
         }
 
         public async Task<ShippingLabelFile?> GetShippingLabelAsync(int orderId, string sellerId, CancellationToken cancellationToken = default)
@@ -4887,7 +5438,8 @@ namespace SD.ProjectName.WebApp.Services
                 escrow,
                 paymentStatus,
                 paymentMessage,
-                Math.Max(0, paymentRefundedAmount));
+                Math.Max(0, paymentRefundedAmount),
+                new List<OrderMessage>());
         }
 
         private static OrderShippingDetail ResolveShippingDetail(ShippingQuote quote, string sellerId, string sellerName, decimal fallbackCost)
@@ -6037,7 +6589,7 @@ namespace SD.ProjectName.WebApp.Services
             {
             }
 
-            return new OrderDetailsPayload(new List<OrderItemDetail>(), new List<OrderShippingDetail>(), 0, 0, null, new List<OrderSubOrder>(), new List<EscrowAllocation>());
+            return new OrderDetailsPayload(new List<OrderItemDetail>(), new List<OrderShippingDetail>(), 0, 0, null, new List<OrderSubOrder>(), new List<EscrowAllocation>(), Messages: new List<OrderMessage>());
         }
 
         private OrderDetailsPayload NormalizeDetails(OrderDetailsPayload details)
@@ -6050,6 +6602,7 @@ namespace SD.ProjectName.WebApp.Services
                 .Select(sub => NormalizeSubOrder(sub))
                 .ToList();
             var normalizedEscrow = NormalizeEscrow(details.Escrow, normalizedSubOrders);
+            var normalizedMessages = NormalizeOrderMessages(details.Messages, normalizedSubOrders);
             var normalizedPaymentStatus = PaymentStatuses.Normalize(details.PaymentStatus);
             var paymentRefunded = Math.Max(0, details.PaymentRefundedAmount);
             if (paymentRefunded <= 0 && normalizedSubOrders.Count > 0)
@@ -6074,8 +6627,40 @@ namespace SD.ProjectName.WebApp.Services
                 Escrow = normalizedEscrow,
                 PaymentStatus = normalizedPaymentStatus,
                 PaymentStatusMessage = paymentMessage,
-                PaymentRefundedAmount = paymentRefunded
+                PaymentRefundedAmount = paymentRefunded,
+                Messages = normalizedMessages
             };
+        }
+
+        private static List<OrderMessage> NormalizeOrderMessages(List<OrderMessage>? messages, List<OrderSubOrder> subOrders)
+        {
+            var knownSubOrders = subOrders ?? new List<OrderSubOrder>();
+            var defaultSubOrder = knownSubOrders.FirstOrDefault()?.SubOrderNumber ?? string.Empty;
+
+            var normalized = messages?
+                .Where(m => !string.IsNullOrWhiteSpace(m.Message))
+                .Select(m =>
+                {
+                    var subOrderNumber = string.IsNullOrWhiteSpace(m.SubOrderNumber)
+                        ? defaultSubOrder
+                        : m.SubOrderNumber.Trim();
+                    var sellerId = string.IsNullOrWhiteSpace(m.SellerId)
+                        ? knownSubOrders.FirstOrDefault(s => string.Equals(s.SubOrderNumber, subOrderNumber, StringComparison.OrdinalIgnoreCase))?.SellerId ?? string.Empty
+                        : m.SellerId.Trim();
+                    var sentOn = m.SentOn == default ? DateTimeOffset.UtcNow : m.SentOn;
+                    return new OrderMessage(
+                        m.Id == Guid.Empty ? Guid.NewGuid() : m.Id,
+                        subOrderNumber,
+                        sellerId,
+                        OrderMessageRoles.Normalize(m.SenderRole),
+                        string.IsNullOrWhiteSpace(m.SenderId) ? string.Empty : m.SenderId.Trim(),
+                        m.Message.Trim(),
+                        sentOn,
+                        m.IsHidden);
+                })
+                .ToList() ?? new List<OrderMessage>();
+
+            return normalized;
         }
 
         private static OrderDetailsPayload ApplyStatusToDetails(OrderDetailsPayload details, string status)

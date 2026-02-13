@@ -1,0 +1,104 @@
+@page "/Admin/Questions"
+@model SD.ProjectName.WebApp.Pages.Admin.Questions.IndexModel
+@using SD.ProjectName.WebApp.Services
+@{
+    ViewData["Title"] = "Messaging moderation";
+}
+
+<h1 class="mb-3">Messaging moderation</h1>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+
+<div asp-validation-summary="ModelOnly" class="text-danger small"></div>
+
+<div class="row">
+    <div class="col-lg-6">
+        <div class="card mb-3">
+            <div class="card-header">Product questions</div>
+            <div class="card-body">
+                @if (Model.ProductQuestions.Any())
+                {
+                    <div class="list-group">
+                        @foreach (var question in Model.ProductQuestions)
+                        {
+                            <div class="list-group-item">
+                                <div class="d-flex justify-content-between">
+                                    <div>
+                                        <div class="fw-semibold">Product #@question.ProductId</div>
+                                        <div class="small text-muted">Buyer: @question.BuyerName • Seller: @question.SellerId</div>
+                                    </div>
+                                    <div class="text-muted small">@question.CreatedOn.ToLocalTime().ToString("g")</div>
+                                </div>
+                                <div class="mt-1">@question.Question</div>
+                                @if (!string.IsNullOrWhiteSpace(question.Answer))
+                                {
+                                    <div class="mt-2 p-2 bg-light rounded">
+                                        <div class="fw-semibold small">Answer</div>
+                                        <div>@question.Answer</div>
+                                    </div>
+                                }
+                                <form method="post" asp-page-handler="QuestionStatus" class="mt-2">
+                                    <input type="hidden" asp-for="QuestionId" value="@question.Id" />
+                                    <div class="input-group input-group-sm">
+                                        <select class="form-select" asp-for="QuestionStatus">
+                                            <option value="@ProductQuestionStatuses.Open" selected="@(question.Status == ProductQuestionStatuses.Open ? "selected" : null)">Open</option>
+                                            <option value="@ProductQuestionStatuses.Answered" selected="@(question.Status == ProductQuestionStatuses.Answered ? "selected" : null)">Answered</option>
+                                            <option value="@ProductQuestionStatuses.Hidden" selected="@(question.Status == ProductQuestionStatuses.Hidden ? "selected" : null)">Hidden</option>
+                                        </select>
+                                        <button type="submit" class="btn btn-outline-secondary">Update</button>
+                                    </div>
+                                </form>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="text-muted">No questions found.</div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card mb-3">
+            <div class="card-header">Order messages</div>
+            <div class="card-body">
+                @if (Model.OrderMessages.Any())
+                {
+                    <div class="list-group">
+                        @foreach (var message in Model.OrderMessages)
+                        {
+                            <div class="list-group-item">
+                                <div class="d-flex justify-content-between">
+                                    <div>
+                                        <div class="fw-semibold">Order @message.OrderNumber</div>
+                                        <div class="small text-muted">Sub-order: @message.SubOrderNumber • Seller: @message.SellerId</div>
+                                        <div class="small text-muted">Sender: @message.SenderRole</div>
+                                    </div>
+                                    <div class="text-muted small">@message.SentOn.ToLocalTime().ToString("g")</div>
+                                </div>
+                                <div class="mt-1">@message.Message</div>
+                                <div class="small text-muted mt-1">Hidden: @(message.IsHidden ? "Yes" : "No")</div>
+                                <form method="post" asp-page-handler="MessageVisibility" class="mt-2">
+                                    <input type="hidden" asp-for="MessageOrderId" value="@message.OrderId" />
+                                    <input type="hidden" asp-for="MessageId" value="@message.MessageId" />
+                                    <input type="hidden" asp-for="HideMessage" value="@(message.IsHidden ? "false" : "true")" />
+                                    <button type="submit" class="btn btn-sm @(message.IsHidden ? "btn-outline-success" : "btn-outline-danger")">
+                                        @(message.IsHidden ? "Unhide" : "Hide")
+                                    </button>
+                                </form>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="text-muted">No recent messages.</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
