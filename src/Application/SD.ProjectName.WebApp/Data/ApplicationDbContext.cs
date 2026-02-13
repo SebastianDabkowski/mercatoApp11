@@ -14,6 +14,7 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<SellerShippingMethod> SellerShippingMethods => Set<SellerShippingMethod>();
         public DbSet<ShippingAddress> ShippingAddresses => Set<ShippingAddress>();
         public DbSet<ProductReview> ProductReviews => Set<ProductReview>();
+        public DbSet<SellerRating> SellerRatings => Set<SellerRating>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -360,6 +361,28 @@ namespace SD.ProjectName.WebApp.Data
                     .IsUnique();
 
                 entity.HasIndex(r => new { r.ProductId, r.Status, r.CreatedOn });
+            });
+
+            builder.Entity<SellerRating>(entity =>
+            {
+                entity.Property(r => r.SellerId)
+                    .HasMaxLength(450)
+                    .IsRequired();
+
+                entity.Property(r => r.BuyerId)
+                    .HasMaxLength(450)
+                    .IsRequired();
+
+                entity.Property(r => r.Rating)
+                    .IsRequired();
+
+                entity.Property(r => r.CreatedOn)
+                    .IsRequired();
+
+                entity.HasIndex(r => new { r.OrderId, r.SellerId, r.BuyerId })
+                    .IsUnique();
+
+                entity.HasIndex(r => new { r.SellerId, r.CreatedOn });
             });
         }
     }

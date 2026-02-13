@@ -207,6 +207,62 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task SubmitSellerRatingAsync_ShouldReject_WhenOrderNotDelivered()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-seller-rating-1", "sig-seller-rating-1");
+
+            var creation = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-seller-rating", "buyer-rating@example.com", "Buyer Rating", "Card", "card");
+            var result = await service.SubmitSellerRatingAsync(creation.Order.Id, "seller-1", "buyer-seller-rating", 5);
+
+            Assert.False(result.Success);
+            Assert.Empty(context.SellerRatings);
+        }
+
+        [Fact]
+        public async Task SubmitSellerRatingAsync_ShouldStoreRating_WhenDelivered()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-seller-rating-2", "sig-seller-rating-2");
+
+            var creation = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-seller-rating-2", "buyer-rating2@example.com", "Buyer Rating 2", "Card", "card");
+            await service.UpdateSubOrderStatusAsync(creation.Order.Id, "seller-1", OrderStatuses.Delivered);
+
+            var result = await service.SubmitSellerRatingAsync(creation.Order.Id, "seller-1", "buyer-seller-rating-2", 4);
+
+            Assert.True(result.Success);
+            Assert.NotNull(result.Rating);
+            Assert.Equal(4, result.Rating!.Rating);
+            Assert.Equal("seller-1", result.Rating.SellerId);
+            Assert.Equal(1, context.SellerRatings.Count());
+            var average = await service.GetSellerRatingScoreAsync("seller-1");
+            Assert.Equal(4, average);
+        }
+
+        [Fact]
+        public async Task SubmitSellerRatingAsync_ShouldPreventDuplicatePerOrder()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-seller-rating-3", "sig-seller-rating-3");
+
+            var creation = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-seller-rating-3", "buyer-rating3@example.com", "Buyer Rating 3", "Card", "card");
+            await service.UpdateSubOrderStatusAsync(creation.Order.Id, "seller-1", OrderStatuses.Delivered);
+
+            var first = await service.SubmitSellerRatingAsync(creation.Order.Id, "seller-1", "buyer-seller-rating-3", 5);
+            var second = await service.SubmitSellerRatingAsync(creation.Order.Id, "seller-1", "buyer-seller-rating-3", 3);
+
+            Assert.True(first.Success);
+            Assert.False(second.Success);
+            Assert.Equal(1, context.SellerRatings.Count());
+        }
+
+        [Fact]
         public async Task SubmitProductReviewAsync_ShouldReject_WhenOrderNotDelivered()
         {
             await using var context = CreateContext();
