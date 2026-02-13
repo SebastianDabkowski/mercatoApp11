@@ -114,6 +114,34 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task EnsureOrderAsync_ShouldStoreEscrowPerSeller()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildMultiSellerQuote();
+            var selections = new Dictionary<string, string> { ["seller-1"] = "express", ["seller-2"] = "standard" };
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, selections, "card", CheckoutPaymentStatus.Confirmed, "ref-escrow-1", "sig-escrow-1");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-escrow", "escrow@example.com", "Escrow Buyer", "Card", "card");
+            var view = await service.GetOrderAsync(result.Order.Id, "buyer-escrow");
+
+            Assert.NotNull(view);
+            Assert.Equal(2, view!.Escrow.Count);
+            foreach (var subOrder in view.SubOrders)
+            {
+                var allocation = view.Escrow.FirstOrDefault(e => e.SubOrderNumber == subOrder.SubOrderNumber);
+                Assert.NotNull(allocation);
+                Assert.Equal(subOrder.GrandTotal, allocation!.HeldAmount);
+                var expectedCommission = subOrder.SellerId == "seller-1" ? 1 : 4;
+                var expectedPayout = subOrder.SellerId == "seller-1" ? 16 : 41;
+                Assert.Equal(expectedCommission, allocation.CommissionAmount);
+                Assert.Equal(expectedPayout, allocation.SellerPayoutAmount);
+                Assert.Contains(allocation.Ledger, l => l.Type == EscrowEntryTypes.Hold && l.Amount == allocation.HeldAmount);
+            }
+        }
+
+        [Fact]
         public async Task GetSellerOrderAsync_ShouldReturnOnlySellerItems()
         {
             await using var context = CreateContext();
@@ -182,6 +210,52 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal(OrderStatuses.Delivered, sellerOrder!.Status);
             Assert.Equal("TRACK456", sellerOrder.TrackingNumber);
             Assert.Equal("Carrier B", sellerOrder.TrackingCarrier);
+        }
+
+        [Fact]
+        public async Task UpdateSubOrderStatusAsync_ShouldReleaseEscrowOnCancellation()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-cancel-escrow", "sig-cancel-escrow");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-cancel-escrow", "cancel@example.com", "Cancel Buyer", "Card", "card");
+            var cancel = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Cancelled);
+            Assert.True(cancel.Success);
+
+            var view = await service.GetOrderAsync(result.Order.Id, "buyer-cancel-escrow");
+            var allocation = Assert.Single(view!.Escrow);
+            var subOrder = Assert.Single(view.SubOrders);
+            Assert.Equal(subOrder.GrandTotal, allocation.HeldAmount);
+            Assert.Equal(allocation.HeldAmount, allocation.ReleasedToBuyer);
+            Assert.Contains(allocation.Ledger, e => e.Type == EscrowEntryTypes.ReleaseToBuyer && e.Amount == allocation.HeldAmount);
+            Assert.False(allocation.PayoutEligible);
+        }
+
+        [Fact]
+        public async Task UpdateSubOrderStatusAsync_ShouldMarkEscrowPayoutEligibleFromConfig()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var escrowOptions = new EscrowOptions { PayoutEligibleStatuses = new List<string> { OrderStatuses.Shipped } };
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, escrowOptions);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-eligible-escrow", "sig-eligible-escrow");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-eligible", "eligible@example.com", "Eligible Buyer", "Card", "card");
+            var initial = await service.GetOrderAsync(result.Order.Id, "buyer-eligible");
+            var initialAllocation = Assert.Single(initial!.Escrow);
+            Assert.False(initialAllocation.PayoutEligible);
+
+            var shipped = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Shipped);
+            Assert.True(shipped.Success);
+
+            var view = await service.GetOrderAsync(result.Order.Id, "buyer-eligible");
+            var allocation = Assert.Single(view!.Escrow);
+            Assert.True(allocation.PayoutEligible);
+            Assert.Contains(allocation.Ledger, e => e.Type == EscrowEntryTypes.PayoutEligible);
         }
 
         [Fact]
@@ -566,7 +640,15 @@ namespace SD.ProjectName.Tests.Products
 
             var sellerOneGroup = new CartSellerGroup("seller-1", "Seller One", 10, 7, 17, new List<CartDisplayItem> { itemOne });
             var sellerTwoGroup = new CartSellerGroup("seller-2", "Seller Two", 40, 5, 45, new List<CartDisplayItem> { itemTwo });
-            var summary = new CartSummary(new List<CartSellerGroup> { sellerOneGroup, sellerTwoGroup }, 50, 12, 62, 3, CartSettlementSummary.Empty);
+            var settlements = new CartSettlementSummary(
+                new List<CartSellerSettlement>
+                {
+                    new("seller-1", 10, 7, 1, 16),
+                    new("seller-2", 40, 5, 4, 41)
+                },
+                5,
+                57);
+            var summary = new CartSummary(new List<CartSellerGroup> { sellerOneGroup, sellerTwoGroup }, 50, 12, 62, 3, settlements);
 
             var sellerOneOptions = new List<ShippingMethodOption> { new("standard", "Standard", 5, "Standard", false), new("express", "Express", 7, "Express", true) };
             var sellerTwoOptions = new List<ShippingMethodOption> { new("standard", "Standard", 5, "Standard", true) };

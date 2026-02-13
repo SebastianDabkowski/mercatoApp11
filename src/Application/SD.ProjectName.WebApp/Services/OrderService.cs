@@ -190,7 +190,34 @@ namespace SD.ProjectName.WebApp.Services
         DateTimeOffset? DeliveredOn = null,
         ReturnRequest? Return = null);
 
-    public record OrderDetailsPayload(List<OrderItemDetail> Items, List<OrderShippingDetail> Shipping, int TotalQuantity, decimal DiscountTotal = 0, string? PromoCode = null, List<OrderSubOrder> SubOrders = null!);
+    public static class EscrowEntryTypes
+    {
+        public const string Hold = "Hold";
+        public const string ReleaseToBuyer = "ReleaseToBuyer";
+        public const string PayoutEligible = "PayoutEligible";
+    }
+
+    public record EscrowLedgerEntry(string SubOrderNumber, string SellerId, string Type, decimal Amount, string? Note, DateTimeOffset RecordedOn, string? Reference = null);
+
+    public record EscrowAllocation(
+        string SubOrderNumber,
+        string SellerId,
+        decimal HeldAmount,
+        decimal CommissionAmount,
+        decimal SellerPayoutAmount,
+        decimal ReleasedToBuyer,
+        decimal ReleasedToSeller,
+        bool PayoutEligible,
+        List<EscrowLedgerEntry> Ledger);
+
+    public record OrderDetailsPayload(
+        List<OrderItemDetail> Items,
+        List<OrderShippingDetail> Shipping,
+        int TotalQuantity,
+        decimal DiscountTotal = 0,
+        string? PromoCode = null,
+        List<OrderSubOrder> SubOrders = null!,
+        List<EscrowAllocation>? Escrow = null);
 
     public record OrderView(
         int Id,
@@ -208,7 +235,8 @@ namespace SD.ProjectName.WebApp.Services
         DeliveryAddress Address,
         List<OrderItemDetail> Items,
         List<OrderShippingDetail> Shipping,
-        List<OrderSubOrder> SubOrders);
+        List<OrderSubOrder> SubOrders,
+        List<EscrowAllocation> Escrow);
 
     public record OrderSummaryView(int Id, string OrderNumber, DateTimeOffset CreatedOn, string Status, decimal GrandTotal, int TotalQuantity);
 
@@ -248,7 +276,8 @@ namespace SD.ProjectName.WebApp.Services
         string BuyerEmail,
         string? BuyerPhone,
         string PaymentStatus,
-        ReturnRequest? ReturnRequest);
+        ReturnRequest? ReturnRequest,
+        EscrowAllocation? Escrow);
 
     public record OrderCreationResult(OrderRecord Order, bool Created);
 
@@ -285,16 +314,18 @@ namespace SD.ProjectName.WebApp.Services
         private readonly ApplicationDbContext _dbContext;
         private readonly IEmailSender _emailSender;
         private readonly ILogger<OrderService> _logger;
+        private readonly EscrowOptions _escrowOptions;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        public OrderService(ApplicationDbContext dbContext, IEmailSender emailSender, ILogger<OrderService> logger)
+        public OrderService(ApplicationDbContext dbContext, IEmailSender emailSender, ILogger<OrderService> logger, EscrowOptions? escrowOptions = null)
         {
             _dbContext = dbContext;
             _emailSender = emailSender;
             _logger = logger;
+            _escrowOptions = escrowOptions ?? new EscrowOptions();
         }
 
         public async Task<OrderCreationResult> EnsureOrderAsync(
@@ -333,7 +364,7 @@ namespace SD.ProjectName.WebApp.Services
 
             var normalizedInitialStatus = OrderStatuses.Normalize(initialStatus);
             var orderNumber = GenerateOrderNumber();
-            var details = BuildDetailsPayload(orderNumber, quote, normalizedInitialStatus);
+            var details = BuildDetailsPayload(orderNumber, quote, normalizedInitialStatus, normalizedReference);
             var order = new OrderRecord
             {
                 OrderNumber = orderNumber,
@@ -402,7 +433,8 @@ namespace SD.ProjectName.WebApp.Services
                 address,
                 details.Items,
                 details.Shipping,
-                details.SubOrders);
+                details.SubOrders,
+                details.Escrow ?? new List<EscrowAllocation>());
         }
 
         public async Task<ReturnRequestResult> CreateReturnRequestAsync(
@@ -765,6 +797,9 @@ namespace SD.ProjectName.WebApp.Services
                 return null;
             }
 
+            var escrow = details.Escrow?.FirstOrDefault(e =>
+                string.Equals(e.SubOrderNumber, subOrder.SubOrderNumber, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(e.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
             var address = DeserializeAddress(order.DeliveryAddressJson);
             return new SellerOrderView(
                 order.Id,
@@ -789,7 +824,8 @@ namespace SD.ProjectName.WebApp.Services
                 order.BuyerEmail,
                 address.Phone,
                 OrderStatuses.Normalize(order.Status),
-                subOrder.Return);
+                subOrder.Return,
+                escrow);
         }
 
         public async Task<SubOrderStatusUpdateResult> UpdateSubOrderStatusAsync(
@@ -899,6 +935,8 @@ namespace SD.ProjectName.WebApp.Services
 
             details.SubOrders[subOrderIndex] = updatedSubOrder;
 
+            var updatedEscrow = UpdateEscrowAllocations(details.Escrow, details.SubOrders, updatedSubOrder, order.PaymentReference);
+            details = details with { Escrow = updatedEscrow };
             order.Status = CalculateOrderStatus(details.SubOrders, order.Status);
             order.DetailsJson = JsonSerializer.Serialize(details, _serializerOptions);
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -906,7 +944,7 @@ namespace SD.ProjectName.WebApp.Services
             return new SubOrderStatusUpdateResult(true, null, updatedSubOrder, order.Status);
         }
 
-        private OrderDetailsPayload BuildDetailsPayload(string orderNumber, ShippingQuote quote, string initialStatus)
+        private OrderDetailsPayload BuildDetailsPayload(string orderNumber, ShippingQuote quote, string initialStatus, string? paymentReference)
         {
             var items = new List<OrderItemDetail>();
             var shipping = new List<OrderShippingDetail>();
@@ -926,18 +964,18 @@ namespace SD.ProjectName.WebApp.Services
                 foreach (var item in group.Items)
                 {
                     var detail = new OrderItemDetail(
-                    item.Product.Id,
-                    item.Product.Title,
-                    item.VariantLabel,
-                    item.Quantity,
-                    item.UnitPrice,
-                    item.LineTotal,
-                    group.SellerId,
-                    group.SellerName,
-                    initialStatus);
-                items.Add(detail);
-                groupItems.Add(detail);
-            }
+                        item.Product.Id,
+                        item.Product.Title,
+                        item.VariantLabel,
+                        item.Quantity,
+                        item.UnitPrice,
+                        item.LineTotal,
+                        group.SellerId,
+                        group.SellerName,
+                        initialStatus);
+                    items.Add(detail);
+                    groupItems.Add(detail);
+                }
 
                 var ship = ResolveShippingDetail(quote, group.SellerId, group.SellerName, group.Shipping);
                 shipping.Add(ship);
@@ -956,12 +994,13 @@ namespace SD.ProjectName.WebApp.Services
                     discountShare,
                     Math.Max(0, baseTotal - discountShare),
                     groupItems.Sum(i => i.Quantity),
-                groupItems,
-                ship,
-                initialStatus));
+                    groupItems,
+                    ship,
+                    initialStatus));
             }
 
-            return new OrderDetailsPayload(items, shipping, quote.Summary.TotalQuantity, quote.Summary.DiscountTotal, quote.Summary.AppliedPromoCode, subOrders);
+            var escrow = BuildEscrowAllocations(quote, subOrders, initialStatus, paymentReference);
+            return new OrderDetailsPayload(items, shipping, quote.Summary.TotalQuantity, quote.Summary.DiscountTotal, quote.Summary.AppliedPromoCode, subOrders, escrow);
         }
 
         private static OrderShippingDetail ResolveShippingDetail(ShippingQuote quote, string sellerId, string sellerName, decimal fallbackCost)
@@ -1002,6 +1041,120 @@ namespace SD.ProjectName.WebApp.Services
             return Math.Min(rounded, baseTotal);
         }
 
+        private List<EscrowAllocation> BuildEscrowAllocations(ShippingQuote quote, List<OrderSubOrder> subOrders, string initialStatus, string? paymentReference)
+        {
+            var allocations = new List<EscrowAllocation>();
+            if (!string.Equals(initialStatus, OrderStatuses.Paid, StringComparison.OrdinalIgnoreCase))
+            {
+                return allocations;
+            }
+
+            var settlementLookup = quote?.Summary?.Settlement?.Sellers?
+                .ToDictionary(s => s.SellerId, StringComparer.OrdinalIgnoreCase)
+                ?? new Dictionary<string, CartSellerSettlement>(StringComparer.OrdinalIgnoreCase);
+            var now = DateTimeOffset.UtcNow;
+
+            foreach (var subOrder in subOrders)
+            {
+                settlementLookup.TryGetValue(subOrder.SellerId, out var settlement);
+                var holdAmount = Math.Max(0, subOrder.GrandTotal);
+                var commission = Math.Max(0, settlement?.Commission ?? 0);
+                var payout = settlement?.Payout ?? Math.Max(0, holdAmount - commission);
+                var payoutEligible = IsPayoutEligible(subOrder.Status);
+                var ledger = new List<EscrowLedgerEntry>
+                {
+                    new EscrowLedgerEntry(subOrder.SubOrderNumber, subOrder.SellerId, EscrowEntryTypes.Hold, holdAmount, "Payment confirmed and held in escrow", now, paymentReference)
+                };
+
+                if (payoutEligible)
+                {
+                    ledger.Add(new EscrowLedgerEntry(subOrder.SubOrderNumber, subOrder.SellerId, EscrowEntryTypes.PayoutEligible, payout, $"Status {OrderStatuses.Normalize(subOrder.Status)} allows payout", now, paymentReference));
+                }
+
+                allocations.Add(new EscrowAllocation(
+                    subOrder.SubOrderNumber,
+                    subOrder.SellerId,
+                    holdAmount,
+                    commission,
+                    payout,
+                    0,
+                    0,
+                    payoutEligible,
+                    ledger));
+            }
+
+            return allocations;
+        }
+
+        private List<EscrowAllocation> UpdateEscrowAllocations(List<EscrowAllocation>? existing, List<OrderSubOrder> subOrders, OrderSubOrder updatedSubOrder, string? paymentReference)
+        {
+            var normalized = NormalizeEscrow(existing, subOrders);
+            var index = normalized.FindIndex(e =>
+                string.Equals(e.SubOrderNumber, updatedSubOrder.SubOrderNumber, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(e.SellerId, updatedSubOrder.SellerId, StringComparison.OrdinalIgnoreCase));
+            if (index < 0)
+            {
+                normalized.Add(new EscrowAllocation(
+                    updatedSubOrder.SubOrderNumber,
+                    updatedSubOrder.SellerId,
+                    Math.Max(0, updatedSubOrder.GrandTotal),
+                    0,
+                    Math.Max(0, updatedSubOrder.GrandTotal),
+                    0,
+                    0,
+                    IsPayoutEligible(updatedSubOrder.Status),
+                    new List<EscrowLedgerEntry>()));
+                index = normalized.Count - 1;
+            }
+
+            var allocation = normalized[index];
+            var ledger = allocation.Ledger ?? new List<EscrowLedgerEntry>();
+            var now = DateTimeOffset.UtcNow;
+            var payoutEligible = allocation.PayoutEligible;
+
+            if (IsPayoutEligible(updatedSubOrder.Status) && !allocation.PayoutEligible)
+            {
+                payoutEligible = true;
+                ledger.Add(new EscrowLedgerEntry(
+                    updatedSubOrder.SubOrderNumber,
+                    updatedSubOrder.SellerId,
+                    EscrowEntryTypes.PayoutEligible,
+                    allocation.SellerPayoutAmount,
+                    $"Status {OrderStatuses.Normalize(updatedSubOrder.Status)} allows payout",
+                    now,
+                    paymentReference));
+            }
+
+            if (ShouldReleaseToBuyer(updatedSubOrder.Status))
+            {
+                var remaining = Math.Max(0, allocation.HeldAmount - allocation.ReleasedToBuyer - allocation.ReleasedToSeller);
+                if (remaining > 0)
+                {
+                    ledger.Add(new EscrowLedgerEntry(
+                        updatedSubOrder.SubOrderNumber,
+                        updatedSubOrder.SellerId,
+                        EscrowEntryTypes.ReleaseToBuyer,
+                        remaining,
+                        $"Released after {OrderStatuses.Normalize(updatedSubOrder.Status)}",
+                        now,
+                        paymentReference));
+                    allocation = allocation with
+                    {
+                        ReleasedToBuyer = allocation.ReleasedToBuyer + remaining,
+                        PayoutEligible = false
+                    };
+                }
+            }
+
+            normalized[index] = allocation with
+            {
+                Ledger = ledger,
+                PayoutEligible = payoutEligible
+            };
+
+            return normalized;
+        }
+
         private static List<ReturnRequestItem> BuildReturnItems(OrderSubOrder subOrder, List<int>? productIds)
         {
             var normalizedIds = productIds?
@@ -1019,6 +1172,87 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             return items;
+        }
+
+        private List<EscrowAllocation> NormalizeEscrow(List<EscrowAllocation>? escrow, List<OrderSubOrder> subOrders)
+        {
+            var normalized = new List<EscrowAllocation>();
+            var now = DateTimeOffset.UtcNow;
+
+            foreach (var subOrder in subOrders)
+            {
+                var allocation = escrow?.FirstOrDefault(e =>
+                    string.Equals(e.SubOrderNumber, subOrder.SubOrderNumber, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(e.SellerId, subOrder.SellerId, StringComparison.OrdinalIgnoreCase));
+
+                if (allocation == null)
+                {
+                    normalized.Add(new EscrowAllocation(
+                        subOrder.SubOrderNumber,
+                        subOrder.SellerId,
+                        Math.Max(0, subOrder.GrandTotal),
+                        0,
+                        Math.Max(0, subOrder.GrandTotal),
+                        0,
+                        0,
+                        IsPayoutEligible(subOrder.Status),
+                        new List<EscrowLedgerEntry>()));
+                    continue;
+                }
+
+                var ledger = (allocation.Ledger ?? new List<EscrowLedgerEntry>())
+                    .Select(entry => NormalizeLedgerEntry(entry, subOrder, now))
+                    .ToList();
+
+                normalized.Add(allocation with
+                {
+                    SubOrderNumber = string.IsNullOrWhiteSpace(allocation.SubOrderNumber) ? subOrder.SubOrderNumber : allocation.SubOrderNumber,
+                    SellerId = string.IsNullOrWhiteSpace(allocation.SellerId) ? subOrder.SellerId : allocation.SellerId,
+                    HeldAmount = Math.Max(0, allocation.HeldAmount),
+                    CommissionAmount = Math.Max(0, allocation.CommissionAmount),
+                    SellerPayoutAmount = Math.Max(0, allocation.SellerPayoutAmount),
+                    ReleasedToBuyer = Math.Max(0, allocation.ReleasedToBuyer),
+                    ReleasedToSeller = Math.Max(0, allocation.ReleasedToSeller),
+                    PayoutEligible = allocation.PayoutEligible,
+                    Ledger = ledger
+                });
+            }
+
+            return normalized;
+        }
+
+        private static EscrowLedgerEntry NormalizeLedgerEntry(EscrowLedgerEntry entry, OrderSubOrder subOrder, DateTimeOffset fallbackTimestamp)
+        {
+            var subOrderNumber = string.IsNullOrWhiteSpace(entry.SubOrderNumber) ? subOrder.SubOrderNumber : entry.SubOrderNumber;
+            var sellerId = string.IsNullOrWhiteSpace(entry.SellerId) ? subOrder.SellerId : entry.SellerId;
+            var type = string.IsNullOrWhiteSpace(entry.Type) ? EscrowEntryTypes.Hold : entry.Type.Trim();
+            var amount = Math.Max(0, entry.Amount);
+            var note = string.IsNullOrWhiteSpace(entry.Note) ? null : entry.Note.Trim();
+            var recordedOn = entry.RecordedOn == DateTimeOffset.MinValue ? fallbackTimestamp : entry.RecordedOn;
+            var reference = string.IsNullOrWhiteSpace(entry.Reference) ? null : entry.Reference.Trim();
+
+            return new EscrowLedgerEntry(subOrderNumber, sellerId, type, amount, note, recordedOn, reference);
+        }
+
+        private bool IsPayoutEligible(string? status)
+        {
+            if (_escrowOptions?.PayoutEligibleStatuses == null || _escrowOptions.PayoutEligibleStatuses.Count == 0)
+            {
+                return false;
+            }
+
+            var normalized = OrderStatuses.Normalize(status);
+            return _escrowOptions.PayoutEligibleStatuses
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(OrderStatuses.Normalize)
+                .Any(s => string.Equals(s, normalized, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool ShouldReleaseToBuyer(string? status)
+        {
+            var normalized = OrderStatuses.Normalize(status);
+            return string.Equals(normalized, OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase);
         }
 
         public static bool IsReturnWindowOpen(OrderSubOrder subOrder, DateTimeOffset orderCreatedOn)
@@ -1146,10 +1380,10 @@ namespace SD.ProjectName.WebApp.Services
             {
             }
 
-            return new OrderDetailsPayload(new List<OrderItemDetail>(), new List<OrderShippingDetail>(), 0, 0, null, new List<OrderSubOrder>());
+            return new OrderDetailsPayload(new List<OrderItemDetail>(), new List<OrderShippingDetail>(), 0, 0, null, new List<OrderSubOrder>(), new List<EscrowAllocation>());
         }
 
-        private static OrderDetailsPayload NormalizeDetails(OrderDetailsPayload details)
+        private OrderDetailsPayload NormalizeDetails(OrderDetailsPayload details)
         {
             var normalizedItems = (details.Items ?? new List<OrderItemDetail>())
                 .Select(i => NormalizeItem(i, OrderStatuses.Paid))
@@ -1158,12 +1392,14 @@ namespace SD.ProjectName.WebApp.Services
             var normalizedSubOrders = (details.SubOrders ?? new List<OrderSubOrder>())
                 .Select(NormalizeSubOrder)
                 .ToList();
+            var normalizedEscrow = NormalizeEscrow(details.Escrow, normalizedSubOrders);
 
             return details with
             {
                 Items = normalizedItems,
                 Shipping = normalizedShipping,
-                SubOrders = normalizedSubOrders
+                SubOrders = normalizedSubOrders,
+                Escrow = normalizedEscrow
             };
         }
 
