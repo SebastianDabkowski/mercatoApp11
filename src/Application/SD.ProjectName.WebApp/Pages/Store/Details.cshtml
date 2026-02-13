@@ -16,16 +16,25 @@
     <div class="row">
         <div class="col-md-8">
             <h1 class="display-6">@Model.Store?.Name</h1>
-            <div class="d-flex align-items-center gap-2 mb-2">
-                @if (Model.Store?.AverageRating != null)
-                {
-                    <span class="badge bg-warning text-dark">@Model.Store.AverageRating?.ToString("0.0")/5</span>
-                    <span class="text-muted small">@Model.Store.RatedOrderCount @((Model.Store.RatedOrderCount == 1) ? "rated order" : "rated orders")</span>
-                }
-                else
-                {
-                    <span class="text-muted small">No ratings yet</span>
-                }
+            <div class="d-flex flex-column gap-1 mb-3">
+                <div class="d-flex align-items-center gap-2">
+                    @if (Model.Store?.AverageRating != null)
+                    {
+                        <span class="badge bg-warning text-dark">@Model.Store.AverageRating?.ToString("0.0")/5</span>
+                        <span class="text-muted small">@Model.Store.RatedOrderCount @((Model.Store.RatedOrderCount == 1) ? "rated order" : "rated orders")</span>
+                    }
+                    else
+                    {
+                        <span class="text-muted small">No ratings yet</span>
+                    }
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-primary">Reputation: @Model.Store?.ReputationLabel</span>
+                    <span class="text-muted small">Score @Model.Store?.ReputationScore.ToString("0")/100</span>
+                </div>
+                <div class="text-muted small">
+                    On-time shipping @Model.Store?.OnTimeShippingRate.ToString("P0") · Disputes @Model.Store?.DisputeRate.ToString("P0") · Cancellations @Model.Store?.CancellationRate.ToString("P0")
+                </div>
             </div>
             @if (!string.IsNullOrEmpty(Model.Store?.LogoPath))
             {
