@@ -94,7 +94,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             }
 
             TempData["CheckoutAddressSaved"] = true;
-            return Page();
+            return RedirectToPage("/Checkout/Shipping");
         }
 
         private async Task<DeliveryAddress?> ResolveAddressAsync()

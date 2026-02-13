@@ -1,0 +1,106 @@
+@page "/Checkout/Payment"
+@model SD.ProjectName.WebApp.Pages.Checkout.PaymentModel
+@{
+    ViewData["Title"] = "Payment";
+}
+
+<h1 class="mb-4">Payment</h1>
+
+@if (TempData["PaymentMessage"] != null)
+{
+    <div class="alert alert-info">@TempData["PaymentMessage"]</div>
+}
+
+@if (TempData["PaymentRedirect"] != null)
+{
+    <div class="alert alert-warning">@TempData["PaymentRedirect"]</div>
+    @if (TempData["PaymentCancelUrl"] is string cancelUrl && !string.IsNullOrWhiteSpace(cancelUrl))
+    {
+        <div class="small">If you cancelled at the provider, <a href="@cancelUrl">return here</a> to retry.</div>
+    }
+}
+
+@if (Model.PaymentStatus == SD.ProjectName.WebApp.Services.CheckoutPaymentStatus.Failed)
+{
+    <div class="alert alert-danger">The last payment attempt failed. Please try again.</div>
+}
+else if (Model.PaymentStatus == SD.ProjectName.WebApp.Services.CheckoutPaymentStatus.Canceled)
+{
+    <div class="alert alert-warning">Payment was cancelled. Choose another method to continue.</div>
+}
+
+<form method="post" novalidate>
+    <div class="row">
+        <div class="col-lg-8">
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+            <div class="card mb-3">
+                <div class="card-header">Choose a payment method</div>
+                <div class="list-group list-group-flush">
+                    @foreach (var method in Model.Methods)
+                    {
+                        var inputId = $"payment-{method.Id}";
+                        <label class="list-group-item list-group-item-action d-flex gap-3 align-items-start" for="@inputId">
+                            <input class="form-check-input mt-1" type="radio" id="@inputId" name="Input.SelectedMethodId" value="@method.Id" @(string.Equals(Model.Input.SelectedMethodId, method.Id, StringComparison.OrdinalIgnoreCase) ? "checked" : "") />
+                            <div class="flex-grow-1">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>@method.Label</strong>
+                                        @if (!string.IsNullOrWhiteSpace(method.Provider))
+                                        {
+                                            <span class="text-muted small ms-2">via @method.Provider</span>
+                                        }
+                                    </div>
+                                    @if (method.RequiresRedirect)
+                                    {
+                                        <span class="badge bg-primary">Redirect</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-success">Instant</span>
+                                    }
+                                </div>
+                                <div class="text-muted small">
+                                    @if (method.RequiresRedirect)
+                                    {
+                                        <span>You'll be redirected to @(!string.IsNullOrWhiteSpace(method.Provider) ? method.Provider : "the provider") to authorize payment.</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Confirm payment directly on this page.</span>
+                                    }
+                                </div>
+                            </div>
+                        </label>
+                    }
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <a class="btn btn-outline-secondary" href="/Checkout/Shipping">Back to shipping</a>
+                <button type="submit" class="btn btn-primary">Confirm payment</button>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">Order summary</div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Items subtotal</span>
+                        <span>@Model.Summary.ItemsSubtotal.ToString("C")</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Shipping</span>
+                        <span>@Model.Summary.ShippingTotal.ToString("C")</span>
+                    </div>
+                    <hr />
+                    <div class="d-flex justify-content-between">
+                        <strong>Total</strong>
+                        <strong>@Model.Summary.GrandTotal.ToString("C")</strong>
+                    </div>
+                    <div class="text-muted small mt-2">@Model.Summary.TotalQuantity item(s)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>

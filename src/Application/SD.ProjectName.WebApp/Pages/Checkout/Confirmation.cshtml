@@ -1,0 +1,73 @@
+@page "/Checkout/Confirmation"
+@model SD.ProjectName.WebApp.Pages.Checkout.ConfirmationModel
+@{
+    ViewData["Title"] = "Order confirmed";
+}
+
+<h1 class="mb-3">Order confirmed</h1>
+
+<div class="alert alert-success">
+    <strong>Payment confirmed.</strong> Your order is being prepared.
+    @if (!string.IsNullOrWhiteSpace(Model.PaymentReference))
+    {
+        <div class="small text-muted">Reference: @Model.PaymentReference</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(Model.PaymentMethodLabel))
+    {
+        <div class="small text-muted">Paid with: @Model.PaymentMethodLabel</div>
+    }
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-3">
+            <div class="card-header">Delivery address</div>
+            <div class="card-body">
+                @if (Model.Address != null)
+                {
+                    <div class="fw-semibold">@Model.Address.Recipient</div>
+                    <div>@Model.Address.Line1</div>
+                    @if (!string.IsNullOrWhiteSpace(Model.Address.Line2))
+                    {
+                        <div>@Model.Address.Line2</div>
+                    }
+                    <div>@Model.Address.City @Model.Address.State @Model.Address.PostalCode</div>
+                    <div>@Model.Address.Country</div>
+                    @if (!string.IsNullOrWhiteSpace(Model.Address.Phone))
+                    {
+                        <div class="text-muted">Phone: @Model.Address.Phone</div>
+                    }
+                }
+                else
+                {
+                    <div class="text-muted">Address not available.</div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">Order summary</div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Items subtotal</span>
+                    <span>@Model.Summary.ItemsSubtotal.ToString("C")</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Shipping</span>
+                    <span>@Model.Summary.ShippingTotal.ToString("C")</span>
+                </div>
+                <hr />
+                <div class="d-flex justify-content-between">
+                    <strong>Total</strong>
+                    <strong>@Model.Summary.GrandTotal.ToString("C")</strong>
+                </div>
+                <div class="text-muted small mt-2">@Model.Summary.TotalQuantity item(s)</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-3">
+    <a class="btn btn-primary" href="/Products/List">Continue shopping</a>
+</div>
