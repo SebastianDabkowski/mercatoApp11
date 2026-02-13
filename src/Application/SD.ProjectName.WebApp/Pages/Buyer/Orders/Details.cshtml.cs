@@ -23,6 +23,12 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
         [BindProperty]
         public string? ReturnReason { get; set; }
 
+        [BindProperty]
+        public string? ReturnType { get; set; } = ReturnRequestTypes.Return;
+
+        [BindProperty]
+        public string? ReturnDescription { get; set; }
+
         [TempData]
         public string? StatusMessage { get; set; }
 
@@ -90,12 +96,12 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
                 return false;
             }
 
-            if (subOrder.Return != null)
+            if (subOrder.Return != null && ReturnRequestStatuses.IsOpen(subOrder.Return.Status))
             {
                 return false;
             }
 
-            return OrderService.IsReturnWindowOpen(subOrder, Order.CreatedOn);
+            return true;
         }
 
         public bool IsReturnWindowOpen(OrderSubOrder subOrder)
@@ -119,12 +125,22 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
 
             if (string.IsNullOrWhiteSpace(ReturnSubOrder))
             {
-                ModelState.AddModelError(nameof(ReturnSubOrder), "Select a sub-order to return.");
+                ModelState.AddModelError(nameof(ReturnSubOrder), "Select a sub-order to request support for.");
             }
 
             if (string.IsNullOrWhiteSpace(ReturnReason))
             {
-                ModelState.AddModelError(nameof(ReturnReason), "Provide a reason for the return.");
+                ModelState.AddModelError(nameof(ReturnReason), "Provide a reason for the request.");
+            }
+
+            if (string.IsNullOrWhiteSpace(ReturnType) || !ReturnRequestTypes.IsSupported(ReturnType))
+            {
+                ModelState.AddModelError(nameof(ReturnType), "Select return or complaint.");
+            }
+
+            if (string.IsNullOrWhiteSpace(ReturnDescription))
+            {
+                ModelState.AddModelError(nameof(ReturnDescription), "Provide a description of the issue.");
             }
 
             if (!ModelState.IsValid)
@@ -138,6 +154,8 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
                 ReturnSubOrder,
                 ReturnItems,
                 ReturnReason,
+                ReturnType,
+                ReturnDescription,
                 HttpContext.RequestAborted);
 
             if (!result.Success)
@@ -146,7 +164,9 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
                 return Page();
             }
 
-            StatusMessage = "Return request submitted.";
+            StatusMessage = result.Request == null
+                ? "Case submitted."
+                : $"Case {result.Request.CaseId} submitted. Status: {result.Request.Status}.";
             return RedirectToPage(new { orderId });
         }
 
@@ -161,6 +181,11 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
             if (string.IsNullOrWhiteSpace(ReturnSubOrder))
             {
                 ReturnSubOrder = Order.SubOrders.FirstOrDefault(CanRequestReturn)?.SubOrderNumber;
+            }
+
+            if (string.IsNullOrWhiteSpace(ReturnType))
+            {
+                ReturnType = ReturnRequestTypes.Return;
             }
 
             return Page();
