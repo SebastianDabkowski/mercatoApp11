@@ -283,6 +283,56 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task RecalculateSellerReputationAsync_ShouldCombineMetrics()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            var firstState = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-rep-1", "sig-rep-1");
+            var firstOrder = await service.EnsureOrderAsync(firstState, BuildQuote(), TestAddress, "buyer-rep-1", "buyer-rep1@example.com", "Buyer Rep 1", "Card", "card");
+            await service.UpdateSubOrderStatusAsync(firstOrder.Order.Id, "seller-1", OrderStatuses.Shipped);
+            await service.UpdateSubOrderStatusAsync(firstOrder.Order.Id, "seller-1", OrderStatuses.Delivered);
+            await service.SubmitSellerRatingAsync(firstOrder.Order.Id, "seller-1", "buyer-rep-1", 5);
+
+            var secondState = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-rep-2", "sig-rep-2");
+            var secondOrder = await service.EnsureOrderAsync(secondState, BuildQuote(), TestAddress, "buyer-rep-2", "buyer-rep2@example.com", "Buyer Rep 2", "Card", "card");
+            await service.UpdateSubOrderStatusAsync(secondOrder.Order.Id, "seller-1", OrderStatuses.Delivered);
+            await service.SubmitSellerRatingAsync(secondOrder.Order.Id, "seller-1", "buyer-rep-2", 4);
+            var orderView = await service.GetOrderAsync(secondOrder.Order.Id, "buyer-rep-2");
+            var subOrderNumber = orderView!.SubOrders.First().SubOrderNumber;
+            await service.CreateReturnRequestAsync(secondOrder.Order.Id, "buyer-rep-2", subOrderNumber, new List<int> { 1 }, "Item damaged", ReturnRequestTypes.Return, "Corner dented");
+
+            var reputation = await service.RecalculateSellerReputationAsync("seller-1");
+
+            Assert.Equal(2, reputation.RatedOrderCount);
+            Assert.Equal(4.5, reputation.AverageRating);
+            Assert.Equal(1, reputation.OnTimeShippingRate);
+            Assert.Equal(0.5, reputation.DisputeRate);
+            Assert.Equal(0, reputation.CancellationRate);
+            Assert.Equal(90, reputation.Score);
+            Assert.Equal("Excellent", reputation.Label);
+        }
+
+        [Fact]
+        public async Task RecalculateSellerReputationAsync_ShouldPersistSnapshot()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-rep-3", "sig-rep-3");
+            var order = await service.EnsureOrderAsync(state, BuildQuote(), TestAddress, "buyer-rep-3", "buyer-rep3@example.com", "Buyer Rep 3", "Card", "card");
+            await service.UpdateSubOrderStatusAsync(order.Order.Id, "seller-1", OrderStatuses.Cancelled);
+
+            var reputation = await service.RecalculateSellerReputationAsync("seller-1");
+
+            var snapshot = await context.SellerReputations.FirstOrDefaultAsync(r => r.SellerId == "seller-1");
+            Assert.NotNull(snapshot);
+            Assert.Equal(reputation.Score, snapshot!.Score);
+            Assert.Equal(reputation.Label, snapshot.Label);
+            Assert.Equal(1, reputation.OnTimeShippingRate);
+            Assert.Equal(1, reputation.CancellationRate);
+            Assert.Equal(0, reputation.DisputeRate);
+        }
+
+        [Fact]
         public async Task SubmitProductReviewAsync_ShouldReject_WhenOrderNotDelivered()
         {
             await using var context = CreateContext();

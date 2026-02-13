@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -333,6 +334,39 @@ namespace SD.ProjectName.WebApp.Services
     }
 
     public record SellerRatingSummary(double? AverageRating, int RatedOrderCount);
+
+    public class SellerReputation
+    {
+        public int Id { get; set; }
+
+        public string SellerId { get; set; } = string.Empty;
+
+        public double Score { get; set; }
+
+        public double RatingAverage { get; set; }
+
+        public int RatedOrderCount { get; set; }
+
+        public double DisputeRate { get; set; }
+
+        public double OnTimeShippingRate { get; set; }
+
+        public double CancellationRate { get; set; }
+
+        public string Label { get; set; } = string.Empty;
+
+        public DateTimeOffset CalculatedOn { get; set; }
+    }
+
+    public record SellerReputationScore(
+        double Score,
+        string Label,
+        double? AverageRating,
+        int RatedOrderCount,
+        double DisputeRate,
+        double OnTimeShippingRate,
+        double CancellationRate,
+        DateTimeOffset CalculatedOn);
 
     public record OrderItemDetail(int ProductId, string Name, string Variant, int Quantity, decimal UnitPrice, decimal LineTotal, string SellerId, string SellerName, string Status = OrderStatuses.Paid, string Category = "", decimal? CommissionRate = null);
 
@@ -1767,6 +1801,152 @@ namespace SD.ProjectName.WebApp.Services
         {
             var summary = await GetSellerRatingSummaryAsync(sellerId, cancellationToken);
             return summary.AverageRating;
+        }
+
+        public async Task<SellerReputationScore> RecalculateSellerReputationAsync(string sellerId, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return new SellerReputationScore(0, "New", null, 0, 0, 0, 0, DateTimeOffset.UtcNow);
+            }
+
+            var normalizedSellerId = sellerId.Trim();
+            var ratingSummary = await GetSellerRatingSummaryAsync(normalizedSellerId, cancellationToken);
+            var matches = await GetSellerOrderMatchesAsync(normalizedSellerId, null, cancellationToken);
+            var totalOrders = matches.Count;
+            var deliveredOrders = matches
+                .Where(m => string.Equals(OrderStatuses.Normalize(m.SubOrder.Status), OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            var cancelledOrders = matches
+                .Count(m => string.Equals(OrderStatuses.Normalize(m.SubOrder.Status), OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase));
+            var disputedOrders = matches.Count(m => m.SubOrder.Return != null);
+
+            var deliveredCount = deliveredOrders.Count;
+            var onTimeDelivered = deliveredOrders.Count(m => IsDeliveredOnTime(m, ResolveDeliveryWindowDays(m.SubOrder)));
+            var onTimeRate = deliveredCount == 0 ? 1 : Math.Min(1, onTimeDelivered / (double)deliveredCount);
+            var disputeRate = totalOrders == 0 ? 0 : Math.Min(1, disputedOrders / (double)totalOrders);
+            var cancellationRate = totalOrders == 0 ? 0 : Math.Min(1, cancelledOrders / (double)totalOrders);
+
+            var score = CalculateReputationScore(ratingSummary.AverageRating, onTimeRate, disputeRate, cancellationRate);
+            var label = ResolveReputationLabel(score, ratingSummary.RatedOrderCount, totalOrders);
+
+            var existing = await _dbContext.SellerReputations.FirstOrDefaultAsync(r => r.SellerId == normalizedSellerId, cancellationToken);
+            if (existing == null)
+            {
+                existing = new SellerReputation { SellerId = normalizedSellerId };
+                _dbContext.SellerReputations.Add(existing);
+            }
+
+            existing.Score = score;
+            existing.RatingAverage = ratingSummary.AverageRating ?? 0;
+            existing.RatedOrderCount = ratingSummary.RatedOrderCount;
+            existing.DisputeRate = disputeRate;
+            existing.OnTimeShippingRate = onTimeRate;
+            existing.CancellationRate = cancellationRate;
+            existing.Label = label;
+            existing.CalculatedOn = DateTimeOffset.UtcNow;
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            return new SellerReputationScore(
+                existing.Score,
+                existing.Label,
+                ratingSummary.AverageRating,
+                ratingSummary.RatedOrderCount,
+                existing.DisputeRate,
+                existing.OnTimeShippingRate,
+                existing.CancellationRate,
+                existing.CalculatedOn);
+        }
+
+        private static double CalculateReputationScore(double? averageRating, double onTimeRate, double disputeRate, double cancellationRate)
+        {
+            var normalizedRating = Math.Clamp(averageRating ?? 0, 0, 5) / 5d;
+            var normalizedOnTime = Math.Clamp(onTimeRate, 0, 1);
+            var normalizedDispute = Math.Clamp(disputeRate, 0, 1);
+            var normalizedCancellation = Math.Clamp(cancellationRate, 0, 1);
+
+            var score = normalizedRating * 50
+                + normalizedOnTime * 30
+                + (1 - normalizedDispute) * 10
+                + (1 - normalizedCancellation) * 10;
+
+            return Math.Round(Math.Clamp(score, 0, 100), 1, MidpointRounding.AwayFromZero);
+        }
+
+        private static string ResolveReputationLabel(double score, int ratedOrders, int totalOrders)
+        {
+            if (ratedOrders == 0 && totalOrders == 0)
+            {
+                return "New";
+            }
+
+            if (score >= 85)
+            {
+                return "Excellent";
+            }
+
+            if (score >= 70)
+            {
+                return "Good";
+            }
+
+            if (score >= 50)
+            {
+                return "Fair";
+            }
+
+            return "Needs attention";
+        }
+
+        private static int ResolveDeliveryWindowDays(OrderSubOrder subOrder)
+        {
+            var estimate = subOrder.ShippingDetail?.DeliveryEstimate;
+            if (string.IsNullOrWhiteSpace(estimate))
+            {
+                return 7;
+            }
+
+            var numbers = Regex.Matches(estimate, "\\d+")
+                .Select(m => int.TryParse(m.Value, out var parsed) ? parsed : 0)
+                .Where(v => v > 0)
+                .ToList();
+
+            if (numbers.Count > 0)
+            {
+                return numbers.Max();
+            }
+
+            var normalized = estimate.Trim().ToLowerInvariant();
+            if (normalized.Contains("same-day"))
+            {
+                return 1;
+            }
+
+            if (normalized.Contains("next"))
+            {
+                return 2;
+            }
+
+            return 7;
+        }
+
+        private static bool IsDeliveredOnTime(SellerOrderMatch match, int targetDays)
+        {
+            if (match.SubOrder.DeliveredOn == null || targetDays <= 0)
+            {
+                return false;
+            }
+
+            var deliveredOn = match.SubOrder.DeliveredOn.Value;
+            var shippedOn = match.SubOrder.StatusHistory?
+                .Where(h => string.Equals(h.Status, OrderStatuses.Shipped, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(h => h.ChangedOn)
+                .Select(h => (DateTimeOffset?)h.ChangedOn)
+                .FirstOrDefault();
+
+            var baseline = shippedOn ?? match.Order.CreatedOn;
+            return deliveredOn <= baseline.AddDays(targetDays);
         }
 
         public async Task<PaymentStatusUpdateResult> UpdatePaymentStatusAsync(

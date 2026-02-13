@@ -77,9 +77,14 @@ namespace SD.ProjectName.WebApp.Pages.Store
                 return Page();
             }
 
-            var ratingSummary = await _orderService.GetSellerRatingSummaryAsync(storeOwner.Id);
-            Store.AverageRating = ratingSummary.AverageRating;
-            Store.RatedOrderCount = ratingSummary.RatedOrderCount;
+            var reputation = await _orderService.RecalculateSellerReputationAsync(storeOwner.Id);
+            Store.AverageRating = reputation.AverageRating;
+            Store.RatedOrderCount = reputation.RatedOrderCount;
+            Store.ReputationScore = reputation.Score;
+            Store.ReputationLabel = reputation.Label;
+            Store.OnTimeShippingRate = reputation.OnTimeShippingRate;
+            Store.DisputeRate = reputation.DisputeRate;
+            Store.CancellationRate = reputation.CancellationRate;
 
             IsPubliclyVisible = true;
             var products = await _getProducts.GetList(storeOwner.Id);
@@ -173,6 +178,16 @@ namespace SD.ProjectName.WebApp.Pages.Store
             public double? AverageRating { get; set; }
 
             public int RatedOrderCount { get; set; }
+
+            public double ReputationScore { get; set; }
+
+            public string ReputationLabel { get; set; } = "New";
+
+            public double OnTimeShippingRate { get; set; }
+
+            public double DisputeRate { get; set; }
+
+            public double CancellationRate { get; set; }
         }
     }
 }

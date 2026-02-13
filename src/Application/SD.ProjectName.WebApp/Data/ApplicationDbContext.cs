@@ -15,6 +15,7 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<ShippingAddress> ShippingAddresses => Set<ShippingAddress>();
         public DbSet<ProductReview> ProductReviews => Set<ProductReview>();
         public DbSet<SellerRating> SellerRatings => Set<SellerRating>();
+        public DbSet<SellerReputation> SellerReputations => Set<SellerReputation>();
         public DbSet<ProductReviewAudit> ProductReviewAudits => Set<ProductReviewAudit>();
         public DbSet<ProductReviewReport> ProductReviewReports => Set<ProductReviewReport>();
 
@@ -435,6 +436,23 @@ namespace SD.ProjectName.WebApp.Data
                     .IsUnique();
 
                 entity.HasIndex(r => new { r.SellerId, r.CreatedOn });
+            });
+
+            builder.Entity<SellerReputation>(entity =>
+            {
+                entity.Property(r => r.SellerId)
+                    .HasMaxLength(450)
+                    .IsRequired();
+
+                entity.Property(r => r.Label)
+                    .HasMaxLength(64)
+                    .IsRequired();
+
+                entity.Property(r => r.CalculatedOn)
+                    .IsRequired();
+
+                entity.HasIndex(r => r.SellerId)
+                    .IsUnique();
             });
         }
     }
