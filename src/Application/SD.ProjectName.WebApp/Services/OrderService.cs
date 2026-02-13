@@ -408,6 +408,41 @@ namespace SD.ProjectName.WebApp.Services
 
     public record ReturnRequestResult(bool Success, string? Error, ReturnRequest? Request = null);
 
+    public record BuyerCaseSummaryView(
+        string CaseId,
+        int OrderId,
+        string OrderNumber,
+        string SubOrderNumber,
+        string SellerName,
+        string Type,
+        string Status,
+        DateTimeOffset RequestedOn,
+        decimal RefundedAmount,
+        string PaymentStatus,
+        string? PaymentReference);
+
+    public record BuyerCaseItemView(string Label, int ProductId, int Quantity);
+
+    public record CaseResolutionView(string Outcome, string Summary, decimal RefundedAmount, decimal SubOrderTotal, string PaymentStatus, string? PaymentReference);
+
+    public record BuyerCaseDetailView(
+        BuyerCaseSummaryView Summary,
+        string Reason,
+        string? Description,
+        List<BuyerCaseItemView> Items,
+        CaseResolutionView Resolution,
+        List<OrderStatusChange> StatusHistory,
+        List<string> Messages);
+
+    public record ReturnCaseFilterOptions
+    {
+        public List<string> Statuses { get; init; } = new();
+
+        public DateTimeOffset? FromDate { get; init; }
+
+        public DateTimeOffset? ToDate { get; init; }
+    }
+
     public record BuyerOrderFilterOptions
     {
         public List<string> Statuses { get; init; } = new();
@@ -939,6 +974,135 @@ namespace SD.ProjectName.WebApp.Services
 
             await _dbContext.SaveChangesAsync(cancellationToken);
             return new ReturnRequestResult(true, null, request);
+        }
+
+        public async Task<PagedResult<BuyerCaseSummaryView>> GetReturnCasesForBuyerAsync(
+            string buyerId,
+            ReturnCaseFilterOptions? filters = null,
+            int pageNumber = 1,
+            int pageSize = 10,
+            CancellationToken cancellationToken = default)
+        {
+            pageNumber = Math.Max(1, pageNumber);
+            pageSize = Math.Clamp(pageSize, 1, 50);
+
+            var normalizedBuyer = buyerId?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedBuyer))
+            {
+                return new PagedResult<BuyerCaseSummaryView>
+                {
+                    Items = new List<BuyerCaseSummaryView>(),
+                    TotalCount = 0,
+                    PageNumber = pageNumber,
+                    PageSize = pageSize
+                };
+            }
+
+            var orders = await _dbContext.Orders.AsNoTracking()
+                .Where(o => o.BuyerId == normalizedBuyer)
+                .OrderByDescending(o => o.CreatedOn)
+                .ToListAsync(cancellationToken);
+
+            var normalizedFilters = NormalizeReturnCaseFilters(filters);
+            var cases = new List<BuyerCaseSummaryView>();
+            foreach (var order in orders)
+            {
+                var details = DeserializeDetails(order.DetailsJson);
+                foreach (var subOrder in details.SubOrders)
+                {
+                    if (subOrder.Return == null)
+                    {
+                        continue;
+                    }
+
+                    var normalizedRequest = NormalizeReturnRequest(subOrder.Return, subOrder.Items);
+                    if (normalizedRequest == null || !MatchesReturnFilters(normalizedRequest, normalizedFilters))
+                    {
+                        continue;
+                    }
+
+                    cases.Add(BuildBuyerCaseSummary(order, subOrder, normalizedRequest, details.PaymentStatus));
+                }
+            }
+
+            var totalCount = cases.Count;
+            var totalPages = pageSize <= 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pageSize);
+            if (totalPages == 0)
+            {
+                pageNumber = 1;
+            }
+            else if (pageNumber > totalPages)
+            {
+                pageNumber = totalPages;
+            }
+
+            var skip = (pageNumber - 1) * pageSize;
+            var items = cases
+                .OrderByDescending(c => c.RequestedOn)
+                .Skip(skip)
+                .Take(pageSize)
+                .ToList();
+
+            return new PagedResult<BuyerCaseSummaryView>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            };
+        }
+
+        public async Task<BuyerCaseDetailView?> GetReturnCaseForBuyerAsync(
+            string buyerId,
+            string caseId,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(buyerId) || string.IsNullOrWhiteSpace(caseId))
+            {
+                return null;
+            }
+
+            var normalizedBuyer = buyerId.Trim();
+            var normalizedCase = caseId.Trim();
+            var order = await _dbContext.Orders.AsNoTracking()
+                .FirstOrDefaultAsync(o => o.BuyerId == normalizedBuyer && o.DetailsJson.Contains(normalizedCase), cancellationToken);
+            if (order == null)
+            {
+                return null;
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            var subOrder = details.SubOrders.FirstOrDefault(s =>
+                s.Return != null
+                && string.Equals(s.Return.CaseId, normalizedCase, StringComparison.OrdinalIgnoreCase))
+                ?? details.SubOrders.FirstOrDefault(s =>
+                    s.Return != null
+                    && string.Equals(s.SubOrderNumber, normalizedCase, StringComparison.OrdinalIgnoreCase));
+
+            if (subOrder?.Return == null)
+            {
+                return null;
+            }
+
+            var normalizedRequest = NormalizeReturnRequest(subOrder.Return, subOrder.Items);
+            if (normalizedRequest == null)
+            {
+                return null;
+            }
+
+            var summary = BuildBuyerCaseSummary(order, subOrder, normalizedRequest, details.PaymentStatus);
+            var items = BuildBuyerCaseItems(subOrder, normalizedRequest);
+            var resolution = BuildCaseResolution(subOrder, normalizedRequest, details.PaymentStatus, order.PaymentReference);
+            var history = subOrder.StatusHistory?.OrderByDescending(h => h.ChangedOn).ToList() ?? new List<OrderStatusChange>();
+
+            return new BuyerCaseDetailView(
+                summary,
+                normalizedRequest.Reason,
+                normalizedRequest.Description,
+                items,
+                resolution,
+                history,
+                new List<string>());
         }
 
         public async Task<PagedResult<OrderSummaryView>> GetSummariesForBuyerAsync(
@@ -2251,6 +2415,9 @@ namespace SD.ProjectName.WebApp.Services
                 ShippingLabel = shippingLabel
             };
 
+            var updatedReturn = UpdateReturnRequest(subOrder.Return, updatedStatus, computedRefund, updatedItems);
+            updatedSubOrder = updatedSubOrder with { Return = updatedReturn };
+
             var subOrderIndex = details.SubOrders.FindIndex(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
             if (subOrderIndex < 0)
             {
@@ -2735,6 +2902,171 @@ namespace SD.ProjectName.WebApp.Services
             var safeNumber = string.IsNullOrWhiteSpace(subOrderNumber) ? "ORDER" : subOrderNumber.Replace(" ", string.Empty);
             var timestamp = requestedOn == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : requestedOn;
             return $"CASE-{safeNumber}-{timestamp.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture)}";
+        }
+
+        private static ReturnCaseFilterOptions NormalizeReturnCaseFilters(ReturnCaseFilterOptions? filters)
+        {
+            if (filters == null)
+            {
+                return new ReturnCaseFilterOptions();
+            }
+
+            var statuses = filters.Statuses
+                .Select(ReturnRequestStatuses.Normalize)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return new ReturnCaseFilterOptions
+            {
+                Statuses = statuses,
+                FromDate = filters.FromDate,
+                ToDate = filters.ToDate
+            };
+        }
+
+        private static bool MatchesReturnFilters(ReturnRequest request, ReturnCaseFilterOptions filters)
+        {
+            var normalizedStatus = ReturnRequestStatuses.Normalize(request.Status);
+            if (filters.Statuses.Count > 0 && !filters.Statuses.Contains(normalizedStatus, StringComparer.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (filters.FromDate.HasValue && request.RequestedOn < filters.FromDate.Value)
+            {
+                return false;
+            }
+
+            if (filters.ToDate.HasValue && request.RequestedOn > filters.ToDate.Value)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static BuyerCaseSummaryView BuildBuyerCaseSummary(OrderRecord order, OrderSubOrder subOrder, ReturnRequest request, string paymentStatus)
+        {
+            var sellerName = string.IsNullOrWhiteSpace(subOrder.SellerName) ? subOrder.SellerId : subOrder.SellerName;
+            var normalizedPaymentStatus = PaymentStatuses.Normalize(paymentStatus);
+            var paymentReference = string.IsNullOrWhiteSpace(order.PaymentReference) ? null : order.PaymentReference.Trim();
+
+            return new BuyerCaseSummaryView(
+                string.IsNullOrWhiteSpace(request.CaseId) ? BuildCaseId(subOrder.SubOrderNumber, request.RequestedOn) : request.CaseId!,
+                order.Id,
+                order.OrderNumber,
+                subOrder.SubOrderNumber,
+                sellerName,
+                request.Type,
+                ReturnRequestStatuses.Normalize(request.Status),
+                request.RequestedOn,
+                Math.Max(0, subOrder.RefundedAmount),
+                normalizedPaymentStatus,
+                paymentReference);
+        }
+
+        private static List<BuyerCaseItemView> BuildBuyerCaseItems(OrderSubOrder subOrder, ReturnRequest request)
+        {
+            var items = new List<BuyerCaseItemView>();
+            foreach (var item in request.Items)
+            {
+                var match = subOrder.Items.FirstOrDefault(i => i.ProductId == item.ProductId);
+                var label = match == null ? $"Item {item.ProductId}" : match.Name;
+                if (match != null && !string.IsNullOrWhiteSpace(match.Variant))
+                {
+                    label = $"{label} ({match.Variant})";
+                }
+
+                items.Add(new BuyerCaseItemView(label, item.ProductId, Math.Max(1, item.Quantity)));
+            }
+
+            return items;
+        }
+
+        private static CaseResolutionView BuildCaseResolution(OrderSubOrder subOrder, ReturnRequest request, string paymentStatus, string? paymentReference)
+        {
+            var normalizedStatus = ReturnRequestStatuses.Normalize(request.Status);
+            var refunded = Math.Max(0, subOrder.RefundedAmount);
+            var total = Math.Max(0, subOrder.GrandTotal);
+            var normalizedPaymentStatus = PaymentStatuses.Normalize(paymentStatus);
+            var normalizedReference = string.IsNullOrWhiteSpace(paymentReference) ? null : paymentReference.Trim();
+
+            var outcome = "Pending review";
+            if (string.Equals(normalizedStatus, ReturnRequestStatuses.Rejected, StringComparison.OrdinalIgnoreCase))
+            {
+                outcome = "Rejected";
+            }
+            else if (refunded > 0 && total > 0 && refunded < total)
+            {
+                outcome = "Partially approved";
+            }
+            else if (refunded > 0 || string.Equals(normalizedStatus, ReturnRequestStatuses.Approved, StringComparison.OrdinalIgnoreCase))
+            {
+                outcome = "Approved";
+            }
+            else if (string.Equals(normalizedStatus, ReturnRequestStatuses.Completed, StringComparison.OrdinalIgnoreCase))
+            {
+                outcome = "Completed";
+            }
+
+            var summary = BuildResolutionSummary(outcome, refunded);
+            return new CaseResolutionView(outcome, summary, refunded, total, normalizedPaymentStatus, normalizedReference);
+        }
+
+        private static string BuildResolutionSummary(string outcome, decimal refunded)
+        {
+            if (string.Equals(outcome, "Rejected", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Seller rejected the request.";
+            }
+
+            if (string.Equals(outcome, "Partially approved", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"Seller approved a partial refund of {refunded.ToString("C", CultureInfo.InvariantCulture)}.";
+            }
+
+            if (string.Equals(outcome, "Approved", StringComparison.OrdinalIgnoreCase))
+            {
+                return refunded > 0
+                    ? $"Seller approved a refund of {refunded.ToString("C", CultureInfo.InvariantCulture)}."
+                    : "Seller approved the request.";
+            }
+
+            if (string.Equals(outcome, "Completed", StringComparison.OrdinalIgnoreCase))
+            {
+                return refunded > 0
+                    ? $"Case closed after refund of {refunded.ToString("C", CultureInfo.InvariantCulture)}."
+                    : "Case marked as completed.";
+            }
+
+            return "Awaiting seller decision.";
+        }
+
+        private static ReturnRequest? UpdateReturnRequest(ReturnRequest? request, string targetStatus, decimal refundedAmount, List<OrderItemDetail> items)
+        {
+            var normalized = NormalizeReturnRequest(request, items);
+            if (normalized == null)
+            {
+                return null;
+            }
+
+            var normalizedReturnStatus = ReturnRequestStatuses.Normalize(normalized.Status);
+            var normalizedTargetStatus = OrderStatuses.Normalize(targetStatus);
+            var shouldComplete = string.Equals(normalizedTargetStatus, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase)
+                || refundedAmount > 0;
+
+            if (shouldComplete && !string.Equals(normalizedReturnStatus, ReturnRequestStatuses.Rejected, StringComparison.OrdinalIgnoreCase))
+            {
+                normalizedReturnStatus = ReturnRequestStatuses.Completed;
+            }
+
+            if (!string.Equals(normalizedReturnStatus, normalized.Status, StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = normalized with { Status = normalizedReturnStatus };
+            }
+
+            return normalized;
         }
 
         private static List<ReturnRequestItem> BuildReturnItems(OrderSubOrder subOrder, List<int>? productIds)

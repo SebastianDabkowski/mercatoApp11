@@ -1072,6 +1072,73 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task GetReturnCasesForBuyerAsync_ShouldReturnCasesWithBasicInfo()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-cases-1", "sig-cases-1");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-cases-1", "cases@example.com", "Case Buyer", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-cases-1");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+
+            var request = await service.CreateReturnRequestAsync(
+                result.Order.Id,
+                "buyer-cases-1",
+                subOrderNumber,
+                new List<int> { 1 },
+                "Wrong size",
+                ReturnRequestTypes.Return,
+                "Too small");
+
+            var cases = await service.GetReturnCasesForBuyerAsync("buyer-cases-1");
+            var summary = Assert.Single(cases.Items);
+            Assert.Equal(request.Request!.CaseId, summary.CaseId);
+            Assert.Equal(result.Order.Id, summary.OrderId);
+            Assert.Equal(subOrderNumber, summary.SubOrderNumber);
+            Assert.Equal(ReturnRequestStatuses.PendingSellerReview, summary.Status);
+            Assert.Equal(orderView.SubOrders.Single().SellerName, summary.SellerName);
+        }
+
+        [Fact]
+        public async Task GetReturnCaseForBuyerAsync_ShouldReflectResolutionAfterRefund()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-cases-2", "sig-cases-2");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-cases-2", "case2@example.com", "Case Two", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-cases-2");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+            var request = await service.CreateReturnRequestAsync(
+                result.Order.Id,
+                "buyer-cases-2",
+                subOrderNumber,
+                new List<int> { 1 },
+                "Damaged",
+                ReturnRequestTypes.Return,
+                "Broken screen");
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Refunded, null, 5m);
+
+            var detail = await service.GetReturnCaseForBuyerAsync("buyer-cases-2", request.Request!.CaseId!);
+            Assert.NotNull(detail);
+            Assert.Equal(ReturnRequestStatuses.Completed, detail!.Summary.Status);
+            Assert.Equal(5m, detail.Resolution.RefundedAmount);
+            Assert.Equal(result.Order.PaymentReference, detail.Resolution.PaymentReference);
+            Assert.True(detail.Resolution.Outcome.Equals("Approved", StringComparison.OrdinalIgnoreCase)
+                || detail.Resolution.Outcome.Equals("Partially approved", StringComparison.OrdinalIgnoreCase));
+        }
+
+        [Fact]
         public async Task UpdateSubOrderStatusAsync_ShouldRejectInvalidTransition()
         {
             await using var context = CreateContext();
