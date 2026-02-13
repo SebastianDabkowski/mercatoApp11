@@ -15,9 +15,9 @@ namespace SD.ProjectName.Tests.Products
         {
             await using var context = CreateContext();
             context.Products.AddRange(
-                new ProductModel { Title = "First", MerchantSku = "SKU-E1", Price = 10, Stock = 2, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "First", MerchantSku = "SKU-E1", Price = 10, Stock = 2, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
                 new ProductModel { Title = "Draft Item", MerchantSku = "SKU-E2", Price = 5, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Draft, SellerId = "seller-1" },
-                new ProductModel { Title = "Other Seller", MerchantSku = "SKU-E3", Price = 3, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-2" });
+                new ProductModel { Title = "Other Seller", MerchantSku = "SKU-E3", Price = 3, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-2" });
             await context.SaveChangesAsync();
 
             var service = CreateService(context);
@@ -42,7 +42,7 @@ namespace SD.ProjectName.Tests.Products
         {
             await using var context = CreateContext();
             context.Products.AddRange(
-                new ProductModel { Title = "Match Active", MerchantSku = "SKU-F1", Price = 10, Stock = 2, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Match Active", MerchantSku = "SKU-F1", Price = 10, Stock = 2, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
                 new ProductModel { Title = "Draft Not Included", MerchantSku = "SKU-F2", Price = 5, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Draft, SellerId = "seller-1" });
             await context.SaveChangesAsync();
 

@@ -19,6 +19,7 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
         public DbSet<CategoryModel> Categories { get; set; }
         public DbSet<ProductImportJob> ProductImportJobs { get; set; }
         public DbSet<ProductExportJob> ProductExportJobs { get; set; }
+        public DbSet<ProductModerationAudit> ProductModerationAudits { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -45,6 +46,15 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                       .HasMaxLength(32)
                       .HasDefaultValue(ProductWorkflowStates.Draft)
                       .IsRequired();
+                entity.Property(p => p.ModerationStatus)
+                      .HasMaxLength(32)
+                      .HasDefaultValue(ProductModerationStatuses.Pending)
+                      .IsRequired();
+                entity.Property(p => p.ModerationNote)
+                      .HasMaxLength(512);
+                entity.Property(p => p.LastModeratedBy)
+                      .HasMaxLength(256);
+                entity.Property(p => p.LastModeratedOn);
                 entity.Property(p => p.Condition)
                       .HasMaxLength(32)
                       .HasDefaultValue(ProductConditions.New);
@@ -59,6 +69,7 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                 entity.HasIndex(p => p.SellerId);
                 entity.HasIndex(p => p.Condition);
                 entity.HasIndex(p => new { p.WorkflowState, p.CategoryId });
+                entity.HasIndex(p => p.ModerationStatus);
             });
 
             modelBuilder.Entity<CategoryModel>(entity =>
@@ -99,6 +110,18 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                 entity.Property(j => j.Summary).HasMaxLength(4000);
                 entity.Property(j => j.ContentType).HasMaxLength(128);
                 entity.HasIndex(j => new { j.SellerId, j.CreatedOn });
+            });
+
+            modelBuilder.Entity<ProductModerationAudit>(entity =>
+            {
+                entity.ToTable("ProductModerationAudit");
+                entity.Property(a => a.Action).HasMaxLength(64).IsRequired();
+                entity.Property(a => a.Actor).HasMaxLength(256);
+                entity.Property(a => a.Reason).HasMaxLength(512);
+                entity.Property(a => a.FromStatus).HasMaxLength(32).IsRequired();
+                entity.Property(a => a.ToStatus).HasMaxLength(32).IsRequired();
+                entity.Property(a => a.CreatedOn).IsRequired();
+                entity.HasIndex(a => a.ProductId);
             });
         }
 

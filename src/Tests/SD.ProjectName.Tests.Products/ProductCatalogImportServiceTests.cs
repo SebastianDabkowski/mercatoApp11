@@ -34,7 +34,7 @@ namespace SD.ProjectName.Tests.Products
                 Price = 5,
                 Stock = 1,
                 Category = "General",
-                WorkflowState = ProductWorkflowStates.Active,
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved,
                 SellerId = "seller-1"
             });
             await context.SaveChangesAsync();
@@ -64,7 +64,7 @@ SKU-2,New Item,4.50,3,General
                 Price = 5,
                 Stock = 1,
                 Category = "General",
-                WorkflowState = ProductWorkflowStates.Active,
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved,
                 SellerId = "seller-1"
             });
             await context.SaveChangesAsync();

@@ -163,6 +163,7 @@ builder.Services.AddScoped<SellerReportingService>();
 builder.Services.AddScoped<IAnalyticsTracker, AnalyticsTracker>();
 builder.Services.AddSingleton<PaymentProviderService>();
 builder.Services.AddSingleton<ShippingProviderService>();
+builder.Services.AddScoped<ProductModerationService>();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {

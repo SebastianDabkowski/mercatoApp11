@@ -33,7 +33,10 @@ namespace SD.ProjectName.Modules.Products.Domain
 
             if (!includeDrafts)
             {
-                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active && !p.IsSellerBlocked);
+                query = query.Where(p =>
+                    p.WorkflowState == ProductWorkflowStates.Active &&
+                    (p.ModerationStatus == ProductModerationStatuses.Approved || string.IsNullOrEmpty(p.ModerationStatus)) &&
+                    !p.IsSellerBlocked);
             }
 
             return await query
@@ -49,7 +52,10 @@ namespace SD.ProjectName.Modules.Products.Domain
 
             if (!includeDrafts)
             {
-                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active && !p.IsSellerBlocked);
+                query = query.Where(p =>
+                    p.WorkflowState == ProductWorkflowStates.Active &&
+                    (p.ModerationStatus == ProductModerationStatuses.Approved || string.IsNullOrEmpty(p.ModerationStatus)) &&
+                    !p.IsSellerBlocked);
             }
 
             if (!string.IsNullOrWhiteSpace(workflowState))
@@ -162,7 +168,10 @@ namespace SD.ProjectName.Modules.Products.Domain
 
             if (!includeDrafts)
             {
-                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active && !p.IsSellerBlocked);
+                query = query.Where(p =>
+                    p.WorkflowState == ProductWorkflowStates.Active &&
+                    (p.ModerationStatus == ProductModerationStatuses.Approved || string.IsNullOrEmpty(p.ModerationStatus)) &&
+                    !p.IsSellerBlocked);
             }
 
             var idList = ids.Distinct().ToList();
@@ -191,7 +200,10 @@ namespace SD.ProjectName.Modules.Products.Domain
 
             if (!includeDrafts)
             {
-                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active && !p.IsSellerBlocked);
+                query = query.Where(p =>
+                    p.WorkflowState == ProductWorkflowStates.Active &&
+                    (p.ModerationStatus == ProductModerationStatuses.Approved || string.IsNullOrEmpty(p.ModerationStatus)) &&
+                    !p.IsSellerBlocked);
             }
 
             return await query
@@ -213,7 +225,10 @@ namespace SD.ProjectName.Modules.Products.Domain
 
             if (!includeDrafts)
             {
-                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active && !p.IsSellerBlocked);
+                query = query.Where(p =>
+                    p.WorkflowState == ProductWorkflowStates.Active &&
+                    (p.ModerationStatus == ProductModerationStatuses.Approved || string.IsNullOrEmpty(p.ModerationStatus)) &&
+                    !p.IsSellerBlocked);
             }
 
             return await query.FirstOrDefaultAsync(p => p.Id == id);
@@ -237,7 +252,10 @@ namespace SD.ProjectName.Modules.Products.Domain
 
             if (!includeDrafts)
             {
-                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active);
+                query = query.Where(p =>
+                    p.WorkflowState == ProductWorkflowStates.Active &&
+                    (p.ModerationStatus == ProductModerationStatuses.Approved || string.IsNullOrEmpty(p.ModerationStatus)) &&
+                    !p.IsSellerBlocked);
             }
 
             return await query.FirstOrDefaultAsync();
@@ -293,7 +311,10 @@ namespace SD.ProjectName.Modules.Products.Domain
         {
             string? normalizedSearchValue = null;
             var query = _context.Set<ProductModel>()
-                .Where(p => p.WorkflowState == ProductWorkflowStates.Active && !p.IsSellerBlocked);
+                .Where(p =>
+                    p.WorkflowState == ProductWorkflowStates.Active &&
+                    p.ModerationStatus == ProductModerationStatuses.Approved &&
+                    !p.IsSellerBlocked);
 
             if (!string.IsNullOrWhiteSpace(context.Search))
             {

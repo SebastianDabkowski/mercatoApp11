@@ -11,7 +11,7 @@ namespace SD.ProjectName.Tests.Products
         {
             await using var context = CreateContext();
             context.Products.AddRange(
-                new ProductModel { Title = "Active", MerchantSku = "SKU-A1", Price = 10, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Active", MerchantSku = "SKU-A1", Price = 10, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
                 new ProductModel { Title = "Draft", MerchantSku = "SKU-A2", Price = 5, Stock = 2, Category = "Cat", WorkflowState = ProductWorkflowStates.Draft, SellerId = "seller-1" },
                 new ProductModel { Title = "Archived", MerchantSku = "SKU-A3", Price = 3, Stock = 0, Category = "Cat", WorkflowState = ProductWorkflowStates.Archived, SellerId = "seller-1" });
             await context.SaveChangesAsync();
@@ -29,7 +29,7 @@ namespace SD.ProjectName.Tests.Products
         {
             await using var context = CreateContext();
             context.Products.AddRange(
-                new ProductModel { Title = "Active", MerchantSku = "SKU-B1", Price = 10, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Active", MerchantSku = "SKU-B1", Price = 10, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
                 new ProductModel { Title = "Suspended", MerchantSku = "SKU-B2", Price = 5, Stock = 2, Category = "Cat", WorkflowState = ProductWorkflowStates.Suspended, SellerId = "seller-1" });
             await context.SaveChangesAsync();
 
@@ -60,7 +60,7 @@ namespace SD.ProjectName.Tests.Products
         public async Task GetByIds_ShouldExcludeArchived()
         {
             await using var context = CreateContext();
-            var active = new ProductModel { Title = "Active", MerchantSku = "SKU-D1", Price = 10, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" };
+            var active = new ProductModel { Title = "Active", MerchantSku = "SKU-D1", Price = 10, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" };
             var draft = new ProductModel { Title = "Draft", MerchantSku = "SKU-D2", Price = 5, Stock = 2, Category = "Cat", WorkflowState = ProductWorkflowStates.Draft, SellerId = "seller-1" };
             var archived = new ProductModel { Title = "Archived", MerchantSku = "SKU-D3", Price = 3, Stock = 0, Category = "Cat", WorkflowState = ProductWorkflowStates.Archived, SellerId = "seller-1" };
             context.Products.AddRange(active, draft, archived);
@@ -79,9 +79,9 @@ namespace SD.ProjectName.Tests.Products
         {
             await using var context = CreateContext();
             context.Products.AddRange(
-                new ProductModel { Title = "Match One", MerchantSku = "SKU-F1", Price = 10, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Match One", MerchantSku = "SKU-F1", Price = 10, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
                 new ProductModel { Title = "Match Two", MerchantSku = "SKU-F2", Price = 5, Stock = 2, Category = "Cat", WorkflowState = ProductWorkflowStates.Draft, SellerId = "seller-1" },
-                new ProductModel { Title = "Other Seller", MerchantSku = "SKU-F3", Price = 3, Stock = 0, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-2" });
+                new ProductModel { Title = "Other Seller", MerchantSku = "SKU-F3", Price = 3, Stock = 0, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-2" });
             await context.SaveChangesAsync();
 
             var repository = new ProductRepository(context);
@@ -97,8 +97,8 @@ namespace SD.ProjectName.Tests.Products
         {
             await using var context = CreateContext();
             context.Products.AddRange(
-                new ProductModel { Title = "In Root", MerchantSku = "SKU-G1", Price = 10, Stock = 3, Category = "Root", CategoryId = 1, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
-                new ProductModel { Title = "In Child", MerchantSku = "SKU-G2", Price = 8, Stock = 2, Category = "Root / Child", CategoryId = 2, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "In Root", MerchantSku = "SKU-G1", Price = 10, Stock = 3, Category = "Root", CategoryId = 1, WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
+                new ProductModel { Title = "In Child", MerchantSku = "SKU-G2", Price = 8, Stock = 2, Category = "Root / Child", CategoryId = 2, WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
                 new ProductModel { Title = "Draft Child", MerchantSku = "SKU-G3", Price = 6, Stock = 1, Category = "Root / Child", CategoryId = 2, WorkflowState = ProductWorkflowStates.Draft, SellerId = "seller-1" },
                 new ProductModel { Title = "Archived", MerchantSku = "SKU-G4", Price = 4, Stock = 0, Category = "Root", CategoryId = 1, WorkflowState = ProductWorkflowStates.Archived, SellerId = "seller-1" });
             await context.SaveChangesAsync();
@@ -117,8 +117,8 @@ namespace SD.ProjectName.Tests.Products
         {
             await using var context = CreateContext();
             context.Products.AddRange(
-                new ProductModel { Title = "Red Shoe", Description = "Comfortable walking shoe", MerchantSku = "SKU-H1", Price = 12, Stock = 5, Category = "Footwear", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
-                new ProductModel { Title = "Blue Hat", Description = "With red accent", MerchantSku = "SKU-H2", Price = 8, Stock = 3, Category = "Accessories", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Red Shoe", Description = "Comfortable walking shoe", MerchantSku = "SKU-H1", Price = 12, Stock = 5, Category = "Footwear", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
+                new ProductModel { Title = "Blue Hat", Description = "With red accent", MerchantSku = "SKU-H2", Price = 8, Stock = 3, Category = "Accessories", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
                 new ProductModel { Title = "Suspended Item", Description = "Red but hidden", MerchantSku = "SKU-H3", Price = 5, Stock = 1, Category = "Accessories", WorkflowState = ProductWorkflowStates.Suspended, SellerId = "seller-1" },
                 new ProductModel { Title = "Draft Item", Description = "Red draft", MerchantSku = "SKU-H4", Price = 5, Stock = 1, Category = "Accessories", WorkflowState = ProductWorkflowStates.Draft, SellerId = "seller-1" },
                 new ProductModel { Title = "Archived Item", Description = "Red archived", MerchantSku = "SKU-H5", Price = 5, Stock = 1, Category = "Accessories", WorkflowState = ProductWorkflowStates.Archived, SellerId = "seller-1" }
@@ -139,7 +139,7 @@ namespace SD.ProjectName.Tests.Products
         public async Task SearchActiveProducts_ShouldReturnEmpty_ForBlankOrNonMatching()
         {
             await using var context = CreateContext();
-            context.Products.Add(new ProductModel { Title = "Green Jacket", Description = "Warm and cozy", MerchantSku = "SKU-I1", Price = 20, Stock = 4, Category = "Outerwear", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" });
+            context.Products.Add(new ProductModel { Title = "Green Jacket", Description = "Warm and cozy", MerchantSku = "SKU-I1", Price = 20, Stock = 4, Category = "Outerwear", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" });
             await context.SaveChangesAsync();
 
             var repository = new ProductRepository(context);
@@ -157,10 +157,10 @@ namespace SD.ProjectName.Tests.Products
         {
             await using var context = CreateContext();
             context.Products.AddRange(
-                new ProductModel { Title = "Red Camera", Description = "DSLR", MerchantSku = "SKU-LIM-1", Price = 550, Stock = 3, Category = "Electronics", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
-                new ProductModel { Title = "Camera Bag", Description = "Red padded bag", MerchantSku = "SKU-LIM-2", Price = 50, Stock = 5, Category = "Accessories", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
-                new ProductModel { Title = "Tripod", Description = "Compact red tripod", MerchantSku = "SKU-LIM-3", Price = 40, Stock = 2, Category = "Accessories", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
-                new ProductModel { Title = "Blue Lens", Description = "Wide angle", MerchantSku = "SKU-LIM-4", Price = 120, Stock = 1, Category = "Electronics", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" });
+                new ProductModel { Title = "Red Camera", Description = "DSLR", MerchantSku = "SKU-LIM-1", Price = 550, Stock = 3, Category = "Electronics", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
+                new ProductModel { Title = "Camera Bag", Description = "Red padded bag", MerchantSku = "SKU-LIM-2", Price = 50, Stock = 5, Category = "Accessories", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
+                new ProductModel { Title = "Tripod", Description = "Compact red tripod", MerchantSku = "SKU-LIM-3", Price = 40, Stock = 2, Category = "Accessories", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
+                new ProductModel { Title = "Blue Lens", Description = "Wide angle", MerchantSku = "SKU-LIM-4", Price = 120, Stock = 1, Category = "Electronics", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" });
             await context.SaveChangesAsync();
 
             var repository = new ProductRepository(context);
@@ -178,7 +178,7 @@ namespace SD.ProjectName.Tests.Products
         public async Task SearchActiveProductsLimited_ShouldReturnEmpty_WhenLimitInvalidOrQueryBlank()
         {
             await using var context = CreateContext();
-            context.Products.Add(new ProductModel { Title = "Anything", MerchantSku = "SKU-LIM-5", Price = 10, Stock = 1, Category = "Misc", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" });
+            context.Products.Add(new ProductModel { Title = "Anything", MerchantSku = "SKU-LIM-5", Price = 10, Stock = 1, Category = "Misc", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" });
             await context.SaveChangesAsync();
 
             var repository = new ProductRepository(context);
@@ -195,9 +195,9 @@ namespace SD.ProjectName.Tests.Products
         {
             await using var context = CreateContext();
             context.Products.AddRange(
-                new ProductModel { Title = "Camera New", Description = "DSLR", MerchantSku = "SKU-FILT-1", Price = 550, Stock = 3, Category = "Electronics", CategoryId = 1, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1", Condition = ProductConditions.New },
-                new ProductModel { Title = "Camera Used", Description = "DSLR", MerchantSku = "SKU-FILT-2", Price = 300, Stock = 2, Category = "Electronics", CategoryId = 1, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1", Condition = ProductConditions.Used },
-                new ProductModel { Title = "Headphones", Description = "Noise cancelling", MerchantSku = "SKU-FILT-3", Price = 200, Stock = 5, Category = "Audio", CategoryId = 2, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-2", Condition = ProductConditions.New }
+                new ProductModel { Title = "Camera New", Description = "DSLR", MerchantSku = "SKU-FILT-1", Price = 550, Stock = 3, Category = "Electronics", CategoryId = 1, WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1", Condition = ProductConditions.New },
+                new ProductModel { Title = "Camera Used", Description = "DSLR", MerchantSku = "SKU-FILT-2", Price = 300, Stock = 2, Category = "Electronics", CategoryId = 1, WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1", Condition = ProductConditions.Used },
+                new ProductModel { Title = "Headphones", Description = "Noise cancelling", MerchantSku = "SKU-FILT-3", Price = 200, Stock = 5, Category = "Audio", CategoryId = 2, WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-2", Condition = ProductConditions.New }
             );
             await context.SaveChangesAsync();
 
@@ -223,8 +223,8 @@ namespace SD.ProjectName.Tests.Products
         {
             await using var context = CreateContext();
             context.Products.AddRange(
-                new ProductModel { Title = "Visible", MerchantSku = "SKU-BLOCK-1", Price = 25, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1", IsSellerBlocked = false },
-                new ProductModel { Title = "Hidden", MerchantSku = "SKU-BLOCK-2", Price = 30, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-2", IsSellerBlocked = true }
+                new ProductModel { Title = "Visible", MerchantSku = "SKU-BLOCK-1", Price = 25, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1", IsSellerBlocked = false },
+                new ProductModel { Title = "Hidden", MerchantSku = "SKU-BLOCK-2", Price = 30, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-2", IsSellerBlocked = true }
             );
             await context.SaveChangesAsync();
 
@@ -241,9 +241,9 @@ namespace SD.ProjectName.Tests.Products
         {
             await using var context = CreateContext();
             context.Products.AddRange(
-                new ProductModel { Title = "Mid", MerchantSku = "SKU-SORT-1", Price = 50, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
-                new ProductModel { Title = "Cheap", MerchantSku = "SKU-SORT-2", Price = 10, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
-                new ProductModel { Title = "Expensive", MerchantSku = "SKU-SORT-3", Price = 75, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" }
+                new ProductModel { Title = "Mid", MerchantSku = "SKU-SORT-1", Price = 50, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
+                new ProductModel { Title = "Cheap", MerchantSku = "SKU-SORT-2", Price = 10, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
+                new ProductModel { Title = "Expensive", MerchantSku = "SKU-SORT-3", Price = 75, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" }
             );
             await context.SaveChangesAsync();
 
@@ -260,9 +260,9 @@ namespace SD.ProjectName.Tests.Products
         {
             await using var context = CreateContext();
             context.Products.AddRange(
-                new ProductModel { Title = "Camera Bag", Description = "Padded", MerchantSku = "SKU-SORT-4", Price = 30, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
-                new ProductModel { Title = "Travel Case", Description = "Camera travel case", MerchantSku = "SKU-SORT-5", Price = 40, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
-                new ProductModel { Title = "Unrelated", Description = "No match", MerchantSku = "SKU-SORT-6", Price = 20, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" }
+                new ProductModel { Title = "Camera Bag", Description = "Padded", MerchantSku = "SKU-SORT-4", Price = 30, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
+                new ProductModel { Title = "Travel Case", Description = "Camera travel case", MerchantSku = "SKU-SORT-5", Price = 40, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
+                new ProductModel { Title = "Unrelated", Description = "No match", MerchantSku = "SKU-SORT-6", Price = 20, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" }
             );
             await context.SaveChangesAsync();
 
@@ -288,7 +288,7 @@ namespace SD.ProjectName.Tests.Products
                     Price = i,
                     Stock = 1,
                     Category = "Cat",
-                    WorkflowState = ProductWorkflowStates.Active,
+                    WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved,
                     SellerId = "seller-1"
                 });
             }
@@ -310,8 +310,8 @@ namespace SD.ProjectName.Tests.Products
         {
             await using var context = CreateContext();
             context.Products.AddRange(
-                new ProductModel { Title = "New Item", MerchantSku = "SKU-META-1", Price = 120, Stock = 2, Category = "Electronics", CategoryId = 5, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1", Condition = ProductConditions.New },
-                new ProductModel { Title = "Used Item", MerchantSku = "SKU-META-2", Price = 80, Stock = 1, Category = "Electronics", CategoryId = 5, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-2", Condition = ProductConditions.Used },
+                new ProductModel { Title = "New Item", MerchantSku = "SKU-META-1", Price = 120, Stock = 2, Category = "Electronics", CategoryId = 5, WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1", Condition = ProductConditions.New },
+                new ProductModel { Title = "Used Item", MerchantSku = "SKU-META-2", Price = 80, Stock = 1, Category = "Electronics", CategoryId = 5, WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-2", Condition = ProductConditions.Used },
                 new ProductModel { Title = "Archived Item", MerchantSku = "SKU-META-3", Price = 50, Stock = 1, Category = "Electronics", CategoryId = 5, WorkflowState = ProductWorkflowStates.Archived, SellerId = "seller-3", Condition = ProductConditions.Refurbished }
             );
             await context.SaveChangesAsync();

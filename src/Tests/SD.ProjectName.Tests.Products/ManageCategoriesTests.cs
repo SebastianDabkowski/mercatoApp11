@@ -23,7 +23,7 @@ namespace SD.ProjectName.Tests.Products
                 Stock = 5,
                 CategoryId = laptops.Id,
                 Category = "Electronics / Laptops",
-                WorkflowState = ProductWorkflowStates.Active,
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved,
                 SellerId = "seller-1"
             });
             await context.SaveChangesAsync();
@@ -50,7 +50,7 @@ namespace SD.ProjectName.Tests.Products
                 Stock = 3,
                 CategoryId = electronics.Id,
                 Category = "Electronics",
-                WorkflowState = ProductWorkflowStates.Active,
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved,
                 SellerId = "seller-1"
             });
             await context.SaveChangesAsync();

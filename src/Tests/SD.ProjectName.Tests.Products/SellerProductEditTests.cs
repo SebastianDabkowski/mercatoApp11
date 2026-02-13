@@ -36,7 +36,7 @@ namespace SD.ProjectName.Tests.Products
                 Price = 10,
                 Stock = 1,
                 Category = "Cat",
-                WorkflowState = ProductWorkflowStates.Active,
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved,
                 SellerId = "different-seller"
             });
 
@@ -69,7 +69,7 @@ namespace SD.ProjectName.Tests.Products
                 Stock = 1,
                 Category = "Cat",
                 CategoryId = createdCategory.Id,
-                WorkflowState = ProductWorkflowStates.Active,
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved,
                 SellerId = "current-seller"
             };
 

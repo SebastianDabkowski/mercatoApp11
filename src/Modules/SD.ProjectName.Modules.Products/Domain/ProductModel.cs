@@ -72,6 +72,18 @@ namespace SD.ProjectName.Modules.Products.Domain
         public string WorkflowState { get; set; } = ProductWorkflowStates.Draft;
 
         [Required]
+        [MaxLength(32)]
+        public string ModerationStatus { get; set; } = ProductModerationStatuses.Pending;
+
+        [MaxLength(512)]
+        public string? ModerationNote { get; set; }
+
+        [MaxLength(256)]
+        public string? LastModeratedBy { get; set; }
+
+        public DateTimeOffset? LastModeratedOn { get; set; }
+
+        [Required]
         public string SellerId { get; set; } = string.Empty;
 
         public bool IsSellerBlocked { get; set; }

@@ -62,7 +62,7 @@ namespace SD.ProjectName.Tests.Products
                 Price = 10,
                 Stock = 5,
                 Category = "General",
-                WorkflowState = ProductWorkflowStates.Active
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved
             };
 
             if (withVariant)

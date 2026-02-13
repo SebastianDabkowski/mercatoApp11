@@ -31,8 +31,8 @@ namespace SD.ProjectName.Tests.Products
             context.Categories.Add(new CategoryModel { Name = "Cameras", FullPath = "Electronics / Cameras", SortOrder = 0, IsActive = true });
             context.Categories.Add(new CategoryModel { Name = "Inactive", FullPath = "Electronics / Inactive", SortOrder = 1, IsActive = false });
             context.Products.AddRange(
-                new ProductModel { Title = "Red Camera", Description = "Mirrorless", MerchantSku = "SUG-1", Price = 899, Stock = 2, Category = "Electronics / Cameras", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
-                new ProductModel { Title = "Tripod", Description = "Red compact tripod", MerchantSku = "SUG-2", Price = 49, Stock = 3, Category = "Accessories", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" });
+                new ProductModel { Title = "Red Camera", Description = "Mirrorless", MerchantSku = "SUG-1", Price = 899, Stock = 2, Category = "Electronics / Cameras", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" },
+                new ProductModel { Title = "Tripod", Description = "Red compact tripod", MerchantSku = "SUG-2", Price = 49, Stock = 3, Category = "Accessories", WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved, SellerId = "seller-1" });
             await context.SaveChangesAsync();
 
             var model = CreateModel(context);

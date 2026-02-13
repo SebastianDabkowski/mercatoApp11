@@ -35,7 +35,7 @@ namespace SD.ProjectName.Tests.Products
                 Price = 20,
                 Stock = 2,
                 Category = "General",
-                WorkflowState = ProductWorkflowStates.Active
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved
             };
 
             var httpContext = BuildContextWithCart(cartService, cartOptions.CookieName, new List<CartItem>
@@ -83,7 +83,7 @@ namespace SD.ProjectName.Tests.Products
                 Title = "Variant product",
                 MerchantSku = "SKU-VAR",
                 Category = "General",
-                WorkflowState = ProductWorkflowStates.Active,
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved,
                 HasVariants = true,
                 Variants = new List<ProductVariant>
                 {
@@ -144,7 +144,7 @@ namespace SD.ProjectName.Tests.Products
                 Price = 20,
                 Stock = 5,
                 Category = "General",
-                WorkflowState = ProductWorkflowStates.Active
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved
             };
             var productTwo = new ProductModel
             {
@@ -155,7 +155,7 @@ namespace SD.ProjectName.Tests.Products
                 Price = 15,
                 Stock = 5,
                 Category = "General",
-                WorkflowState = ProductWorkflowStates.Active
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved
             };
 
             var httpContext = BuildContextWithCart(cartService, cartOptions.CookieName, new List<CartItem>
@@ -217,7 +217,7 @@ namespace SD.ProjectName.Tests.Products
                 Price = 100,
                 Stock = 2,
                 Category = "Electronics",
-                WorkflowState = ProductWorkflowStates.Active
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved
             };
             var productTwo = new ProductModel
             {
@@ -228,7 +228,7 @@ namespace SD.ProjectName.Tests.Products
                 Price = 50,
                 Stock = 3,
                 Category = "Books",
-                WorkflowState = ProductWorkflowStates.Active
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved
             };
 
             var httpContext = BuildContextWithCart(cartService, cartOptions.CookieName, new List<CartItem>

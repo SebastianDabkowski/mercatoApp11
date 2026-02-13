@@ -19,6 +19,8 @@ namespace SD.ProjectName.Modules.Products.Application
                 product.WorkflowState = ProductWorkflowStates.Draft;
             }
 
+            product.ModerationStatus = ProductModerationStatuses.Normalize(product.ModerationStatus);
+            product.ModerationNote = string.IsNullOrWhiteSpace(product.ModerationNote) ? null : product.ModerationNote.Trim();
             product.Condition = ProductConditions.Normalize(product.Condition);
 
             await _repository.Update(product);

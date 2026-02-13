@@ -1,0 +1,182 @@
+@page "/Admin/Products/Moderation"
+@using SD.ProjectName.Modules.Products.Domain
+@model SD.ProjectName.WebApp.Pages.Admin.Products.ModerationModel
+@{
+    ViewData["Title"] = "Product moderation";
+}
+
+<h1 class="display-6">Product moderation</h1>
+<p class="text-muted">Review products submitted by sellers. Approve to publish, or reject with a clear reason to notify the seller.</p>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-info">@Model.StatusMessage</div>
+}
+
+<form method="get" class="card mb-3">
+    <div class="card-body row g-3 align-items-end">
+        <div class="col-md-5">
+            <div class="fw-semibold mb-1">Statuses</div>
+            <div class="d-flex flex-wrap gap-2">
+                @foreach (var status in Model.AvailableStatuses)
+                {
+                    var normalizedId = status.Replace(" ", "-", StringComparison.OrdinalIgnoreCase);
+                    var isChecked = Model.Statuses.Any(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="status" id="status-@normalizedId" value="@status" @(isChecked ? "checked" : null) />
+                        <label class="form-check-label small text-capitalize" for="status-@normalizedId">@status</label>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label fw-semibold" for="category">Category</label>
+            <select id="category" class="form-select" name="category">
+                @foreach (var option in Model.CategoryOptions)
+                {
+                    <option value="@option.Value" selected="@(option.Selected ? "selected" : null)">@option.Text</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-3 text-end">
+            <button class="btn btn-primary" type="submit">Apply</button>
+            <a class="btn btn-link text-decoration-none" asp-page="Moderation">Reset</a>
+        </div>
+    </div>
+</form>
+
+@if (Model.Products.TotalCount == 0)
+{
+    <div class="text-muted">No products match these filters.</div>
+}
+else
+{
+    <form method="post">
+        <input type="hidden" name="page" value="@Model.PageNumber" />
+        <input type="hidden" name="category" value="@(Model.CategoryId?.ToString() ?? string.Empty)" />
+        @foreach (var status in Model.Statuses)
+        {
+            <input type="hidden" name="status" value="@status" />
+        }
+
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+            <div class="flex-grow-1">
+                <label class="form-label mb-1" asp-for="ModerationNote">Moderator note (optional for approvals, required for rejection)</label>
+                <input asp-for="ModerationNote" class="form-control" />
+            </div>
+            <div class="d-flex gap-2 align-items-end">
+                <button class="btn btn-success" asp-page-handler="Approve" type="submit">Approve selected</button>
+                <button class="btn btn-outline-danger" asp-page-handler="Reject" type="submit">Reject selected</button>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th scope="col">
+                            <input type="checkbox" class="form-check-input" data-select-all />
+                        </th>
+                        <th scope="col">Product</th>
+                        <th scope="col">Category</th>
+                        <th scope="col">Status</th>
+                        <th scope="col" class="text-end">Price</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var product in Model.Products.Items)
+                    {
+                        Model.AuditTrail.TryGetValue(product.Id, out var audit);
+                        var statusClass = product.ModerationStatus == ProductModerationStatuses.Approved
+                            ? "text-bg-success"
+                            : product.ModerationStatus == ProductModerationStatuses.Rejected
+                                ? "text-bg-danger"
+                                : "text-bg-warning text-dark";
+                        <tr>
+                            <td>
+                                <input type="checkbox" class="form-check-input" name="SelectedIds" value="@product.Id" aria-label="Select @product.Title" />
+                            </td>
+                            <td>
+                                <div class="fw-semibold">@product.Title</div>
+                                <div class="text-muted small">SKU @product.MerchantSku · Seller @product.SellerName (@product.SellerEmail)</div>
+                                @if (!string.IsNullOrWhiteSpace(product.MainImageUrl))
+                                {
+                                    <img src="@product.MainImageUrl" alt="Preview" class="img-thumbnail mt-2" style="max-height: 80px;" />
+                                }
+                                @if (!string.IsNullOrWhiteSpace(product.Description))
+                                {
+                                    <div class="mt-2 small">@product.Description</div>
+                                }
+                                @if (audit != null && audit.Count > 0)
+                                {
+                                    <details class="small mt-2 text-muted">
+                                        <summary>Audit log (@audit.Count)</summary>
+                                        <ul class="mb-0">
+                                            @foreach (var entry in audit)
+                                            {
+                                                <li>
+                                                    <span class="fw-semibold">@entry.Action</span>
+                                                    <span>by @(!string.IsNullOrWhiteSpace(entry.Actor) ? entry.Actor : "System")</span>
+                                                    <span class="text-muted">@entry.CreatedOn.ToLocalTime().ToString("g")</span>
+                                                    @if (!string.IsNullOrWhiteSpace(entry.Reason))
+                                                    {
+                                                        <div>Reason: @entry.Reason</div>
+                                                    }
+                                                </li>
+                                            }
+                                        </ul>
+                                    </details>
+                                }
+                            </td>
+                            <td>
+                                <div>@product.Category</div>
+                            </td>
+                            <td>
+                                <span class="badge @statusClass text-capitalize">@product.ModerationStatus</span>
+                                <div class="text-muted small text-capitalize">@product.WorkflowState</div>
+                                @if (!string.IsNullOrWhiteSpace(product.ModerationNote))
+                                {
+                                    <div class="small mt-1">Note: @product.ModerationNote</div>
+                                }
+                                @if (product.LastModeratedOn.HasValue)
+                                {
+                                    <div class="small text-muted">Updated @product.LastModeratedOn.Value.ToLocalTime().ToString("g")</div>
+                                }
+                            </td>
+                            <td class="text-end">
+                                @product.Price.ToString("C")
+                                <div class="text-muted small">Stock @product.Stock</div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </form>
+
+    <nav aria-label="Product moderation pagination">
+        <ul class="pagination">
+            <li class="page-item @(Model.Products.HasPreviousPage ? "" : "disabled")">
+                <a class="page-link" asp-page="Moderation" asp-route-page="@(Model.PageNumber - 1)" asp-route-category="@Model.CategoryId" asp-route-status="@Model.Statuses">Previous</a>
+            </li>
+            <li class="page-item active">
+                <span class="page-link">Page @Model.Products.PageNumber of @Model.Products.TotalPages</span>
+            </li>
+            <li class="page-item @(Model.Products.HasNextPage ? "" : "disabled")">
+                <a class="page-link" asp-page="Moderation" asp-route-page="@(Model.PageNumber + 1)" asp-route-category="@Model.CategoryId" asp-route-status="@Model.Statuses">Next</a>
+            </li>
+        </ul>
+    </nav>
+}
+
+@section Scripts {
+    <script>
+        (() => {
+            const selectAll = document.querySelector('[data-select-all]');
+            if (!selectAll) return;
+            selectAll.addEventListener('change', (e) => {
+                document.querySelectorAll('input[name="SelectedIds"]').forEach(cb => cb.checked = e.target.checked);
+            });
+        })();
+    </script>
+}
