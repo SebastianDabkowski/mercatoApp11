@@ -78,7 +78,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
             var order = await _orderService.GetSellerOrderAsync(orderId, sellerId, HttpContext.RequestAborted);
             if (order == null)
             {
-                return NotFound();
+                var exists = await _orderService.OrderExistsAsync(orderId, HttpContext.RequestAborted);
+                return exists ? Forbid() : NotFound();
             }
 
             Order = order;

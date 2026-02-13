@@ -29,6 +29,7 @@ else
                 {
                     <div class="text-muted small">Payment ref: @Model.Order.PaymentReference</div>
                 }
+                <div class="text-muted small">Payment status: @Model.Order.PaymentStatus</div>
                 <div class="text-muted small">Paid with: @Model.Order.PaymentMethodLabel</div>
             </div>
             <div class="text-end">
@@ -50,12 +51,15 @@ else
                                     <th scope="col">Item</th>
                                     <th scope="col" class="text-end">Qty</th>
                                     <th scope="col" class="text-end">Unit</th>
+                                    <th scope="col" class="text-end">Tax</th>
                                     <th scope="col" class="text-end">Total</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach (var item in Model.Order.Items)
                                 {
+                                    var lineBase = item.UnitPrice * item.Quantity;
+                                    var taxes = Math.Max(0, item.LineTotal - lineBase);
                                     <tr>
                                         <td>
                                             <div class="fw-semibold">@item.Name</div>
@@ -66,6 +70,7 @@ else
                                         </td>
                                         <td class="text-end">@item.Quantity</td>
                                         <td class="text-end">@item.UnitPrice.ToString("C")</td>
+                                        <td class="text-end">@taxes.ToString("C")</td>
                                         <td class="text-end">@item.LineTotal.ToString("C")</td>
                                     </tr>
                                 }
@@ -81,14 +86,15 @@ else
                     <div>@Model.Order.Shipping.Cost.ToString("C")</div>
                     @if (!string.IsNullOrWhiteSpace(Model.Order.Shipping.Description))
                     {
-                        <div class="text-muted small">@Model.Order.Shipping.Description</div>
+                        <div class="text-muted small">Instructions: @Model.Order.Shipping.Description</div>
                     }
-                </div>
-            </div>
-            <div class="card mb-3">
-                <div class="card-header">Delivery address</div>
-                <div class="card-body">
-                    <div class="fw-semibold">@Model.Order.Address.Recipient</div>
+                    else
+                    {
+                        <div class="text-muted small">No delivery instructions provided.</div>
+                    }
+                    <hr />
+                    <div class="fw-semibold">Delivery address</div>
+                    <div>@Model.Order.Address.Recipient</div>
                     <div>@Model.Order.Address.Line1</div>
                     @if (!string.IsNullOrWhiteSpace(Model.Order.Address.Line2))
                     {
@@ -98,7 +104,7 @@ else
                     <div>@Model.Order.Address.Country</div>
                     @if (!string.IsNullOrWhiteSpace(Model.Order.Address.Phone))
                     {
-                        <div class="text-muted">Phone: @Model.Order.Address.Phone</div>
+                        <div class="text-muted small">Phone: @Model.Order.Address.Phone</div>
                     }
                 </div>
             </div>
@@ -146,6 +152,28 @@ else
                             </div>
                             <button type="submit" class="btn btn-sm btn-primary">Update status</button>
                         </form>
+                    }
+                </div>
+            </div>
+            <div class="card mb-3">
+                <div class="card-header">Buyer contact</div>
+                <div class="card-body">
+                    <div class="fw-semibold">@(!string.IsNullOrWhiteSpace(Model.Order.BuyerName) ? Model.Order.BuyerName : "Buyer")</div>
+                    @if (!string.IsNullOrWhiteSpace(Model.Order.BuyerEmail))
+                    {
+                        <div class="text-muted small">Email: <a href="mailto:@Model.Order.BuyerEmail">@Model.Order.BuyerEmail</a></div>
+                    }
+                    else
+                    {
+                        <div class="text-muted small">Email not provided.</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Model.Order.BuyerPhone))
+                    {
+                        <div class="text-muted small">Phone: @Model.Order.BuyerPhone</div>
+                    }
+                    else
+                    {
+                        <div class="text-muted small">Phone not provided.</div>
                     }
                 </div>
             </div>
