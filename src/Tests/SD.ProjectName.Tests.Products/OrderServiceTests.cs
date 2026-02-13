@@ -168,6 +168,100 @@ namespace SD.ProjectName.Tests.Products
             Assert.NotNull(invalid.Error);
         }
 
+        [Fact]
+        public async Task GetSummariesForBuyerAsync_ShouldFilterByStatusDateAndSeller()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var now = DateTimeOffset.UtcNow;
+            var buyerId = "buyer-filter";
+
+            var first = await service.EnsureOrderAsync(
+                new CheckoutState("profile", TestAddress, now, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-f1", "sig-f1"),
+                BuildQuote(),
+                TestAddress,
+                buyerId,
+                "buyer-filter@example.com",
+                "Buyer Filter",
+                "Card",
+                "card");
+            first.Order.CreatedOn = now.AddDays(-10);
+
+            var multi = await service.EnsureOrderAsync(
+                new CheckoutState("profile", TestAddress, now, new Dictionary<string, string> { ["seller-1"] = "express", ["seller-2"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-f2", "sig-f2"),
+                BuildMultiSellerQuote(),
+                TestAddress,
+                buyerId,
+                "buyer-filter@example.com",
+                "Buyer Filter",
+                "Card",
+                "card");
+            await service.UpdateSubOrderStatusAsync(multi.Order.Id, "seller-2", OrderStatuses.Shipped);
+            multi.Order.CreatedOn = now.AddDays(-1);
+
+            var recentOther = await service.EnsureOrderAsync(
+                new CheckoutState("profile", TestAddress, now, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-f3", "sig-f3"),
+                BuildQuote(),
+                TestAddress,
+                buyerId,
+                "buyer-filter@example.com",
+                "Buyer Filter",
+                "Card",
+                "card");
+            recentOther.Order.CreatedOn = now.AddDays(-2);
+
+            await context.SaveChangesAsync();
+
+            var filters = new BuyerOrderFilterOptions
+            {
+                Statuses = new List<string> { OrderStatuses.Shipped },
+                FromDate = now.AddDays(-3),
+                ToDate = now,
+                SellerId = "seller-2"
+            };
+
+            var paged = await service.GetSummariesForBuyerAsync(buyerId, filters, 1, 10);
+
+            Assert.Equal(1, paged.TotalCount);
+            var summary = Assert.Single(paged.Items);
+            Assert.Equal(multi.Order.Id, summary.Id);
+            Assert.Equal(OrderStatuses.Shipped, summary.Status);
+        }
+
+        [Fact]
+        public async Task GetSummariesForBuyerAsync_ShouldPaginateNewestFirst()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var now = DateTimeOffset.UtcNow;
+            var buyerId = "buyer-page";
+
+            for (var i = 0; i < 12; i++)
+            {
+                var state = new CheckoutState("profile", TestAddress, now.AddMinutes(-i), new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, $"ref-p{i}", $"sig-p{i}");
+                var result = await service.EnsureOrderAsync(state, BuildQuote(), TestAddress, buyerId, "buyer-page@example.com", "Buyer Page", "Card", "card");
+                result.Order.CreatedOn = now.AddMinutes(-i);
+            }
+
+            await context.SaveChangesAsync();
+
+            var paged = await service.GetSummariesForBuyerAsync(buyerId, null, 2, 5);
+
+            Assert.Equal(12, paged.TotalCount);
+            Assert.Equal(3, paged.TotalPages);
+            Assert.Equal(5, paged.Items.Count);
+            var expectedIds = context.Orders
+                .Where(o => o.BuyerId == buyerId)
+                .OrderByDescending(o => o.CreatedOn)
+                .Skip(5)
+                .Take(5)
+                .Select(o => o.Id)
+                .ToList();
+            Assert.Equal(expectedIds, paged.Items.Select(i => i.Id).ToList());
+        }
+
         private static ShippingQuote BuildQuote()
         {
             var product = new ProductModel { Id = 1, Title = "Sample Item", Price = 10, Stock = 5, SellerId = "seller-1" };
