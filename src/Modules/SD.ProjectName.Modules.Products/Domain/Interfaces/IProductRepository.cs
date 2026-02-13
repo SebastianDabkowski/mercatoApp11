@@ -15,6 +15,8 @@ namespace SD.ProjectName.Modules.Products.Domain.Interfaces
 
         Task<List<ProductModel>> GetByIds(IEnumerable<int> ids, bool includeDrafts = false);
 
+        Task<List<ProductModel>> GetByCategoryIds(IEnumerable<int> categoryIds, bool includeDrafts = false);
+
         Task Add(ProductModel product);
 
         Task Update(ProductModel product);

@@ -92,6 +92,26 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal("SKU-F1", results[0].MerchantSku);
         }
 
+        [Fact]
+        public async Task GetByCategoryIds_ShouldReturnActiveProducts_InProvidedCategories()
+        {
+            await using var context = CreateContext();
+            context.Products.AddRange(
+                new ProductModel { Title = "In Root", MerchantSku = "SKU-G1", Price = 10, Stock = 3, Category = "Root", CategoryId = 1, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "In Child", MerchantSku = "SKU-G2", Price = 8, Stock = 2, Category = "Root / Child", CategoryId = 2, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Draft Child", MerchantSku = "SKU-G3", Price = 6, Stock = 1, Category = "Root / Child", CategoryId = 2, WorkflowState = ProductWorkflowStates.Draft, SellerId = "seller-1" },
+                new ProductModel { Title = "Archived", MerchantSku = "SKU-G4", Price = 4, Stock = 0, Category = "Root", CategoryId = 1, WorkflowState = ProductWorkflowStates.Archived, SellerId = "seller-1" });
+            await context.SaveChangesAsync();
+
+            var repository = new ProductRepository(context);
+
+            var results = await repository.GetByCategoryIds(new[] { 1, 2 });
+
+            Assert.Equal(2, results.Count);
+            Assert.DoesNotContain(results, p => p.WorkflowState != ProductWorkflowStates.Active);
+            Assert.All(results, p => Assert.Contains(p.CategoryId!.Value, new[] { 1, 2 }));
+        }
+
         private static ProductDbContext CreateContext()
         {
             var options = new DbContextOptionsBuilder<ProductDbContext>()

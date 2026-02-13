@@ -34,5 +34,10 @@ namespace SD.ProjectName.Modules.Products.Application
             return await _repository.GetListFiltered(sellerId, includeDrafts, search, workflowState, cancellationToken);
         }
 
+        public async Task<List<ProductModel>> GetByCategoryIds(IEnumerable<int> categoryIds, bool includeDrafts = false)
+        {
+            return await _repository.GetByCategoryIds(categoryIds, includeDrafts);
+        }
+
     }
 }

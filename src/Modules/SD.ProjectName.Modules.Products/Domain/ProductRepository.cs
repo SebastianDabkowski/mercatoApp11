@@ -90,6 +90,34 @@ namespace SD.ProjectName.Modules.Products.Domain
                 .ToListAsync();
         }
 
+        public async Task<List<ProductModel>> GetByCategoryIds(IEnumerable<int> categoryIds, bool includeDrafts = false)
+        {
+            if (categoryIds == null)
+            {
+                return new List<ProductModel>();
+            }
+
+            var ids = categoryIds.Distinct().ToList();
+            if (ids.Count == 0)
+            {
+                return new List<ProductModel>();
+            }
+
+            var query = _context.Set<ProductModel>()
+                .Where(p => p.WorkflowState != ProductWorkflowStates.Archived)
+                .Where(p => p.CategoryId != null && ids.Contains(p.CategoryId.Value))
+                .AsQueryable();
+
+            if (!includeDrafts)
+            {
+                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active);
+            }
+
+            return await query
+                .OrderByDescending(p => p.Id)
+                .ToListAsync();
+        }
+
         public async Task Add(ProductModel product)
         {
             _context.Set<ProductModel>().Add(product);
