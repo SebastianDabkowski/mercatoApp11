@@ -11,6 +11,7 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<LoginAudit> LoginAudits => Set<LoginAudit>();
         public DbSet<SellerTeamMember> SellerTeamMembers => Set<SellerTeamMember>();
         public DbSet<OrderRecord> Orders => Set<OrderRecord>();
+        public DbSet<SellerShippingMethod> SellerShippingMethods => Set<SellerShippingMethod>();
         public DbSet<ShippingAddress> ShippingAddresses => Set<ShippingAddress>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
@@ -191,6 +192,30 @@ namespace SD.ProjectName.WebApp.Data
 
                 entity.HasIndex(e => e.UserId);
                 entity.HasIndex(e => e.OccurredOn);
+            });
+
+            builder.Entity<SellerShippingMethod>(entity =>
+            {
+                entity.HasKey(m => m.Id);
+                entity.Property(m => m.StoreOwnerId)
+                    .IsRequired()
+                    .HasMaxLength(450);
+                entity.Property(m => m.Name)
+                    .IsRequired()
+                    .HasMaxLength(128);
+                entity.Property(m => m.Description)
+                    .HasMaxLength(1024);
+                entity.Property(m => m.Availability)
+                    .HasMaxLength(256);
+                entity.Property(m => m.IsActive)
+                    .IsRequired();
+                entity.Property(m => m.IsDeleted)
+                    .IsRequired();
+                entity.Property(m => m.CreatedOn)
+                    .IsRequired();
+                entity.Property(m => m.UpdatedOn)
+                    .IsRequired();
+                entity.HasIndex(m => new { m.StoreOwnerId, m.IsDeleted });
             });
 
             builder.Entity<ShippingAddress>(entity =>

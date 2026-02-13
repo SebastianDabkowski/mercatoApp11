@@ -6,6 +6,9 @@
 
 <h1 class="display-6">Store settings</h1>
 <p class="lead">Keep your store details accurate so buyers know how to reach you.</p>
+<div class="mb-3">
+    <a class="btn btn-outline-secondary" asp-page="/Seller/ShippingSettings">Manage shipping methods</a>
+</div>
 
 @if (!string.IsNullOrEmpty(Model.StatusMessage))
 {
