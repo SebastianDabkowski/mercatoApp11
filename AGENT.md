@@ -251,6 +251,8 @@ Automates documentation and ADR currency so architecture and agent records alway
 
 \- DocSync validation pipeline: detect architecture deltas, regenerate `ARCHITECTURE.md` and `AGENT.md` from the current module/agent inventory, validate ADR coverage, and backfill any missing ADRs before merge.
 
+\- Acceptance gates: architecture deltas regenerate `ARCHITECTURE.md`, agent responsibility changes regenerate `AGENT.md`, and ADR validation backfills any missing ADRs before merge.
+
 
 
 \*\*Rules\*\*
