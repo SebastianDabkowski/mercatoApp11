@@ -1,0 +1,146 @@
+﻿@page
+@using SD.ProjectName.Modules.Products.Application
+@model SD.ProjectName.WebApp.Pages.Seller.Products.BulkUpdateModel
+@{
+    ViewData["Title"] = "Bulk update products";
+}
+
+<h1>Bulk update products</h1>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+@if (TempData["ErrorMessage"] is string errorMessage)
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+
+<div class="mb-3">
+    <p class="text-muted">Select how you want to change prices and stock for the chosen products. Preview the impact before applying.</p>
+</div>
+
+<div asp-validation-summary="All" class="text-danger"></div>
+
+@if (!Model.SelectedProducts.Any())
+{
+    <div class="alert alert-warning">No products available for update.</div>
+}
+else
+{
+    <div class="mb-4">
+        <h2 class="h5">Selected products</h2>
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Current price</th>
+                    <th>Current stock</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var product in Model.SelectedProducts)
+                {
+                    <tr>
+                        <td>@product.Title</td>
+                        <td>@product.Price.ToString("C")</td>
+                        <td>@product.Stock</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <form method="post">
+        @foreach (var id in Model.Input.SelectedIds)
+        {
+            <input type="hidden" name="Input.SelectedIds" value="@id" />
+        }
+
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="mb-2">
+                    <label asp-for="Input.PriceOperation" class="form-label"></label>
+                    <select asp-for="Input.PriceOperation" class="form-select">
+                        <option value="None">No price change</option>
+                        <option value="SetTo">Set fixed price</option>
+                        <option value="IncreasePercent">Increase by percentage</option>
+                        <option value="DecreasePercent">Decrease by percentage</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.PriceValue" class="form-label"></label>
+                    <input asp-for="Input.PriceValue" class="form-control" step="0.01" />
+                    <span class="form-text">Use currency value for fixed price, percentage for increase/decrease.</span>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="mb-2">
+                    <label asp-for="Input.StockOperation" class="form-label"></label>
+                    <select asp-for="Input.StockOperation" class="form-select">
+                        <option value="None">No stock change</option>
+                        <option value="SetTo">Set exact stock</option>
+                        <option value="Increase">Increase by amount</option>
+                        <option value="Decrease">Decrease by amount</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.StockValue" class="form-label"></label>
+                    <input asp-for="Input.StockValue" class="form-control" step="1" />
+                    <span class="form-text">Provide quantity for the chosen stock operation.</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <button type="submit" asp-page-handler="Preview" class="btn btn-outline-primary">Preview changes</button>
+            <button type="submit" asp-page-handler="Apply" class="btn btn-primary ms-2">Confirm and apply</button>
+            <a class="btn btn-link" asp-page="List">Cancel</a>
+        </div>
+    </form>
+
+    @if (Model.PreviewResults.Any())
+    {
+        <div class="mt-4">
+            <h2 class="h5">Preview</h2>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Current price</th>
+                        <th>New price</th>
+                        <th>Current stock</th>
+                        <th>New stock</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in Model.PreviewResults)
+                    {
+                        <tr>
+                            <td>@item.Title</td>
+                            <td>@(string.IsNullOrWhiteSpace(item.Error) ? item.CurrentPrice.ToString("C") : "-")</td>
+                            <td>@(string.IsNullOrWhiteSpace(item.Error) ? item.NewPrice.ToString("C") : "-")</td>
+                            <td>@(string.IsNullOrWhiteSpace(item.Error) ? item.CurrentStock.ToString() : "-")</td>
+                            <td>@(string.IsNullOrWhiteSpace(item.Error) ? item.NewStock.ToString() : "-")</td>
+                            <td>
+                                @if (!string.IsNullOrWhiteSpace(item.Error))
+                                {
+                                    <span class="text-danger">@item.Error</span>
+                                }
+                                else if (item.Applied)
+                                {
+                                    <span class="text-success">Updated</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">Ready</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}

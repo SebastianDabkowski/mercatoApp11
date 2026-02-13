@@ -56,6 +56,24 @@ namespace SD.ProjectName.Tests.Products
             Assert.Null(result);
         }
 
+        [Fact]
+        public async Task GetByIds_ShouldExcludeArchived()
+        {
+            await using var context = CreateContext();
+            var active = new ProductModel { Title = "Active", Price = 10, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" };
+            var draft = new ProductModel { Title = "Draft", Price = 5, Stock = 2, Category = "Cat", WorkflowState = ProductWorkflowStates.Draft, SellerId = "seller-1" };
+            var archived = new ProductModel { Title = "Archived", Price = 3, Stock = 0, Category = "Cat", WorkflowState = ProductWorkflowStates.Archived, SellerId = "seller-1" };
+            context.Products.AddRange(active, draft, archived);
+            await context.SaveChangesAsync();
+
+            var repository = new ProductRepository(context);
+
+            var results = await repository.GetByIds(new[] { active.Id, draft.Id, archived.Id }, includeDrafts: true);
+
+            Assert.Equal(2, results.Count);
+            Assert.DoesNotContain(results, p => p.WorkflowState == ProductWorkflowStates.Archived);
+        }
+
         private static ProductDbContext CreateContext()
         {
             var options = new DbContextOptionsBuilder<ProductDbContext>()
