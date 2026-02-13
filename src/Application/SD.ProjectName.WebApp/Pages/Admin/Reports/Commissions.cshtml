@@ -1,0 +1,213 @@
+@page "/Admin/Reports/Commissions"
+@model SD.ProjectName.WebApp.Pages.Admin.Reports.CommissionsModel
+@{
+    ViewData["Title"] = "Commission summary";
+    var periodLabel = $"{Model.PeriodStart.ToLocalTime():d} – {Model.PeriodEnd.ToLocalTime():d}";
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div>
+        <h1 class="mb-1">Commission summary</h1>
+        <p class="text-muted mb-0">Aggregated GMV, commission, and payouts per seller over the selected payout window.</p>
+        <div class="small text-muted">Period: @periodLabel</div>
+    </div>
+    <form method="get" asp-page-handler="Export" class="d-flex align-items-start gap-2">
+        @if (Model.FromDate.HasValue)
+        {
+            <input type="hidden" name="FromDate" value="@(Model.FromDate?.ToString("yyyy-MM-dd"))" />
+        }
+        @if (Model.ToDate.HasValue)
+        {
+            <input type="hidden" name="ToDate" value="@(Model.ToDate?.ToString("yyyy-MM-dd"))" />
+        }
+        @if (!string.IsNullOrWhiteSpace(Model.SellerId))
+        {
+            <input type="hidden" name="SellerId" value="@Model.SellerId" />
+        }
+        <button type="submit" class="btn btn-outline-secondary">Export CSV</button>
+    </form>
+</div>
+
+<div class="card my-3">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-sm-3">
+                <label for="fromDate" class="form-label">From</label>
+                <input id="fromDate" class="form-control" type="date" name="FromDate" value="@(Model.FromDate?.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-sm-3">
+                <label for="toDate" class="form-label">To</label>
+                <input id="toDate" class="form-control" type="date" name="ToDate" value="@(Model.ToDate?.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-sm-3">
+                <label for="sellerInput" class="form-label">Seller (optional)</label>
+                <input id="sellerInput" class="form-control" name="SellerId" value="@Model.SellerId" placeholder="Seller id to drill into" />
+            </div>
+            <div class="col-sm-3 d-flex justify-content-end gap-2">
+                <button type="submit" class="btn btn-primary">Apply</button>
+                <a class="btn btn-outline-secondary" asp-page="/Admin/Reports/Commissions">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-body">
+                <div class="text-muted small">Total GMV</div>
+                <div class="fs-4 fw-semibold">@Model.TotalGross.ToString("C")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-body">
+                <div class="text-muted small">Commission</div>
+                <div class="fs-4 fw-semibold">@Model.TotalCommission.ToString("C")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-body">
+                <div class="text-muted small">Net payout</div>
+                <div class="fs-4 fw-semibold">@Model.TotalPayout.ToString("C")</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div>
+            <div class="fw-semibold">Seller summary</div>
+            <div class="text-muted small">Grouped by seller using stored escrow allocations for historical rates.</div>
+        </div>
+        <div class="text-muted small">@Model.Summaries.Count seller@(Model.Summaries.Count == 1 ? "" : "s")</div>
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Seller</th>
+                    <th class="text-end">Orders</th>
+                    <th class="text-end">GMV</th>
+                    <th class="text-end">Commission</th>
+                    <th class="text-end">Net payout</th>
+                    <th class="text-end">Adjustments</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Summaries.Count == 0)
+                {
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">No commissions found for the selected window.</td>
+                    </tr>
+                }
+                else
+                {
+                    foreach (var summary in Model.Summaries)
+                    {
+                        <tr>
+                            <td>
+                                <div class="fw-semibold">@summary.SellerName</div>
+                                <div class="text-muted small">@summary.SellerId</div>
+                            </td>
+                            <td class="text-end">@summary.OrderCount</td>
+                            <td class="text-end fw-semibold">@summary.GrossTotal.ToString("C")</td>
+                            <td class="text-end text-muted">@summary.CommissionTotal.ToString("C")</td>
+                            <td class="text-end">@summary.PayoutTotal.ToString("C")</td>
+                            <td class="text-end">
+                                @if (summary.AdjustmentCount > 0)
+                                {
+                                    <span class="badge bg-warning text-dark">@summary.AdjustmentCount adjustment@(summary.AdjustmentCount == 1 ? "" : "s")</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">None</span>
+                                }
+                            </td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-primary"
+                                   asp-page="/Admin/Reports/Commissions"
+                                   asp-route-FromDate="@(Model.FromDate?.ToString("yyyy-MM-dd"))"
+                                   asp-route-ToDate="@(Model.ToDate?.ToString("yyyy-MM-dd"))"
+                                   asp-route-SellerId="@summary.SellerId">View orders</a>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@if (Model.Detail != null)
+{
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <div class="fw-semibold">Orders for @Model.Detail.Summary.SellerName</div>
+                <div class="small text-muted">Payout window @periodLabel</div>
+            </div>
+            <a class="btn btn-sm btn-outline-secondary"
+               asp-page="/Admin/Reports/Commissions"
+               asp-route-FromDate="@(Model.FromDate?.ToString("yyyy-MM-dd"))"
+               asp-route-ToDate="@(Model.ToDate?.ToString("yyyy-MM-dd"))">Close</a>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th>Order</th>
+                        <th>Payout on</th>
+                        <th>Created</th>
+                        <th class="text-end">Gross</th>
+                        <th class="text-end">Commission</th>
+                        <th class="text-end">Payout</th>
+                        <th>Status</th>
+                        <th>Flags</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Detail.Orders.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-4">No orders contributed to this seller in the selected window.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        foreach (var order in Model.Detail.Orders)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold">@order.OrderNumber</div>
+                                    <div class="small text-muted">Sub-order @order.SubOrderNumber</div>
+                                </td>
+                                <td>@order.PayoutOn.ToLocalTime().ToString("g")</td>
+                                <td class="text-muted">@order.CreatedOn.ToLocalTime().ToString("g")</td>
+                                <td class="text-end">@order.GrossTotal.ToString("C")</td>
+                                <td class="text-end text-muted">@order.CommissionTotal.ToString("C")</td>
+                                <td class="text-end fw-semibold">@order.PayoutTotal.ToString("C")</td>
+                                <td>@order.PayoutStatus</td>
+                                <td>
+                                    @if (order.IsAdjustment)
+                                    {
+                                        <span class="badge bg-warning text-dark">Prior period adjustment</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">Current window</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
