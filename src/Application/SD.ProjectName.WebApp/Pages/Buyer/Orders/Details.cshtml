@@ -83,7 +83,38 @@ else
                                     <div>
                                         <div class="fw-semibold">@sub.SellerName</div>
                                         <div class="text-muted small">Sub-order @sub.SubOrderNumber</div>
-                                        <div class="text-muted small">Status: @sub.Status</div>
+                                        @{
+                                            var normalizedSubStatus = OrderStatuses.Normalize(sub.Status);
+                                            var subStatusBadge = "bg-secondary";
+                                            if (normalizedSubStatus.Equals("Delivered", StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                subStatusBadge = "bg-success";
+                                            }
+                                            else if (normalizedSubStatus.Equals("Shipped", StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                subStatusBadge = "bg-primary";
+                                            }
+                                            else if (normalizedSubStatus.Equals("Preparing", StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                subStatusBadge = "bg-info text-dark";
+                                            }
+                                            else if (normalizedSubStatus.Equals("Cancelled", StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                subStatusBadge = "bg-warning text-dark";
+                                            }
+                                            else if (normalizedSubStatus.Equals("Refunded", StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                subStatusBadge = "bg-light text-dark border";
+                                            }
+                                        }
+                                        <div class="text-muted small">
+                                            Status:
+                                            <span class="badge @subStatusBadge">@normalizedSubStatus</span>
+                                            @if (string.Equals(normalizedSubStatus, OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase) && sub.DeliveredOn.HasValue)
+                                            {
+                                                <span class="text-success ms-1">Delivered @sub.DeliveredOn.Value.ToLocalTime().ToString("g")</span>
+                                            }
+                                        </div>
                                         <div class="text-muted small">Shipping: @sub.ShippingDetail.MethodLabel (@sub.ShippingDetail.Cost.ToString("C"))</div>
                                         @{
                                             var estimate = string.IsNullOrWhiteSpace(sub.ShippingDetail.DeliveryEstimate)

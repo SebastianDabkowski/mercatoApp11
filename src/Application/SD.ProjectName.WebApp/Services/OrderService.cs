@@ -174,6 +174,8 @@ namespace SD.ProjectName.WebApp.Services
 
     public record ReturnRequest(string SubOrderNumber, string Status, string Reason, DateTimeOffset RequestedOn, List<ReturnRequestItem> Items);
 
+    public record OrderStatusChange(string Status, DateTimeOffset ChangedOn, string? TrackingNumber = null, string? TrackingCarrier = null);
+
     public record OrderSubOrder(
         string SubOrderNumber,
         string SellerId,
@@ -190,7 +192,8 @@ namespace SD.ProjectName.WebApp.Services
         string? TrackingCarrier = null,
         decimal RefundedAmount = 0,
         DateTimeOffset? DeliveredOn = null,
-        ReturnRequest? Return = null);
+        ReturnRequest? Return = null,
+        List<OrderStatusChange>? StatusHistory = null);
 
     public static class EscrowEntryTypes
     {
@@ -312,7 +315,8 @@ namespace SD.ProjectName.WebApp.Services
         string PaymentStatus,
         string? PaymentStatusMessage,
         ReturnRequest? ReturnRequest,
-        EscrowAllocation? Escrow);
+        EscrowAllocation? Escrow,
+        List<OrderStatusChange> StatusHistory);
 
     public record SellerPayoutScheduleView(string Schedule, string Status, decimal EligibleAmount, decimal ProcessingAmount, decimal PaidAmount, decimal Threshold, string? ErrorReference);
 
@@ -1559,7 +1563,8 @@ namespace SD.ProjectName.WebApp.Services
                 paymentStatus,
                 details.PaymentStatusMessage,
                 subOrder.Return,
-                escrow);
+                escrow,
+                subOrder.StatusHistory ?? new List<OrderStatusChange>());
         }
 
         public async Task<PagedResult<SellerPayoutSummaryView>> GetPayoutsForSellerAsync(
@@ -1958,6 +1963,7 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             var now = DateTimeOffset.UtcNow;
+            var originalStatus = OrderStatuses.Normalize(subOrder.Status);
             var updatedStatus = CalculateSubOrderStatusFromItems(updatedItems, normalizedStatus);
             var computedRefund = subOrder.RefundedAmount;
 
@@ -1971,16 +1977,26 @@ namespace SD.ProjectName.WebApp.Services
                 computedRefund = Math.Max(0, refundedAmount.Value);
             }
 
+            var tracking = string.IsNullOrWhiteSpace(trackingNumber) ? subOrder.TrackingNumber : trackingNumber.Trim();
+            var carrier = string.IsNullOrWhiteSpace(trackingCarrier) ? subOrder.TrackingCarrier : trackingCarrier.Trim();
+            var history = NormalizeStatusHistory(subOrder.StatusHistory, originalStatus, subOrder.TrackingNumber, subOrder.TrackingCarrier, now);
+            var statusChanged = !string.Equals(originalStatus, updatedStatus, StringComparison.OrdinalIgnoreCase);
+            if (statusChanged || !string.IsNullOrWhiteSpace(tracking))
+            {
+                history = AppendStatusHistory(history, updatedStatus, tracking, carrier, now);
+            }
+
             var updatedSubOrder = subOrder with
             {
                 Items = updatedItems,
                 Status = updatedStatus,
-                TrackingNumber = string.IsNullOrWhiteSpace(trackingNumber) ? subOrder.TrackingNumber : trackingNumber.Trim(),
-                TrackingCarrier = string.IsNullOrWhiteSpace(trackingCarrier) ? subOrder.TrackingCarrier : trackingCarrier.Trim(),
+                TrackingNumber = tracking,
+                TrackingCarrier = carrier,
                 RefundedAmount = computedRefund,
                 DeliveredOn = string.Equals(updatedStatus, OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase)
                     ? subOrder.DeliveredOn ?? now
-                    : subOrder.DeliveredOn
+                    : subOrder.DeliveredOn,
+                StatusHistory = history
             };
 
             var subOrderIndex = details.SubOrders.FindIndex(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
@@ -2006,6 +2022,11 @@ namespace SD.ProjectName.WebApp.Services
             order.Status = CalculateOrderStatus(details.SubOrders, order.Status);
             order.DetailsJson = JsonSerializer.Serialize(details, _serializerOptions);
             await _dbContext.SaveChangesAsync(cancellationToken);
+
+            if (statusChanged && string.Equals(updatedStatus, OrderStatuses.Shipped, StringComparison.OrdinalIgnoreCase))
+            {
+                await SendShippingUpdateEmailAsync(order, updatedSubOrder);
+            }
 
             return new SubOrderStatusUpdateResult(true, null, updatedSubOrder, order.Status);
         }
@@ -2053,6 +2074,10 @@ namespace SD.ProjectName.WebApp.Services
                 var discountShare = CalculateDiscountShare(remainingDiscount, baseTotal, totalBeforeDiscount, sellerIndex == quote.Summary.SellerGroups.Count);
                 remainingDiscount -= discountShare;
                 totalBeforeDiscount -= baseTotal;
+                var initialHistory = new List<OrderStatusChange>
+                {
+                    new(OrderStatuses.Normalize(initialStatus), DateTimeOffset.UtcNow, null, null)
+                };
 
                 subOrders.Add(new OrderSubOrder(
                     $"{orderNumber}-{sellerIndex:00}",
@@ -2065,7 +2090,13 @@ namespace SD.ProjectName.WebApp.Services
                     groupItems.Sum(i => i.Quantity),
                     groupItems,
                     ship,
-                    initialStatus));
+                    initialStatus,
+                    null,
+                    null,
+                    0,
+                    null,
+                    null,
+                    initialHistory));
             }
 
             var escrow = BuildEscrowAllocations(subOrders, initialStatus, paymentReference);
@@ -2548,6 +2579,57 @@ namespace SD.ProjectName.WebApp.Services
             }
         }
 
+        private async Task SendShippingUpdateEmailAsync(OrderRecord order, OrderSubOrder subOrder)
+        {
+            if (string.IsNullOrWhiteSpace(order.BuyerEmail))
+            {
+                return;
+            }
+
+            if (!string.Equals(OrderStatuses.Normalize(subOrder.Status), OrderStatuses.Shipped, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            try
+            {
+                var builder = new StringBuilder();
+                builder.Append($"<h2>Your order {order.OrderNumber} has shipped</h2>");
+                builder.Append($"<p>{subOrder.SellerName} marked sub-order {subOrder.SubOrderNumber} as shipped.</p>");
+
+                if (!string.IsNullOrWhiteSpace(subOrder.ShippingDetail.MethodLabel))
+                {
+                    builder.Append($"<p>Shipping method: {subOrder.ShippingDetail.MethodLabel}</p>");
+                }
+
+                if (!string.IsNullOrWhiteSpace(subOrder.TrackingNumber) || !string.IsNullOrWhiteSpace(subOrder.TrackingCarrier))
+                {
+                    builder.Append("<p>");
+                    if (!string.IsNullOrWhiteSpace(subOrder.TrackingNumber))
+                    {
+                        builder.Append($"Tracking: {subOrder.TrackingNumber}");
+                        if (!string.IsNullOrWhiteSpace(subOrder.TrackingCarrier))
+                        {
+                            builder.Append(" • ");
+                        }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(subOrder.TrackingCarrier))
+                    {
+                        builder.Append($"Carrier: {subOrder.TrackingCarrier}");
+                    }
+
+                    builder.Append("</p>");
+                }
+
+                await _emailSender.SendEmailAsync(order.BuyerEmail, $"Order {order.OrderNumber} shipped", builder.ToString());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send shipping update email for {OrderNumber} sub-order {SubOrder}", order.OrderNumber, subOrder.SubOrderNumber);
+            }
+        }
+
         private static string BuildEmailBody(OrderRecord order, DeliveryAddress address, OrderDetailsPayload details)
         {
             var builder = new StringBuilder();
@@ -2965,6 +3047,63 @@ namespace SD.ProjectName.WebApp.Services
             return fallback;
         }
 
+        private static List<OrderStatusChange> NormalizeStatusHistory(
+            List<OrderStatusChange>? history,
+            string currentStatus,
+            string? tracking,
+            string? carrier,
+            DateTimeOffset now)
+        {
+            var normalizedStatus = OrderStatuses.Normalize(currentStatus);
+            var normalizedHistory = (history ?? new List<OrderStatusChange>())
+                .Where(h => !string.IsNullOrWhiteSpace(h.Status))
+                .Select(h => new OrderStatusChange(
+                    OrderStatuses.Normalize(h.Status),
+                    h.ChangedOn == default ? now : h.ChangedOn,
+                    string.IsNullOrWhiteSpace(h.TrackingNumber) ? null : h.TrackingNumber.Trim(),
+                    string.IsNullOrWhiteSpace(h.TrackingCarrier) ? null : h.TrackingCarrier.Trim()))
+                .OrderBy(h => h.ChangedOn)
+                .ToList();
+
+            var normalizedTracking = string.IsNullOrWhiteSpace(tracking) ? null : tracking.Trim();
+            var normalizedCarrier = string.IsNullOrWhiteSpace(carrier) ? null : carrier.Trim();
+
+            if (normalizedHistory.Count == 0 || !string.Equals(normalizedHistory.Last().Status, normalizedStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                normalizedHistory.Add(new OrderStatusChange(normalizedStatus, now, normalizedTracking, normalizedCarrier));
+            }
+
+            return normalizedHistory;
+        }
+
+        private static List<OrderStatusChange> AppendStatusHistory(
+            List<OrderStatusChange> history,
+            string newStatus,
+            string? tracking,
+            string? carrier,
+            DateTimeOffset changedOn)
+        {
+            var normalizedStatus = OrderStatuses.Normalize(newStatus);
+            var normalizedTracking = string.IsNullOrWhiteSpace(tracking) ? null : tracking.Trim();
+            var normalizedCarrier = string.IsNullOrWhiteSpace(carrier) ? null : carrier.Trim();
+
+            if (history.Count > 0 && string.Equals(history.Last().Status, normalizedStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                var last = history[^1];
+                var trackingChanged = normalizedTracking != null && !string.Equals(last.TrackingNumber, normalizedTracking, StringComparison.OrdinalIgnoreCase);
+                var carrierChanged = normalizedCarrier != null && !string.Equals(last.TrackingCarrier, normalizedCarrier, StringComparison.OrdinalIgnoreCase);
+                if (trackingChanged || carrierChanged)
+                {
+                    history[^1] = last with { TrackingNumber = normalizedTracking, TrackingCarrier = normalizedCarrier };
+                }
+
+                return history;
+            }
+
+            history.Add(new OrderStatusChange(normalizedStatus, changedOn, normalizedTracking, normalizedCarrier));
+            return history;
+        }
+
         private static OrderSubOrder NormalizeSubOrder(OrderSubOrder subOrder)
         {
             var status = OrderStatuses.Normalize(subOrder.Status);
@@ -2977,6 +3116,7 @@ namespace SD.ProjectName.WebApp.Services
             var refunded = Math.Max(0, subOrder.RefundedAmount);
             var deliveredOn = subOrder.DeliveredOn == DateTimeOffset.MinValue ? null : subOrder.DeliveredOn;
             var normalizedReturn = NormalizeReturnRequest(subOrder.Return, normalizedItems);
+            var history = NormalizeStatusHistory(subOrder.StatusHistory, derivedStatus, tracking, carrier, DateTimeOffset.UtcNow);
 
             return subOrder with
             {
@@ -2986,7 +3126,8 @@ namespace SD.ProjectName.WebApp.Services
                 TrackingCarrier = carrier,
                 RefundedAmount = refunded,
                 DeliveredOn = deliveredOn,
-                Return = normalizedReturn
+                Return = normalizedReturn,
+                StatusHistory = history
             };
         }
 
