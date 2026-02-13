@@ -45,6 +45,8 @@ namespace SD.ProjectName.Modules.Products.Domain
 
         public string? SellerId { get; set; }
 
+        public string? SortBy { get; set; }
+
         public bool HasAnyFilters() =>
             (CategoryIds != null && CategoryIds.Any()) ||
             MinPrice.HasValue ||
@@ -68,5 +70,28 @@ namespace SD.ProjectName.Modules.Products.Domain
         public List<string> Conditions { get; set; } = new();
 
         public List<string> SellerIds { get; set; } = new();
+    }
+
+    public static class ProductSortOptions
+    {
+        public const string Relevance = "relevance";
+        public const string PriceAsc = "price_asc";
+        public const string PriceDesc = "price_desc";
+        public const string Newest = "newest";
+
+        private static readonly string[] Allowed = [Relevance, PriceAsc, PriceDesc, Newest];
+
+        public static string Default(bool hasSearch) => hasSearch ? Relevance : Newest;
+
+        public static string Normalize(string? sort, bool hasSearch)
+        {
+            if (string.IsNullOrWhiteSpace(sort))
+            {
+                return Default(hasSearch);
+            }
+
+            var normalized = sort.Trim().ToLowerInvariant();
+            return Allowed.Contains(normalized) ? normalized : Default(hasSearch);
+        }
     }
 }

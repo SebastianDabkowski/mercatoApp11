@@ -41,6 +41,9 @@ namespace SD.ProjectName.WebApp.Pages.Products
         [BindProperty(SupportsGet = true)]
         public string? SellerId { get; set; }
 
+        [BindProperty(SupportsGet = true)]
+        public string? Sort { get; set; }
+
         public List<ProductModel> Results { get; private set; } = new();
 
         public string? StatusMessage { get; private set; }
@@ -54,6 +57,10 @@ namespace SD.ProjectName.WebApp.Pages.Products
         public ProductFilterMetadata FilterMetadata { get; private set; } = new();
 
         public List<string> ActiveFilters { get; private set; } = new();
+
+        public List<SelectListItem> SortOptions { get; private set; } = new();
+
+        public string AppliedSort { get; private set; } = ProductSortOptions.Relevance;
 
         public bool HasActiveFilters => ActiveFilters.Any();
 
@@ -71,6 +78,9 @@ namespace SD.ProjectName.WebApp.Pages.Products
             var term = NormalizeQuery(Q);
 
             Q = term;
+            AppliedSort = ProductSortOptions.Normalize(Sort, hasSearch: true);
+            Sort = AppliedSort;
+            SortOptions = BuildSortOptions(AppliedSort);
 
             var categoryIds = CategoryId.HasValue ? new[] { CategoryId.Value } : Array.Empty<int>();
             var context = new ProductFilterContext
@@ -95,7 +105,8 @@ namespace SD.ProjectName.WebApp.Pages.Products
                 MinPrice = MinPrice,
                 MaxPrice = MaxPrice,
                 Condition = NormalizeCondition(),
-                SellerId = string.IsNullOrWhiteSpace(SellerId) ? null : SellerId
+                SellerId = string.IsNullOrWhiteSpace(SellerId) ? null : SellerId,
+                SortBy = AppliedSort
             };
 
             Results = await _getProducts.FilterActive(filterOptions, cancellationToken);
@@ -218,6 +229,17 @@ namespace SD.ProjectName.WebApp.Pages.Products
             }
 
             ActiveFilters = active;
+        }
+
+        private static List<SelectListItem> BuildSortOptions(string selected)
+        {
+            return new List<SelectListItem>
+            {
+                new() { Value = ProductSortOptions.Relevance, Text = "Relevance", Selected = selected == ProductSortOptions.Relevance },
+                new() { Value = ProductSortOptions.PriceAsc, Text = "Price: Low to High", Selected = selected == ProductSortOptions.PriceAsc },
+                new() { Value = ProductSortOptions.PriceDesc, Text = "Price: High to Low", Selected = selected == ProductSortOptions.PriceDesc },
+                new() { Value = ProductSortOptions.Newest, Text = "Newest", Selected = selected == ProductSortOptions.Newest }
+            };
         }
     }
 }

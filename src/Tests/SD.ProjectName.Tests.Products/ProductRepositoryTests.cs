@@ -181,6 +181,45 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task FilterActiveProducts_ShouldSortByPriceAscending()
+        {
+            await using var context = CreateContext();
+            context.Products.AddRange(
+                new ProductModel { Title = "Mid", MerchantSku = "SKU-SORT-1", Price = 50, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Cheap", MerchantSku = "SKU-SORT-2", Price = 10, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Expensive", MerchantSku = "SKU-SORT-3", Price = 75, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" }
+            );
+            await context.SaveChangesAsync();
+
+            var repository = new ProductRepository(context);
+            var filters = new ProductFilterOptions { SortBy = ProductSortOptions.PriceAsc };
+
+            var results = await repository.FilterActiveProducts(filters);
+
+            Assert.Equal(new[] { "Cheap", "Mid", "Expensive" }, results.Select(r => r.Title));
+        }
+
+        [Fact]
+        public async Task FilterActiveProducts_ShouldSortByRelevance_WhenSearchProvided()
+        {
+            await using var context = CreateContext();
+            context.Products.AddRange(
+                new ProductModel { Title = "Camera Bag", Description = "Padded", MerchantSku = "SKU-SORT-4", Price = 30, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Travel Case", Description = "Camera travel case", MerchantSku = "SKU-SORT-5", Price = 40, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Unrelated", Description = "No match", MerchantSku = "SKU-SORT-6", Price = 20, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" }
+            );
+            await context.SaveChangesAsync();
+
+            var repository = new ProductRepository(context);
+            var filters = new ProductFilterOptions { Search = "camera", SortBy = ProductSortOptions.Relevance };
+
+            var results = await repository.FilterActiveProducts(filters);
+
+            Assert.Equal("Camera Bag", results[0].Title);
+            Assert.Equal("Travel Case", results[1].Title);
+        }
+
+        [Fact]
         public async Task GetFilterMetadata_ShouldReturnDistinctValues()
         {
             await using var context = CreateContext();

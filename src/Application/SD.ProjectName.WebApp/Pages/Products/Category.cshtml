@@ -32,11 +32,11 @@
     <div class="text-end">
         @if (Model.IncludeSubcategories)
         {
-            <a class="btn btn-outline-secondary" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-includeSubcategories="false">Show this category only</a>
+            <a class="btn btn-outline-secondary" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-includeSubcategories="false" asp-route-sort="@Model.Sort">Show this category only</a>
         }
         else
         {
-            <a class="btn btn-outline-secondary" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-includeSubcategories="true">Include subcategories</a>
+            <a class="btn btn-outline-secondary" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-includeSubcategories="true" asp-route-sort="@Model.Sort">Include subcategories</a>
         }
     </div>
 </div>
@@ -70,6 +70,7 @@
         </div>
         <form id="categoryFilters" method="get" asp-page="/Products/Category">
             <input type="hidden" name="includeSubcategories" value="@Model.IncludeSubcategories" />
+            <input type="hidden" name="sort" value="@Model.Sort" />
             <div class="row g-3">
                 <div class="col-12 col-md-6 col-lg-3">
                     <label class="form-label" for="categorySelect">Category</label>
@@ -125,7 +126,27 @@
 
 <div class="d-flex align-items-center justify-content-between mb-2">
     <h2 class="h5 mb-0">Products</h2>
-    <small class="text-muted">@((Model.IncludeSubcategories ? "Including subcategories" : "This category only"))</small>
+    <div class="d-flex align-items-center gap-2">
+        <small class="text-muted">@((Model.IncludeSubcategories ? "Including subcategories" : "This category only"))</small>
+        <form method="get" class="d-flex align-items-center gap-2" asp-page="/Products/Category">
+            <input type="hidden" name="includeSubcategories" value="@Model.IncludeSubcategories" />
+            <input type="hidden" name="id" value="@Model.CurrentCategory?.Id" />
+            <input type="hidden" name="condition" value="@Model.Condition" />
+            <input type="hidden" name="sellerId" value="@Model.SellerId" />
+            <input type="hidden" name="minPrice" value="@Model.MinPrice" />
+            <input type="hidden" name="maxPrice" value="@Model.MaxPrice" />
+            <label class="form-label mb-0" for="categorySortSelect">Sort</label>
+            <select id="categorySortSelect" name="sort" class="form-select form-select-sm" onchange="this.form.submit()">
+                @foreach (var option in Model.SortOptions)
+                {
+                    <option value="@option.Value" selected="@(option.Selected ? "selected" : null)">@option.Text</option>
+                }
+            </select>
+            <noscript>
+                <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+            </noscript>
+        </form>
+    </div>
 </div>
 
 @if (Model.Products.Any())
