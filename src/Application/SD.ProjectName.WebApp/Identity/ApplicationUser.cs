@@ -56,6 +56,8 @@ namespace SD.ProjectName.WebApp.Identity
 
         public string AccountStatus { get; set; } = AccountStatuses.Unverified;
 
+        public string? StoreOwnerId { get; set; }
+
         public string KycStatus { get; set; } = KycStatuses.NotRequired;
 
         public string SellerType { get; set; } = SellerTypes.Individual;
