@@ -16,6 +16,7 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
         }
 
         public DbSet<ProductModel> Products { get; set; }
+        public DbSet<CategoryModel> Categories { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -26,7 +27,7 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                 entity.Property(p => p.Title).HasMaxLength(200).IsRequired();
                 entity.Property(p => p.MainImageUrl).HasMaxLength(500);
                 entity.Property(p => p.GalleryImageUrls).HasMaxLength(2000);
-                entity.Property(p => p.Category).HasMaxLength(100).IsRequired();
+                entity.Property(p => p.Category).HasMaxLength(256).IsRequired();
                 entity.Property(p => p.Description).HasMaxLength(1000);
                 entity.Property(p => p.WeightKg).HasColumnType("decimal(18,3)");
                 entity.Property(p => p.LengthCm).HasColumnType("decimal(18,3)");
@@ -38,6 +39,24 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                       .HasDefaultValue(ProductWorkflowStates.Draft)
                       .IsRequired();
                 entity.Property(p => p.SellerId).IsRequired();
+                entity.HasOne<CategoryModel>()
+                      .WithMany()
+                      .HasForeignKey(p => p.CategoryId)
+                      .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            modelBuilder.Entity<CategoryModel>(entity =>
+            {
+                entity.ToTable("CategoryModel");
+                entity.Property(c => c.Name).HasMaxLength(120).IsRequired();
+                entity.Property(c => c.FullPath).HasMaxLength(256).IsRequired();
+                entity.Property(c => c.SortOrder).HasDefaultValue(0);
+                entity.Property(c => c.IsActive).HasDefaultValue(true);
+                entity.HasOne(c => c.Parent)
+                      .WithMany(c => c.Children)
+                      .HasForeignKey(c => c.ParentId)
+                      .OnDelete(DeleteBehavior.Restrict);
+                entity.HasIndex(c => new { c.ParentId, c.SortOrder });
             });
         }
 

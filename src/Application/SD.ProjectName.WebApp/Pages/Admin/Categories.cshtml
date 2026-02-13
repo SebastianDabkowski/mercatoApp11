@@ -1,0 +1,89 @@
+@page "/Admin/Categories"
+@model SD.ProjectName.WebApp.Pages.Admin.CategoriesModel
+@{
+    ViewData["Title"] = "Manage categories";
+}
+
+<h1>Manage categories</h1>
+<p class="text-muted">Administer the global product category tree. Changes apply to all sellers and products.</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+
+<div asp-validation-summary="All" class="text-danger"></div>
+
+<div class="card mb-4">
+    <div class="card-header">Create category</div>
+    <div class="card-body">
+        <form method="post" asp-page-handler="Create" class="form-inline">
+            <div class="form-group mr-3">
+                <label asp-for="CreateInput.Name" class="mr-2"></label>
+                <input asp-for="CreateInput.Name" class="form-control" />
+            </div>
+            <div class="form-group mr-3">
+                <label asp-for="CreateInput.ParentId" class="mr-2"></label>
+                <select asp-for="CreateInput.ParentId" class="form-control" asp-items="Model.ParentOptions"></select>
+            </div>
+            <button type="submit" class="btn btn-primary">Add</button>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Category tree</div>
+    <div class="card-body">
+        <table class="table table-bordered table-sm">
+            <thead class="thead-light">
+                <tr>
+                    <th>Category</th>
+                    <th>Sort</th>
+                    <th>Status</th>
+                    <th>Products</th>
+                    <th style="width: 360px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var category in Model.Categories)
+                {
+                    var indent = new string('-', category.Depth * 2);
+                    <tr>
+                        <td>
+                            <span class="text-monospace">@indent</span> @category.Name
+                            <div class="text-muted small">@category.FullPath</div>
+                        </td>
+                        <td>@category.SortOrder</td>
+                        <td>@(category.IsActive ? "Active" : "Inactive")</td>
+                        <td>@category.ProductCount</td>
+                        <td>
+                            <div class="d-flex flex-wrap">
+                                <form method="post" asp-page-handler="Rename" class="form-inline mr-2 mb-2">
+                                    <input type="hidden" asp-for="RenameInput.Id" value="@category.Id" />
+                                    <input name="RenameInput.Name" class="form-control form-control-sm mr-2" value="@category.Name" />
+                                    <button type="submit" class="btn btn-sm btn-secondary">Rename</button>
+                                </form>
+                                <form method="post" asp-page-handler="Order" class="form-inline mr-2 mb-2">
+                                    <input type="hidden" asp-for="OrderInput.Id" value="@category.Id" />
+                                    <input name="OrderInput.SortOrder" class="form-control form-control-sm mr-2" value="@category.SortOrder" style="width: 70px;" />
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary">Set order</button>
+                                </form>
+                                <form method="post" asp-page-handler="Toggle" class="mr-2 mb-2">
+                                    <input type="hidden" asp-for="ToggleInput.Id" value="@category.Id" />
+                                    <input type="hidden" asp-for="ToggleInput.IsActive" value="@(!category.IsActive)" />
+                                    <button type="submit" class="btn btn-sm @(category.IsActive ? "btn-outline-warning" : "btn-outline-success")">
+                                        @(category.IsActive ? "Deactivate" : "Activate")
+                                    </button>
+                                </form>
+                                <form method="post" asp-page-handler="Delete" class="mb-2">
+                                    <input type="hidden" asp-for="DeleteInput.Id" value="@category.Id" />
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

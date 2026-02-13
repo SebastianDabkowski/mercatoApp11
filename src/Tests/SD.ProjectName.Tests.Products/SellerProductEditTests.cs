@@ -6,11 +6,13 @@ using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.Modules.Products.Domain.Interfaces;
+using SD.ProjectName.Modules.Products.Infrastructure;
 using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Pages.Seller.Products;
 
@@ -37,7 +39,9 @@ namespace SD.ProjectName.Tests.Products
             var updateProduct = new UpdateProduct(Mock.Of<IProductRepository>());
             var user = new ApplicationUser { Id = "current-seller", UserName = "seller@example.com" };
             var userManager = CreateUserManager(user);
-            var model = CreateModel(getProducts, updateProduct, userManager.Object);
+            await using var dbContext = CreateContext();
+            var categories = new ManageCategories(dbContext);
+            var model = CreateModel(getProducts, updateProduct, userManager.Object, categories);
 
             var result = await model.OnGetAsync(2);
 
@@ -47,6 +51,10 @@ namespace SD.ProjectName.Tests.Products
         [Fact]
         public async Task OnPost_ShouldUpdateAllAttributes_ForOwnedProduct()
         {
+            await using var dbContext = CreateContext();
+            var categories = new ManageCategories(dbContext);
+            var createdCategory = (await categories.CreateAsync("Electronics", null)).Category!;
+
             var product = new ProductModel
             {
                 Id = 3,
@@ -54,6 +62,7 @@ namespace SD.ProjectName.Tests.Products
                 Price = 10,
                 Stock = 1,
                 Category = "Cat",
+                CategoryId = createdCategory.Id,
                 WorkflowState = ProductWorkflowStates.Active,
                 SellerId = "current-seller"
             };
@@ -67,14 +76,14 @@ namespace SD.ProjectName.Tests.Products
             var updateProduct = new UpdateProduct(repository.Object);
             var user = new ApplicationUser { Id = "current-seller", UserName = "seller@example.com" };
             var userManager = CreateUserManager(user);
-            var model = CreateModel(getProducts, updateProduct, userManager.Object);
+            var model = CreateModel(getProducts, updateProduct, userManager.Object, categories);
             model.Input = new EditModel.InputModel
             {
                 Id = product.Id,
                 Title = "Updated title",
                 Price = 25,
                 Stock = 5,
-                Category = "Updated category",
+                CategoryId = createdCategory.Id,
                 Description = "Updated description",
                 MainImageUrl = "https://cdn.example.com/main.jpg",
                 GalleryImageUrls = "https://cdn.example.com/img1.jpg, https://cdn.example.com/img2.jpg",
@@ -98,9 +107,11 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal(20m, saved.WidthCm);
             Assert.Equal(10m, saved.HeightCm);
             Assert.Equal("Courier, Locker", saved.ShippingMethods);
+            Assert.Equal(createdCategory.Id, saved.CategoryId);
+            Assert.Equal(createdCategory.FullPath, saved.Category);
         }
 
-        private static EditModel CreateModel(GetProducts getProducts, UpdateProduct updateProduct, UserManager<ApplicationUser> userManager)
+        private static EditModel CreateModel(GetProducts getProducts, UpdateProduct updateProduct, UserManager<ApplicationUser> userManager, ManageCategories categories)
         {
             var logger = Mock.Of<ILogger<EditModel>>();
             var httpContext = new DefaultHttpContext
@@ -110,7 +121,7 @@ namespace SD.ProjectName.Tests.Products
             var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
             var pageContext = new PageContext(actionContext);
 
-            return new EditModel(getProducts, updateProduct, userManager, logger)
+            return new EditModel(getProducts, updateProduct, userManager, categories, logger)
             {
                 PageContext = pageContext,
                 TempData = new TempDataDictionary(httpContext, Mock.Of<ITempDataProvider>())
@@ -134,6 +145,15 @@ namespace SD.ProjectName.Tests.Products
             userManager.Setup(m => m.GetUserAsync(It.IsAny<ClaimsPrincipal>())).ReturnsAsync(user);
 
             return userManager;
+        }
+
+        private static ProductDbContext CreateContext()
+        {
+            var options = new DbContextOptionsBuilder<ProductDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            return new ProductDbContext(options);
         }
     }
 }

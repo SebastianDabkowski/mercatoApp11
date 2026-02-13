@@ -17,8 +17,10 @@ namespace SD.ProjectName.Modules.Products.Domain
         public int Stock { get; set; }
 
         [Required]
-        [MaxLength(100)]
+        [MaxLength(256)]
         public string Category { get; set; } = string.Empty;
+
+        public int? CategoryId { get; set; }
 
         [MaxLength(1000)]
         public string? Description { get; set; }

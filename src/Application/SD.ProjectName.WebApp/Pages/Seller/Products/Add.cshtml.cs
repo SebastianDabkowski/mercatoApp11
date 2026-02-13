@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Mvc.Rendering;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.WebApp.Identity;
@@ -14,22 +15,30 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
     {
         private readonly CreateProduct _createProduct;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly ManageCategories _categories;
 
-        public AddModel(CreateProduct createProduct, UserManager<ApplicationUser> userManager)
+        public AddModel(CreateProduct createProduct, UserManager<ApplicationUser> userManager, ManageCategories categories)
         {
             _createProduct = createProduct;
             _userManager = userManager;
+            _categories = categories;
         }
 
         [BindProperty]
         public InputModel Input { get; set; } = new();
 
-        public void OnGet()
+        public List<SelectListItem> CategoryOptions { get; private set; } = new();
+
+        public async Task<IActionResult> OnGet()
         {
+            await LoadCategoriesAsync();
+            return Page();
         }
 
         public async Task<IActionResult> OnPostAsync()
         {
+            await LoadCategoriesAsync();
+
             if (!ModelState.IsValid)
             {
                 return Page();
@@ -41,12 +50,26 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Challenge();
             }
 
+            if (!Input.CategoryId.HasValue)
+            {
+                ModelState.AddModelError(nameof(Input.CategoryId), "Select a category.");
+                return Page();
+            }
+
+            var category = await _categories.GetById(Input.CategoryId.Value);
+            if (category == null)
+            {
+                ModelState.AddModelError(nameof(Input.CategoryId), "Select a valid active category.");
+                return Page();
+            }
+
             var product = new ProductModel
             {
                 Title = Input.Title.Trim(),
                 Price = Input.Price,
                 Stock = Input.Stock,
-                Category = Input.Category.Trim(),
+                Category = category.FullPath,
+                CategoryId = category.Id,
                 Description = string.IsNullOrWhiteSpace(Input.Description) ? null : Input.Description.Trim(),
                 MainImageUrl = string.IsNullOrWhiteSpace(Input.MainImageUrl) ? null : Input.MainImageUrl.Trim(),
                 GalleryImageUrls = string.IsNullOrWhiteSpace(Input.GalleryImageUrls) ? null : Input.GalleryImageUrls.Trim(),
@@ -80,9 +103,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             [Range(0, int.MaxValue)]
             public int Stock { get; set; }
 
-            [Required]
-            [MaxLength(100)]
-            public string Category { get; set; } = string.Empty;
+            [Required(ErrorMessage = "Category is required.")]
+            [Display(Name = "Category")]
+            public int? CategoryId { get; set; }
 
             [MaxLength(1000)]
             public string? Description { get; set; }
@@ -115,6 +138,19 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             [MaxLength(200)]
             [Display(Name = "Shipping methods")]
             public string? ShippingMethods { get; set; }
+        }
+
+        private async Task LoadCategoriesAsync()
+        {
+            var tree = await _categories.GetTree();
+            CategoryOptions = tree
+                .Select(c => new SelectListItem
+                {
+                    Value = c.Id.ToString(),
+                    Text = c.FullPath,
+                    Selected = Input.CategoryId.HasValue && Input.CategoryId.Value == c.Id
+                })
+                .ToList();
         }
     }
 }
