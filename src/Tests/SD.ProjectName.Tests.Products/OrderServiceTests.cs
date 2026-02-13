@@ -658,6 +658,28 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task UpdatePaymentStatusAsync_ShouldSendRefundNotification()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, emailOptions: new EmailOptions());
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-refund-email", "sig-refund-email");
+
+            await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-refund", "refund@example.com", "Refund Buyer", "Card", "card");
+            emailSender.Invocations.Clear();
+
+            var update = await service.UpdatePaymentStatusAsync("ref-refund-email", "refunded", 25m, "Provider refunded everything");
+
+            Assert.True(update.Success);
+            emailSender.Verify(e => e.SendEmailAsync(
+                "refund@example.com",
+                It.Is<string>(s => s.Contains("Refund", StringComparison.OrdinalIgnoreCase)),
+                It.Is<string>(body => body.Contains("refund", StringComparison.OrdinalIgnoreCase) && body.Contains("no-reply@mercato.test", StringComparison.OrdinalIgnoreCase))),
+                Times.Once);
+        }
+
+        [Fact]
         public async Task UpdateSubOrderStatusAsync_ShouldEnforceTransitions_AndPersist()
         {
             await using var context = CreateContext();
@@ -2017,7 +2039,14 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal(ReturnRequestStatuses.Completed, detail!.Summary.Status);
             Assert.Contains(detail.History, h => h.Actor == "Admin" && h.Status == ReturnRequestStatuses.Completed);
 
-            emailSender.Verify(e => e.SendEmailAsync("buyerdecision@example.com", It.IsAny<string>(), It.IsAny<string>()), Times.Once);
+            emailSender.Verify(e => e.SendEmailAsync(
+                "buyerdecision@example.com",
+                It.Is<string>(s => s.Contains("Case update", StringComparison.OrdinalIgnoreCase)),
+                It.IsAny<string>()), Times.Once);
+            emailSender.Verify(e => e.SendEmailAsync(
+                "buyerdecision@example.com",
+                It.Is<string>(s => s.Contains("Refund", StringComparison.OrdinalIgnoreCase)),
+                It.IsAny<string>()), Times.Once);
             emailSender.Verify(e => e.SendEmailAsync("seller@example.com", It.IsAny<string>(), It.IsAny<string>()), Times.Once);
         }
 

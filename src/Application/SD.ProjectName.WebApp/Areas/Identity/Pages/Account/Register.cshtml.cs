@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 using SD.ProjectName.WebApp.Identity;
+using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
 {
@@ -22,6 +23,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
         private readonly ILogger<RegisterModel> _logger;
         private readonly IEmailSender _emailSender;
         private readonly IOptions<KycOptions> _kycOptions;
+        private readonly EmailOptions _emailOptions;
 
         public RegisterModel(
             UserManager<ApplicationUser> userManager,
@@ -29,7 +31,8 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             SignInManager<ApplicationUser> signInManager,
             ILogger<RegisterModel> logger,
             IEmailSender emailSender,
-            IOptions<KycOptions> kycOptions)
+            IOptions<KycOptions> kycOptions,
+            IOptions<EmailOptions> emailOptions)
         {
             _userManager = userManager;
             _userStore = userStore;
@@ -38,6 +41,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             _logger = logger;
             _emailSender = emailSender;
             _kycOptions = kycOptions;
+            _emailOptions = emailOptions.Value;
         }
 
         [BindProperty]
@@ -182,8 +186,8 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                         values: new { area = "Identity", userId, code, returnUrl },
                         protocol: Request.Scheme);
 
-                    await _emailSender.SendEmailAsync(Input.Email, "Confirm your email",
-                        $"Please confirm your Mercato account so we can verify you: <a href='{HtmlEncoder.Default.Encode(callbackUrl!)}'>confirm email</a>.");
+                    var body = $"<p>Welcome to Mercato, {user.FullName}!</p><p>Please confirm your account so we can verify you: <a href='{HtmlEncoder.Default.Encode(callbackUrl!)}'>confirm email</a>.</p>";
+                    await SendRegistrationEmailAsync(Input.Email, "Confirm your email", body);
 
                     return RedirectToPage("RegisterConfirmation", new { email = Input.Email, returnUrl });
                 }
@@ -195,6 +199,21 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             }
 
             return Page();
+        }
+
+        private async Task SendRegistrationEmailAsync(string email, string subject, string body)
+        {
+            _logger.LogInformation("Sending registration email to {Email} from {Sender}", email, _emailOptions.FromAddress);
+            try
+            {
+                var wrappedBody = EmailTemplateBuilder.Wrap(subject, body, _emailOptions);
+                await _emailSender.SendEmailAsync(email, subject, wrappedBody);
+                _logger.LogInformation("Registration email sent to {Email}", email);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send registration email to {Email}", email);
+            }
         }
 
         private ApplicationUser CreateUser()

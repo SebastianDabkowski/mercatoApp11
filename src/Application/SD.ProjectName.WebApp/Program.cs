@@ -103,6 +103,11 @@ builder.Services.AddOptions<PaymentProviderOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<PaymentProviderOptions>(sp => sp.GetRequiredService<IOptions<PaymentProviderOptions>>().Value);
+builder.Services.AddOptions<EmailOptions>()
+    .Bind(builder.Configuration.GetSection(EmailOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<EmailOptions>(sp => sp.GetRequiredService<IOptions<EmailOptions>>().Value);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<ISessionTokenService, DistributedSessionTokenService>();
 builder.Services.AddScoped<ILoginAuditService, LoginAuditService>();
