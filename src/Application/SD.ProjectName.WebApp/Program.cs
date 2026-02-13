@@ -106,10 +106,12 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddDbContext<ProductDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
+builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<GetProducts>();
 builder.Services.AddScoped<CreateProduct>();
 builder.Services.AddScoped<UpdateProduct>();
 builder.Services.AddScoped<ArchiveProduct>();
+builder.Services.AddScoped<ManageCategories>();
 
 builder.Services.AddRazorPages(options =>
 {

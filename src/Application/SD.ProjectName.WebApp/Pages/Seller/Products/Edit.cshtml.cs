@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.Extensions.Logging;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
@@ -16,22 +17,27 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
         private readonly GetProducts _getProducts;
         private readonly UpdateProduct _updateProduct;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly ManageCategories _categories;
         private readonly ILogger<EditModel> _logger;
 
         public EditModel(
             GetProducts getProducts,
             UpdateProduct updateProduct,
             UserManager<ApplicationUser> userManager,
+            ManageCategories categories,
             ILogger<EditModel> logger)
         {
             _getProducts = getProducts;
             _updateProduct = updateProduct;
             _userManager = userManager;
+            _categories = categories;
             _logger = logger;
         }
 
         [BindProperty]
         public InputModel Input { get; set; } = new();
+
+        public List<SelectListItem> CategoryOptions { get; private set; } = new();
 
         public async Task<IActionResult> OnGetAsync(int id)
         {
@@ -58,7 +64,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 Title = product.Title,
                 Price = product.Price,
                 Stock = product.Stock,
-                Category = product.Category,
+                CategoryId = product.CategoryId,
                 Description = product.Description,
                 MainImageUrl = product.MainImageUrl,
                 GalleryImageUrls = product.GalleryImageUrls,
@@ -69,11 +75,14 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 ShippingMethods = product.ShippingMethods
             };
 
+            await LoadCategoriesAsync(product.CategoryId);
             return Page();
         }
 
         public async Task<IActionResult> OnPostAsync()
         {
+            await LoadCategoriesAsync(Input.CategoryId);
+
             var user = await _userManager.GetUserAsync(User);
             if (user == null)
             {
@@ -96,10 +105,24 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Forbid();
             }
 
+            if (!Input.CategoryId.HasValue)
+            {
+                ModelState.AddModelError(nameof(Input.CategoryId), "Select a category.");
+                return Page();
+            }
+
+            var category = await _categories.GetById(Input.CategoryId.Value, includeInactive: true);
+            if (category == null || (!category.IsActive && product.CategoryId != category.Id))
+            {
+                ModelState.AddModelError(nameof(Input.CategoryId), "Select a valid active category.");
+                return Page();
+            }
+
             product.Title = Input.Title.Trim();
             product.Price = Input.Price;
             product.Stock = Input.Stock;
-            product.Category = Input.Category.Trim();
+            product.CategoryId = category.Id;
+            product.Category = category.FullPath;
             product.Description = string.IsNullOrWhiteSpace(Input.Description) ? null : Input.Description.Trim();
             product.MainImageUrl = string.IsNullOrWhiteSpace(Input.MainImageUrl) ? null : Input.MainImageUrl.Trim();
             product.GalleryImageUrls = string.IsNullOrWhiteSpace(Input.GalleryImageUrls) ? null : Input.GalleryImageUrls.Trim();
@@ -134,9 +157,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             [Range(0, int.MaxValue)]
             public int Stock { get; set; }
 
-            [Required]
-            [MaxLength(100)]
-            public string Category { get; set; } = string.Empty;
+            [Required(ErrorMessage = "Category is required.")]
+            [Display(Name = "Category")]
+            public int? CategoryId { get; set; }
 
             [MaxLength(1000)]
             public string? Description { get; set; }
@@ -169,6 +192,33 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             [MaxLength(200)]
             [Display(Name = "Shipping methods")]
             public string? ShippingMethods { get; set; }
+        }
+
+        private async Task LoadCategoriesAsync(int? selectedCategoryId)
+        {
+            var tree = await _categories.GetTree();
+            CategoryOptions = tree
+                .Select(c => new SelectListItem
+                {
+                    Value = c.Id.ToString(),
+                    Text = c.FullPath,
+                    Selected = selectedCategoryId.HasValue && selectedCategoryId.Value == c.Id
+                })
+                .ToList();
+
+            if (selectedCategoryId.HasValue && CategoryOptions.All(o => o.Value != selectedCategoryId.Value.ToString()))
+            {
+                var inactive = await _categories.GetById(selectedCategoryId.Value, includeInactive: true);
+                if (inactive != null)
+                {
+                    CategoryOptions.Add(new SelectListItem
+                    {
+                        Value = inactive.Id.ToString(),
+                        Text = $"{inactive.FullPath} (inactive)",
+                        Selected = true
+                    });
+                }
+            }
         }
     }
 }
