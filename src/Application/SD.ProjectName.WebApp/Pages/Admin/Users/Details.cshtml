@@ -1,0 +1,150 @@
+@page
+@using SD.ProjectName.WebApp.Identity
+@using SD.ProjectName.WebApp.Services
+@model SD.ProjectName.WebApp.Pages.Admin.Users.DetailsModel
+@{
+    ViewData["Title"] = "User details";
+    var user = Model.UserDetail!;
+    var statusClass = user.Status == AdminUserStatuses.Blocked
+        ? "text-bg-danger"
+        : user.Status == AdminUserStatuses.PendingVerification
+            ? "text-bg-warning text-dark"
+            : "text-bg-success";
+}
+
+<div class="mb-3">
+    <a class="btn btn-link text-decoration-none" asp-page="./Index">&larr; Back to users</a>
+</div>
+
+<h1 class="display-6">@user.FullName</h1>
+<div class="d-flex align-items-center gap-2 mb-3">
+    <span class="badge text-bg-secondary">@user.AccountType</span>
+    <span class="badge @statusClass">@user.Status</span>
+    <span class="text-muted small">ID: @user.Id</span>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Account overview</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-5">Email</dt>
+                    <dd class="col-sm-7">@user.Email</dd>
+                    <dt class="col-sm-5">Account status</dt>
+                    <dd class="col-sm-7">
+                        @user.AccountStatus
+                        <span class="text-muted">· @(user.EmailConfirmed ? "Email confirmed" : "Email pending")</span>
+                    </dd>
+                    <dt class="col-sm-5">Onboarding</dt>
+                    <dd class="col-sm-7">@user.OnboardingStatus</dd>
+                    <dt class="col-sm-5">KYC</dt>
+                    <dd class="col-sm-7">@user.KycStatus</dd>
+                    <dt class="col-sm-5">Created</dt>
+                    <dd class="col-sm-7">@(user.CreatedOn?.ToLocalTime().ToString("g") ?? "Not captured")</dd>
+                    <dt class="col-sm-5">Last login</dt>
+                    <dd class="col-sm-7">
+                        @if (user.LastLoginOn.HasValue)
+                        {
+                            <div>@user.LastLoginOn.Value.ToLocalTime().ToString("g")</div>
+                            if (!string.IsNullOrWhiteSpace(user.LastLoginIp))
+                            {
+                                <div class="text-muted small">IP @user.LastLoginIp</div>
+                            }
+                        }
+                        else
+                        {
+                            <span class="text-muted">No logins yet</span>
+                        }
+                    </dd>
+                    <dt class="col-sm-5">Lockout</dt>
+                    <dd class="col-sm-7">
+                        @if (user.LockoutEnabled && user.LockoutEnd.HasValue && user.LockoutEnd.Value >= DateTimeOffset.UtcNow)
+                        {
+                            <span class="badge text-bg-danger">Blocked</span>
+                            <span class="text-muted small">until @user.LockoutEnd.Value.ToLocalTime().ToString("g")</span>
+                        }
+                        else
+                        {
+                            <span class="text-muted">Not blocked</span>
+                        }
+                    </dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                <span>Recent login activity</span>
+                <span class="badge text-bg-light">@user.RecentLogins.Count</span>
+            </div>
+            <div class="card-body">
+                @if (user.RecentLogins.Count == 0)
+                {
+                    <div class="text-muted">No login history recorded.</div>
+                }
+                else
+                {
+                    <ul class="list-unstyled mb-0">
+                        @foreach (var login in user.RecentLogins)
+                        {
+                            <li class="mb-2">
+                                <div>
+                                    <span class="fw-semibold">@login.EventType</span>
+                                    <span class="text-muted">@login.OccurredOn.ToLocalTime().ToString("g")</span>
+                                    @if (!login.IsSuccess)
+                                    {
+                                        <span class="badge text-bg-danger ms-1">Failed</span>
+                                    }
+                                    else if (login.IsUnusual)
+                                    {
+                                        <span class="badge text-bg-warning text-dark ms-1">Unusual</span>
+                                    }
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(login.IpAddress))
+                                {
+                                    <div class="text-muted small">IP @login.IpAddress</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(login.UserAgent))
+                                {
+                                    <div class="text-muted small text-truncate">Agent @login.UserAgent</div>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-header fw-semibold">Flags & notes</div>
+    <div class="card-body">
+        <ul class="mb-0">
+            @{
+                var hasFlags = false;
+                if (user.LockoutEnabled && user.LockoutEnd.HasValue && user.LockoutEnd.Value >= DateTimeOffset.UtcNow)
+                {
+                    hasFlags = true;
+                    <li>Account is blocked until @user.LockoutEnd.Value.ToLocalTime().ToString("g").</li>
+                }
+                if (!user.EmailConfirmed || string.Equals(user.AccountStatus, AccountStatuses.Unverified, StringComparison.OrdinalIgnoreCase))
+                {
+                    hasFlags = true;
+                    <li>Pending verification – email or account status incomplete.</li>
+                }
+                if (user.RecentLogins.Any(l => l.IsUnusual))
+                {
+                    hasFlags = true;
+                    <li>Unusual login patterns detected recently.</li>
+                }
+            }
+            @if (!hasFlags)
+            {
+                <li class="text-muted">No administrative flags on record.</li>
+            }
+        </ul>
+    </div>
+</div>

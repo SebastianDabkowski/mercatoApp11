@@ -1,0 +1,125 @@
+@page
+@using SD.ProjectName.WebApp.Services
+@model SD.ProjectName.WebApp.Pages.Admin.Users.IndexModel
+@{
+    ViewData["Title"] = "User management";
+}
+
+<h1 class="display-6">User accounts</h1>
+<p class="text-muted">Browse buyer, seller, and admin accounts. Filter by role, status, or search by email, name, or user ID.</p>
+
+<form method="get" class="card mb-3">
+    <div class="card-body row g-3 align-items-end">
+        <div class="col-md-4">
+            <label class="form-label fw-semibold" for="query">Search</label>
+            <input id="query" class="form-control" type="search" name="Query" value="@Model.Query" placeholder="Email, name, or user ID" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-semibold" for="role">Role</label>
+            <select id="role" class="form-select" name="Role">
+                <option value="">All roles</option>
+                @foreach (var role in Model.AvailableRoles)
+                {
+                    <option value="@role" selected="@(string.Equals(Model.Role, role, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@role</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-4">
+            <div class="fw-semibold mb-1">Statuses</div>
+            <div class="d-flex flex-wrap gap-2">
+                @foreach (var status in Model.AvailableStatuses)
+                {
+                    var normalizedId = status.Replace(" ", "-", StringComparison.OrdinalIgnoreCase);
+                    var isChecked = Model.Statuses.Any(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="status" id="status-@normalizedId" value="@status" @(isChecked ? "checked" : null) />
+                        <label class="form-check-label small" for="status-@normalizedId">@status</label>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="col-md-1 text-end">
+            <button class="btn btn-primary" type="submit">Apply</button>
+            <a class="btn btn-link text-decoration-none" asp-page="Index">Reset</a>
+        </div>
+    </div>
+</form>
+
+@if (Model.Users.TotalCount == 0)
+{
+    <div class="text-muted">No users match these filters.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">User</th>
+                    <th scope="col">Role</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Created</th>
+                    <th scope="col">Last login</th>
+                    <th scope="col" class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in Model.Users.Items)
+                {
+                    var statusClass = user.Status == AdminUserStatuses.Blocked
+                        ? "text-bg-danger"
+                        : user.Status == AdminUserStatuses.PendingVerification
+                            ? "text-bg-warning text-dark"
+                            : "text-bg-success";
+                    <tr>
+                        <td>
+                            <div class="fw-semibold">@user.FullName</div>
+                            <div class="text-muted small">@user.Email</div>
+                            <div class="text-muted small">ID: @user.Id</div>
+                        </td>
+                        <td>
+                            <span class="badge text-bg-secondary">@user.AccountType</span>
+                        </td>
+                        <td>
+                            <span class="badge @statusClass">@user.Status</span>
+                        </td>
+                        <td>
+                            @(user.CreatedOn?.ToLocalTime().ToString("g") ?? "Not captured")
+                        </td>
+                        <td>
+                            @if (user.LastLoginOn.HasValue)
+                            {
+                                <div>@user.LastLoginOn.Value.ToLocalTime().ToString("g")</div>
+                                if (!string.IsNullOrWhiteSpace(user.LastLoginIp))
+                                {
+                                    <div class="text-muted small">IP @user.LastLoginIp</div>
+                                }
+                            }
+                            else
+                            {
+                                <span class="text-muted">No logins yet</span>
+                            }
+                        </td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary" asp-page="./Details" asp-route-id="@user.Id">View</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <nav aria-label="User pagination">
+        <ul class="pagination">
+            <li class="page-item @(Model.Users.HasPreviousPage ? "" : "disabled")">
+                <a class="page-link" asp-page="Index" asp-route-page="@(Model.PageNumber - 1)" asp-route-Query="@Model.Query" asp-route-Role="@Model.Role" asp-route-status="@Model.Statuses">Previous</a>
+            </li>
+            <li class="page-item active">
+                <span class="page-link">Page @Model.Users.PageNumber of @Model.Users.TotalPages</span>
+            </li>
+            <li class="page-item @(Model.Users.HasNextPage ? "" : "disabled")">
+                <a class="page-link" asp-page="Index" asp-route-page="@(Model.PageNumber + 1)" asp-route-Query="@Model.Query" asp-route-Role="@Model.Role" asp-route-status="@Model.Statuses">Next</a>
+            </li>
+        </ul>
+    </nav>
+}
