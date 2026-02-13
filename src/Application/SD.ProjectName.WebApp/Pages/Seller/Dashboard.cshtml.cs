@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
+using System.Linq;
+using System.Text.Json;
 using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Services;
 
@@ -16,19 +18,23 @@ namespace SD.ProjectName.WebApp.Pages.Seller
         private readonly IPayoutEncryptionService _payoutEncryption;
         private readonly IOptions<SellerInternalUserOptions> _internalUserOptions;
         private readonly OrderService _orderService;
+        private readonly SellerReportingService _sellerReportingService;
+        private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
         public DashboardModel(
             UserManager<ApplicationUser> userManager,
             IOptions<KycOptions> kycOptions,
             IPayoutEncryptionService payoutEncryption,
             IOptions<SellerInternalUserOptions> internalUserOptions,
-            OrderService orderService)
+            OrderService orderService,
+            SellerReportingService sellerReportingService)
         {
             _userManager = userManager;
             _kycOptions = kycOptions;
             _payoutEncryption = payoutEncryption;
             _internalUserOptions = internalUserOptions;
             _orderService = orderService;
+            _sellerReportingService = sellerReportingService;
         }
 
         public string AccountStatus { get; private set; } = AccountStatuses.Unverified;
@@ -88,6 +94,41 @@ namespace SD.ProjectName.WebApp.Pages.Seller
 
         public string? PayoutErrorReference { get; private set; }
 
+        [BindProperty(SupportsGet = true)]
+        public DateTime? SalesFromDate { get; set; }
+
+        [BindProperty(SupportsGet = true)]
+        public DateTime? SalesToDate { get; set; }
+
+        [BindProperty(SupportsGet = true)]
+        public string? SalesGranularity { get; set; }
+
+        [BindProperty(SupportsGet = true)]
+        public int? ProductId { get; set; }
+
+        [BindProperty(SupportsGet = true)]
+        public int? CategoryId { get; set; }
+
+        public List<SellerSalesPoint> SalesSeries { get; private set; } = new();
+
+        public decimal SalesTotalGmv { get; private set; }
+
+        public int SalesTotalOrders { get; private set; }
+
+        public DateTimeOffset SalesRangeStart { get; private set; }
+
+        public DateTimeOffset SalesRangeEnd { get; private set; }
+
+        public string SalesSeriesJson { get; private set; } = "[]";
+
+        public IReadOnlyList<SellerProductOption> ProductOptions { get; private set; } = Array.Empty<SellerProductOption>();
+
+        public IReadOnlyList<SellerCategoryOption> CategoryOptions { get; private set; } = Array.Empty<SellerCategoryOption>();
+
+        public string ActiveSalesGranularity { get; private set; } = SellerSalesGranularities.Day;
+
+        public bool SalesHasData => SalesSeries.Any(p => p.Gmv > 0 || p.Orders > 0);
+
         public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
         {
             var user = await _userManager.GetUserAsync(User);
@@ -113,11 +154,52 @@ namespace SD.ProjectName.WebApp.Pages.Seller
             PayoutPaidAmount = payoutView.PaidAmount;
             PayoutThreshold = payoutView.Threshold;
             PayoutErrorReference = payoutView.ErrorReference;
+            var (salesFrom, salesTo) = NormalizeSalesRange();
+            SalesRangeStart = salesFrom;
+            SalesRangeEnd = salesTo;
+            ActiveSalesGranularity = SellerSalesGranularities.Normalize(SalesGranularity);
+            SalesGranularity = ActiveSalesGranularity;
+            var salesResult = await _sellerReportingService.GetSalesAsync(
+                user.Id,
+                salesFrom,
+                salesTo,
+                ActiveSalesGranularity,
+                ProductId,
+                CategoryId,
+                cancellationToken);
+            SalesSeries = salesResult.Series.ToList();
+            SalesTotalGmv = salesResult.TotalGmv;
+            SalesTotalOrders = salesResult.TotalOrders;
+            ProductOptions = salesResult.ProductOptions;
+            CategoryOptions = salesResult.CategoryOptions;
+            ProductId = salesResult.ActiveProductId;
+            CategoryId = salesResult.ActiveCategoryId;
+            SalesSeriesJson = JsonSerializer.Serialize(SalesSeries, JsonOptions);
             if (InternalUsersEnabled)
             {
                 IsStoreOwner = await _userManager.IsInRoleAsync(user, SellerInternalRoles.StoreOwner);
             }
             return Page();
+        }
+
+        private (DateTimeOffset From, DateTimeOffset To) NormalizeSalesRange()
+        {
+            var now = DateTime.UtcNow;
+            var start = SalesFromDate.HasValue
+                ? DateTime.SpecifyKind(SalesFromDate.Value.Date, DateTimeKind.Utc)
+                : now.Date.AddDays(-29);
+            var end = SalesToDate.HasValue
+                ? DateTime.SpecifyKind(SalesToDate.Value.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc)
+                : now.Date.AddDays(1).AddTicks(-1);
+
+            if (start > end)
+            {
+                (start, end) = (end, start);
+            }
+
+            SalesFromDate = start.Date;
+            SalesToDate = end.Date;
+            return (new DateTimeOffset(start), new DateTimeOffset(end));
         }
 
         private void PopulatePayout(ApplicationUser user)

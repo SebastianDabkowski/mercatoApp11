@@ -146,6 +146,7 @@ builder.Services.AddScoped<ShippingAddressService>();
 builder.Services.AddScoped<SellerShippingMethodService>();
 builder.Services.AddScoped<OrderService>();
 builder.Services.AddScoped<AdminReportingService>();
+builder.Services.AddScoped<SellerReportingService>();
 builder.Services.AddSingleton<PaymentProviderService>();
 builder.Services.AddSingleton<ShippingProviderService>();
 
