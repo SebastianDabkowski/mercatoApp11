@@ -1,4 +1,4 @@
-@page "/Categories/{id:int?}"
+@page "/Categories/{id:int?}/{slug?}"
 @model SD.ProjectName.WebApp.Pages.Products.CategoryModel
 @{
     ViewData["Title"] = Model.CurrentCategory?.Name ?? "Categories";
@@ -21,7 +21,7 @@
                             }
                             else
                             {
-                                <a asp-page="/Products/Category" asp-route-id="@crumb.Id">@crumb.Name</a>
+                                <a asp-page="/Products/Category" asp-route-id="@crumb.Id" asp-route-slug="@crumb.Slug">@crumb.Name</a>
                             }
                         </li>
                     }
@@ -32,11 +32,11 @@
     <div class="text-end">
         @if (Model.IncludeSubcategories)
         {
-            <a class="btn btn-outline-secondary" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-includeSubcategories="false" asp-route-sort="@Model.Sort">Show this category only</a>
+            <a class="btn btn-outline-secondary" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-slug="@Model.CurrentCategory?.Slug" asp-route-includeSubcategories="false" asp-route-sort="@Model.Sort">Show this category only</a>
         }
         else
         {
-            <a class="btn btn-outline-secondary" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-includeSubcategories="true" asp-route-sort="@Model.Sort">Include subcategories</a>
+            <a class="btn btn-outline-secondary" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-slug="@Model.CurrentCategory?.Slug" asp-route-includeSubcategories="true" asp-route-sort="@Model.Sort">Include subcategories</a>
         }
     </div>
 </div>
@@ -49,7 +49,7 @@
             <div class="d-flex flex-wrap gap-2">
                 @foreach (var child in Model.Subcategories)
                 {
-                    <a class="btn btn-light border" asp-page="/Products/Category" asp-route-id="@child.Id">
+                    <a class="btn btn-light border" asp-page="/Products/Category" asp-route-id="@child.Id" asp-route-slug="@child.Slug">
                         @child.Name
                         <span class="badge bg-secondary ms-2">@child.ProductCount</span>
                     </a>
@@ -64,7 +64,7 @@
         <div class="d-flex align-items-center justify-content-between mb-3">
             <h2 class="h5 mb-0">Filters</h2>
             <div class="d-flex gap-2">
-                <a class="btn btn-outline-secondary btn-sm" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-includeSubcategories="@Model.IncludeSubcategories">Clear all filters</a>
+                <a class="btn btn-outline-secondary btn-sm" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-slug="@Model.CurrentCategory?.Slug" asp-route-includeSubcategories="@Model.IncludeSubcategories">Clear all filters</a>
                 <button type="submit" form="categoryFilters" class="btn btn-primary btn-sm">Apply filters</button>
             </div>
         </div>
@@ -119,7 +119,7 @@
                 {
                     <span class="badge bg-primary">@filter</span>
                 }
-                <a class="btn btn-link btn-sm text-decoration-none" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-includeSubcategories="@Model.IncludeSubcategories">Clear</a>
+                <a class="btn btn-link btn-sm text-decoration-none" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-slug="@Model.CurrentCategory?.Slug" asp-route-includeSubcategories="@Model.IncludeSubcategories">Clear</a>
             </div>
         }
     </div>
@@ -205,15 +205,16 @@
             <nav aria-label="Category product pages">
                 <ul class="pagination mb-0">
                     <li class="page-item @(Model.PageNumber == 1 ? "disabled" : string.Empty)">
-                        <a class="page-link"
-                           asp-page="/Products/Category"
-                           asp-route-page="@(Model.PageNumber - 1)"
-                           asp-route-id="@Model.CurrentCategory?.Id"
-                           asp-route-includeSubcategories="@Model.IncludeSubcategories"
-                           asp-route-condition="@Model.Condition"
-                           asp-route-sellerId="@Model.SellerId"
-                           asp-route-minPrice="@Model.MinPrice"
-                           asp-route-maxPrice="@Model.MaxPrice"
+                           <a class="page-link"
+                               asp-page="/Products/Category"
+                               asp-route-page="@(Model.PageNumber - 1)"
+                               asp-route-id="@Model.CurrentCategory?.Id"
+                               asp-route-slug="@Model.CurrentCategory?.Slug"
+                               asp-route-includeSubcategories="@Model.IncludeSubcategories"
+                               asp-route-condition="@Model.Condition"
+                               asp-route-sellerId="@Model.SellerId"
+                               asp-route-minPrice="@Model.MinPrice"
+                               asp-route-maxPrice="@Model.MaxPrice"
                            asp-route-sort="@Model.Sort">Previous</a>
                     </li>
                     @for (var pageNumber = 1; pageNumber <= Model.TotalPages; pageNumber++)
@@ -223,6 +224,7 @@
                                asp-page="/Products/Category"
                                asp-route-page="@pageNumber"
                                asp-route-id="@Model.CurrentCategory?.Id"
+                               asp-route-slug="@Model.CurrentCategory?.Slug"
                                asp-route-includeSubcategories="@Model.IncludeSubcategories"
                                asp-route-condition="@Model.Condition"
                                asp-route-sellerId="@Model.SellerId"
@@ -232,15 +234,16 @@
                         </li>
                     }
                     <li class="page-item @(Model.PageNumber >= Model.TotalPages ? "disabled" : string.Empty)">
-                        <a class="page-link"
-                           asp-page="/Products/Category"
-                           asp-route-page="@(Model.PageNumber + 1)"
-                           asp-route-id="@Model.CurrentCategory?.Id"
-                           asp-route-includeSubcategories="@Model.IncludeSubcategories"
-                           asp-route-condition="@Model.Condition"
-                           asp-route-sellerId="@Model.SellerId"
-                           asp-route-minPrice="@Model.MinPrice"
-                           asp-route-maxPrice="@Model.MaxPrice"
+                           <a class="page-link"
+                               asp-page="/Products/Category"
+                               asp-route-page="@(Model.PageNumber + 1)"
+                               asp-route-id="@Model.CurrentCategory?.Id"
+                               asp-route-slug="@Model.CurrentCategory?.Slug"
+                               asp-route-includeSubcategories="@Model.IncludeSubcategories"
+                               asp-route-condition="@Model.Condition"
+                               asp-route-sellerId="@Model.SellerId"
+                               asp-route-minPrice="@Model.MinPrice"
+                               asp-route-maxPrice="@Model.MaxPrice"
                            asp-route-sort="@Model.Sort">Next</a>
                     </li>
                 </ul>
@@ -258,7 +261,7 @@ else
         <p class="mb-1">@Model.StatusMessage</p>
         @if (Model.HasActiveFilters)
         {
-            <p class="mb-0">Active filters are highlighted above. <a class="link-primary" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-includeSubcategories="@Model.IncludeSubcategories">Clear filters</a> to see all products.</p>
+            <p class="mb-0">Active filters are highlighted above. <a class="link-primary" asp-page="/Products/Category" asp-route-id="@Model.CurrentCategory?.Id" asp-route-slug="@Model.CurrentCategory?.Slug" asp-route-includeSubcategories="@Model.IncludeSubcategories">Clear filters</a> to see all products.</p>
         }
         else if (Model.Subcategories.Any())
         {

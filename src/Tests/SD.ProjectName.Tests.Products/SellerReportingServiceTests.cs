@@ -82,8 +82,8 @@ namespace SD.ProjectName.Tests.Products
             await using var appContext = CreateApplicationContext();
             await using var productContext = CreateProductContext();
 
-            var kitchenCategory = new CategoryModel { Id = 1, Name = "Kitchen", FullPath = "Home/Kitchen" };
-            var electronicsCategory = new CategoryModel { Id = 2, Name = "Electronics", FullPath = "Electronics" };
+            var kitchenCategory = new CategoryModel { Id = 1, Name = "Kitchen", Slug = "kitchen", FullPath = "Home/Kitchen" };
+            var electronicsCategory = new CategoryModel { Id = 2, Name = "Electronics", Slug = "electronics", FullPath = "Electronics" };
             productContext.Categories.AddRange(kitchenCategory, electronicsCategory);
             productContext.Products.Add(new ProductModel { Id = 1, Title = "Pan", Price = 20, SellerId = "seller-1", Category = kitchenCategory.FullPath, CategoryId = kitchenCategory.Id, WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved });
             productContext.Products.Add(new ProductModel { Id = 2, Title = "Headphones", Price = 10, SellerId = "seller-1", Category = electronicsCategory.FullPath, CategoryId = electronicsCategory.Id, WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved });

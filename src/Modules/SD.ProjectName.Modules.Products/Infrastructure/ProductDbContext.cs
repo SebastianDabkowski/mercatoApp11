@@ -78,7 +78,9 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
             {
                 entity.ToTable("CategoryModel");
                 entity.Property(c => c.Name).HasMaxLength(120).IsRequired();
+                entity.Property(c => c.Slug).HasMaxLength(160).IsRequired();
                 entity.Property(c => c.FullPath).HasMaxLength(256).IsRequired();
+                entity.Property(c => c.Description).HasMaxLength(512);
                 entity.Property(c => c.SortOrder).HasDefaultValue(0);
                 entity.Property(c => c.IsActive).HasDefaultValue(true);
                 entity.HasOne(c => c.Parent)
@@ -86,6 +88,7 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                       .HasForeignKey(c => c.ParentId)
                       .OnDelete(DeleteBehavior.Restrict);
                 entity.HasIndex(c => new { c.ParentId, c.SortOrder });
+                entity.HasIndex(c => new { c.ParentId, c.Slug }).IsUnique();
             });
 
             modelBuilder.Entity<ProductImportJob>(entity =>

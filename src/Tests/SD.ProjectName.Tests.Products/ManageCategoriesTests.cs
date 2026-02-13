@@ -61,6 +61,70 @@ namespace SD.ProjectName.Tests.Products
             Assert.NotNull(await context.Categories.FindAsync(electronics.Id));
         }
 
+        [Fact]
+        public async Task Rename_ShouldMoveCategoryToNewParent_AndRefreshPaths()
+        {
+            await using var context = CreateContext();
+            var service = new ManageCategories(context);
+            var electronics = (await service.CreateAsync("Electronics", null)).Category!;
+            var accessories = (await service.CreateAsync("Accessories", electronics.Id)).Category!;
+            var gadgets = (await service.CreateAsync("Gadgets", accessories.Id)).Category!;
+            var clearance = (await service.CreateAsync("Clearance", null)).Category!;
+
+            context.Products.Add(new ProductModel
+            {
+                Title = "Widget",
+                MerchantSku = "SKU-3",
+                Price = 20,
+                Stock = 4,
+                CategoryId = gadgets.Id,
+                Category = "Electronics / Accessories / Gadgets",
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved,
+                SellerId = "seller-1"
+            });
+            await context.SaveChangesAsync();
+
+            var result = await service.RenameAsync(accessories.Id, "Accessories", null, clearance.Id);
+
+            var refreshedGadgets = await context.Categories.FirstAsync(c => c.Id == gadgets.Id);
+            var product = await context.Products.FirstAsync();
+            Assert.True(result.Success);
+            Assert.Equal(clearance.Id, (await context.Categories.FirstAsync(c => c.Id == accessories.Id)).ParentId);
+            Assert.Equal("Clearance / Accessories / Gadgets", refreshedGadgets.FullPath);
+            Assert.Equal("Clearance / Accessories / Gadgets", product.Category);
+        }
+
+        [Fact]
+        public async Task Delete_ShouldReassignProducts_WhenTargetProvided()
+        {
+            await using var context = CreateContext();
+            var service = new ManageCategories(context);
+            var electronics = (await service.CreateAsync("Electronics", null)).Category!;
+            var phones = (await service.CreateAsync("Phones", electronics.Id)).Category!;
+            var home = (await service.CreateAsync("Home", null)).Category!;
+
+            context.Products.Add(new ProductModel
+            {
+                Title = "Phone",
+                MerchantSku = "SKU-4",
+                Price = 400,
+                Stock = 7,
+                CategoryId = phones.Id,
+                Category = "Electronics / Phones",
+                WorkflowState = ProductWorkflowStates.Active, ModerationStatus = ProductModerationStatuses.Approved,
+                SellerId = "seller-1"
+            });
+            await context.SaveChangesAsync();
+
+            var result = await service.DeleteAsync(phones.Id, home.Id);
+
+            var product = await context.Products.FirstAsync();
+            Assert.True(result.Success);
+            Assert.Null(await context.Categories.FindAsync(phones.Id));
+            Assert.Equal(home.Id, product.CategoryId);
+            Assert.Equal(home.FullPath, product.Category);
+        }
+
         private static ProductDbContext CreateContext()
         {
             var options = new DbContextOptionsBuilder<ProductDbContext>()

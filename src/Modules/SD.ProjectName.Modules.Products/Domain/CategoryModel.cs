@@ -11,6 +11,10 @@ namespace SD.ProjectName.Modules.Products.Domain
         public string Name { get; set; } = string.Empty;
 
         [Required]
+        [MaxLength(160)]
+        public string Slug { get; set; } = string.Empty;
+
+        [Required]
         [MaxLength(256)]
         public string FullPath { get; set; } = string.Empty;
 
@@ -23,5 +27,8 @@ namespace SD.ProjectName.Modules.Products.Domain
         public int SortOrder { get; set; }
 
         public bool IsActive { get; set; } = true;
+
+        [MaxLength(512)]
+        public string? Description { get; set; }
     }
 }
