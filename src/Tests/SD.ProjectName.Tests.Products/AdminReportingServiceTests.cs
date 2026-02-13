@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using SD.ProjectName.Modules.Products.Infrastructure;
 using SD.ProjectName.WebApp.Data;
+using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Services;
 using Xunit;
 
@@ -76,6 +77,103 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal(3, export.TotalMatching);
             var csv = System.Text.Encoding.UTF8.GetString(export.Content);
             Assert.Contains("OrderNumber,SubOrderNumber,CreatedOn,Buyer,BuyerEmail,SellerId,SellerName,Status,PaymentStatus,OrderValue,Commission,PayoutAmount", csv);
+        }
+
+        [Fact]
+        public async Task GetUserAnalyticsAsync_ComputesAggregatesAndSeries()
+        {
+            await using var appContext = CreateApplicationContext();
+            await using var productContext = CreateProductContext();
+
+            var from = new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero);
+            var to = new DateTimeOffset(2026, 2, 3, 23, 59, 59, TimeSpan.Zero);
+
+            appContext.Users.Add(new ApplicationUser
+            {
+                Id = "buyer-1",
+                AccountType = AccountTypes.Buyer,
+                TermsAcceptedOn = new DateTimeOffset(2026, 2, 1, 9, 0, 0, TimeSpan.Zero),
+                FullName = "Buyer One",
+                Email = "buyer@test.com",
+                UserName = "buyer@test.com",
+                NormalizedUserName = "BUYER@TEST.COM",
+                NormalizedEmail = "BUYER@TEST.COM",
+                Address = "123 Street",
+                Country = "PL",
+                SecurityStamp = Guid.NewGuid().ToString()
+            });
+            appContext.Users.Add(new ApplicationUser
+            {
+                Id = "seller-1",
+                AccountType = AccountTypes.Seller,
+                TermsAcceptedOn = new DateTimeOffset(2026, 2, 2, 10, 0, 0, TimeSpan.Zero),
+                FullName = "Seller One",
+                Email = "seller@test.com",
+                UserName = "seller@test.com",
+                NormalizedUserName = "SELLER@TEST.COM",
+                NormalizedEmail = "SELLER@TEST.COM",
+                Address = "456 Street",
+                Country = "PL",
+                SecurityStamp = Guid.NewGuid().ToString()
+            });
+            appContext.Users.Add(new ApplicationUser
+            {
+                Id = "legacy",
+                AccountType = AccountTypes.Buyer,
+                TermsAcceptedOn = new DateTimeOffset(2025, 12, 1, 10, 0, 0, TimeSpan.Zero),
+                FullName = "Legacy User",
+                Email = "legacy@test.com",
+                UserName = "legacy@test.com",
+                NormalizedUserName = "LEGACY@TEST.COM",
+                NormalizedEmail = "LEGACY@TEST.COM",
+                Address = "789 Street",
+                Country = "PL",
+                SecurityStamp = Guid.NewGuid().ToString()
+            });
+
+            appContext.LoginAudits.Add(new LoginAudit
+            {
+                UserId = "buyer-1",
+                Email = "buyer@test.com",
+                EventType = LoginEventTypes.PasswordSuccess,
+                IsSuccess = true,
+                IsUnusual = false,
+                OccurredOn = new DateTimeOffset(2026, 2, 3, 8, 0, 0, TimeSpan.Zero),
+                ExpiresOn = new DateTimeOffset(2026, 3, 3, 8, 0, 0, TimeSpan.Zero)
+            });
+            appContext.LoginAudits.Add(new LoginAudit
+            {
+                UserId = "seller-1",
+                Email = "seller@test.com",
+                EventType = LoginEventTypes.PasswordSuccess,
+                IsSuccess = true,
+                IsUnusual = false,
+                OccurredOn = new DateTimeOffset(2026, 2, 2, 7, 0, 0, TimeSpan.Zero),
+                ExpiresOn = new DateTimeOffset(2026, 3, 2, 7, 0, 0, TimeSpan.Zero)
+            });
+
+            var orderCreated = new DateTimeOffset(2026, 2, 3, 12, 0, 0, TimeSpan.Zero);
+            appContext.Orders.Add(CreateOrder("ORD-200", "seller-1", 50, 5, 5, orderCreated, OrderStatuses.Paid, PaymentStatuses.Paid, "Buyer One", "buyer@test.com"));
+
+            await appContext.SaveChangesAsync();
+
+            var service = new AdminReportingService(appContext, productContext, new AdminReportOptions(), NullLogger<AdminReportingService>.Instance);
+
+            var analytics = await service.GetUserAnalyticsAsync(from, to);
+
+            Assert.Equal(1, analytics.Summary.NewBuyers);
+            Assert.Equal(1, analytics.Summary.NewSellers);
+            Assert.Equal(1, analytics.Summary.OrderingUsers);
+            Assert.Equal(2, analytics.Summary.LoginUsers);
+            Assert.Equal(2, analytics.Summary.ActiveUsers);
+            Assert.True(analytics.Summary.HasData);
+
+            Assert.Equal(3, analytics.Series.Count);
+            var dayOne = Assert.Single(analytics.Series, p => p.Date == new DateTime(2026, 2, 1));
+            Assert.Equal(1, dayOne.NewBuyers);
+            var dayThree = Assert.Single(analytics.Series, p => p.Date == new DateTime(2026, 2, 3));
+            Assert.Equal(1, dayThree.OrderingUsers);
+            Assert.Equal(1, dayThree.LoginUsers);
         }
 
         private static ApplicationDbContext CreateApplicationContext()
