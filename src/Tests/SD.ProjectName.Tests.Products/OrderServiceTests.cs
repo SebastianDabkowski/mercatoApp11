@@ -340,6 +340,94 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task SubmitProductReviewAsync_ShouldFlagWhenContainsBannedTerms()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-review-flag", "sig-review-flag");
+
+            var creation = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-flag", "flag@example.com", "Flag Buyer", "Card", "card");
+            await service.UpdateSubOrderStatusAsync(creation.Order.Id, "seller-1", OrderStatuses.Delivered);
+
+            var result = await service.SubmitProductReviewAsync(creation.Order.Id, 1, "buyer-flag", "Flag Buyer", 2, "This looks like spam http://spam.test");
+
+            Assert.True(result.Success);
+            var stored = await context.ProductReviews.FirstAsync();
+            Assert.True(stored.IsFlagged);
+            Assert.Equal(ReviewStatuses.Pending, stored.Status);
+            Assert.False(string.IsNullOrWhiteSpace(stored.FlagReason));
+            var audit = await context.ProductReviewAudits.FirstOrDefaultAsync();
+            Assert.NotNull(audit);
+            Assert.Equal("Flagged", audit!.Action);
+            Assert.Equal(stored.Id, audit.ReviewId);
+        }
+
+        [Fact]
+        public async Task ApproveReviewAsync_ShouldPublishAndClearFlag()
+        {
+            await using var context = CreateContext();
+            var review = new ProductReview
+            {
+                ProductId = 3,
+                OrderId = 2,
+                BuyerId = "buyer-audit",
+                BuyerName = "Buyer Audit",
+                Rating = 4,
+                Comment = "Pending review",
+                CreatedOn = DateTimeOffset.UtcNow.AddMinutes(-10),
+                Status = ReviewStatuses.Pending,
+                IsFlagged = true,
+                FlagReason = "Contains link"
+            };
+            context.ProductReviews.Add(review);
+            await context.SaveChangesAsync();
+
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            var result = await service.ApproveReviewAsync(review.Id, "moderator@example.com", "Clean");
+
+            Assert.True(result.Success);
+            var updated = await context.ProductReviews.FirstAsync();
+            Assert.Equal(ReviewStatuses.Published, updated.Status);
+            Assert.False(updated.IsFlagged);
+            Assert.Equal("moderator@example.com", updated.LastModeratedBy);
+            Assert.NotNull(updated.LastModeratedOn);
+            var audit = await context.ProductReviewAudits.FirstOrDefaultAsync(a => a.ReviewId == updated.Id && a.Action == "Approved");
+            Assert.NotNull(audit);
+            Assert.Equal(ReviewStatuses.Published, audit!.ToStatus);
+        }
+
+        [Fact]
+        public async Task RejectReviewAsync_ShouldRemoveFromPublishedFeed()
+        {
+            await using var context = CreateContext();
+            var review = new ProductReview
+            {
+                ProductId = 5,
+                OrderId = 9,
+                BuyerId = "buyer-reject",
+                BuyerName = "Buyer Reject",
+                Rating = 5,
+                Comment = "Great",
+                CreatedOn = DateTimeOffset.UtcNow,
+                Status = ReviewStatuses.Published
+            };
+            context.ProductReviews.Add(review);
+            await context.SaveChangesAsync();
+
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+
+            var reject = await service.RejectReviewAsync(review.Id, "admin", "Inappropriate");
+            Assert.True(reject.Success);
+
+            var page = await service.GetPublishedReviewsPageAsync(5);
+            Assert.Empty(page.Reviews);
+            var stored = await context.ProductReviews.FirstAsync();
+            Assert.Equal(ReviewStatuses.Rejected, stored.Status);
+            Assert.True(stored.IsFlagged);
+        }
+
+        [Fact]
         public async Task GetPublishedReviewsPageAsync_ShouldReturnSortedPageWithAverage()
         {
             await using var context = CreateContext();
