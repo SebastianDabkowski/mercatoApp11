@@ -48,12 +48,18 @@ builder.Services.AddOptions<SessionTokenOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<SessionTokenOptions>(sp => sp.GetRequiredService<IOptions<SessionTokenOptions>>().Value);
+builder.Services.AddOptions<RecentlyViewedOptions>()
+    .Bind(builder.Configuration.GetSection(RecentlyViewedOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<RecentlyViewedOptions>(sp => sp.GetRequiredService<IOptions<RecentlyViewedOptions>>().Value);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<ISessionTokenService, DistributedSessionTokenService>();
 builder.Services.AddScoped<ILoginAuditService, LoginAuditService>();
 builder.Services.AddScoped<SessionCookieEvents>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, LoggingAuthorizationMiddlewareResultHandler>();
 builder.Services.AddSingleton<IPayoutEncryptionService, PayoutEncryptionService>();
+builder.Services.AddScoped<RecentlyViewedService>();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {
