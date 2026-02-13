@@ -25,6 +25,7 @@ else
 {
     <div class="alert alert-info" role="alert">
         Default payout method: <strong>@Model.DefaultMethod</strong>.
+        <span class="d-block">Payout schedule: <strong>@Model.Input.PayoutSchedule</strong>.</span>
         @if (!string.IsNullOrEmpty(Model.MaskedBankAccount))
         {
             <span class="d-block">Bank account: @Model.MaskedBankAccount</span>
@@ -43,6 +44,16 @@ else
 <form method="post" class="card p-4 shadow-sm">
     <h2 class="h5 mb-3">Payout preferences</h2>
     <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+
+    <div class="mb-3">
+        <label asp-for="Input.PayoutSchedule" class="form-label"></label>
+        <select asp-for="Input.PayoutSchedule" class="form-select">
+            <option value="Weekly">Weekly</option>
+            <option value="Manual">Manual</option>
+        </select>
+        <div class="form-text">Choose how often we should send payouts.</div>
+        <span asp-validation-for="Input.PayoutSchedule" class="text-danger"></span>
+    </div>
 
     <div class="mb-3">
         <label asp-for="Input.PayoutMethod" class="form-label"></label>

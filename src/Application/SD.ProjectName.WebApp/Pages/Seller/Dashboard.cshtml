@@ -59,7 +59,7 @@ else
 else
 {
     <div class="alert alert-info">
-        Payouts will use @Model.PayoutMethod. <a class="alert-link" href="~/Seller/PayoutSettings">Update payout preferences</a>.
+        Payouts will use @Model.PayoutMethod on a @Model.PayoutSchedule schedule. <a class="alert-link" href="~/Seller/PayoutSettings">Update payout preferences</a>.
     </div>
 }
 
@@ -133,6 +133,8 @@ else
         <dl class="row mb-0 mt-2">
             <dt class="col-sm-4">Default method</dt>
             <dd class="col-sm-8">@Model.PayoutMethod</dd>
+            <dt class="col-sm-4">Payout schedule</dt>
+            <dd class="col-sm-8">@Model.PayoutSchedule</dd>
             @if (!string.IsNullOrEmpty(Model.MaskedBankAccount))
             {
                 <dt class="col-sm-4">Bank account</dt>
@@ -143,10 +145,16 @@ else
                 <dt class="col-sm-4">Payout account</dt>
                 <dd class="col-sm-8">@Model.MaskedPayoutAccount</dd>
             }
+            <dt class="col-sm-4">Payout status</dt>
+            <dd class="col-sm-8">@Model.PayoutStatus (eligible @Model.PayoutEligibleAmount:C, paid @Model.PayoutPaidAmount:C, threshold @Model.PayoutThreshold:C)</dd>
         </dl>
         @if (!Model.HasValidPayoutSettings)
         {
             <p class="text-danger mb-0">Payouts are blocked until required details are completed.</p>
+        }
+        else if (!string.IsNullOrEmpty(Model.PayoutErrorReference))
+        {
+            <p class="text-danger mb-0">Last payout failed: @Model.PayoutErrorReference. Fix your payout details and retry.</p>
         }
     </div>
 </div>

@@ -108,6 +108,8 @@ namespace SD.ProjectName.WebApp.Identity
 
         public string PayoutMethod { get; set; } = "BankTransfer";
 
+        public string PayoutSchedule { get; set; } = "Weekly";
+
         public string PayoutAccount { get; set; } = string.Empty;
 
         public string? PayoutBankAccount { get; set; }

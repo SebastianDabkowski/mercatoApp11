@@ -168,6 +168,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller
 
             Payout.TrimAll();
             user.PayoutMethod = Payout.PayoutMethod;
+            user.PayoutSchedule = Payout.PayoutSchedule;
             user.PayoutAccount = _payoutEncryption.Protect(Payout.PayoutAccount);
             user.PayoutBankAccount = _payoutEncryption.Protect(Payout.BankAccountNumber);
             user.PayoutBankRouting = _payoutEncryption.Protect(Payout.BankRoutingNumber);
@@ -239,6 +240,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller
 
             Payout ??= new PayoutPreferencesInput();
             Payout.PayoutMethod = PayoutMethods.IsValid(user.PayoutMethod) ? user.PayoutMethod : PayoutMethods.BankTransfer;
+            Payout.PayoutSchedule = PayoutSchedules.IsValid(user.PayoutSchedule) ? user.PayoutSchedule : PayoutSchedules.Weekly;
             Payout.PayoutAccount = _payoutEncryption.Reveal(user.PayoutAccount);
             Payout.BankAccountNumber = _payoutEncryption.Reveal(user.PayoutBankAccount);
             Payout.BankRoutingNumber = _payoutEncryption.Reveal(user.PayoutBankRouting);
