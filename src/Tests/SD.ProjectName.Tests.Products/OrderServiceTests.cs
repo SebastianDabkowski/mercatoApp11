@@ -1139,6 +1139,84 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task GetReturnCasesForSellerAsync_ShouldReturnCasesForSeller()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-cases-seller-1", "sig-cases-seller-1");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-cases-seller", "cases@example.com", "Case Buyer", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-cases-seller");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+            var request = await service.CreateReturnRequestAsync(
+                result.Order.Id,
+                "buyer-cases-seller",
+                subOrderNumber,
+                new List<int> { 1 },
+                "Wrong size",
+                ReturnRequestTypes.Return,
+                "Too small");
+
+            var cases = await service.GetReturnCasesForSellerAsync("seller-1");
+            var summary = Assert.Single(cases.Items);
+            Assert.Equal(request.Request!.CaseId, summary.CaseId);
+            Assert.Equal(result.Order.Id, summary.OrderId);
+            Assert.Equal(subOrderNumber, summary.SubOrderNumber);
+            Assert.Equal(ReturnRequestStatuses.PendingSellerReview, summary.Status);
+            Assert.Equal("Case Buyer", summary.BuyerName);
+        }
+
+        [Fact]
+        public async Task UpdateReturnCaseForSellerAsync_ShouldUpdateStatusAndNotifyBuyer()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-update-case-1", "sig-update-case-1");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-update-case", "caseupdate@example.com", "Case Update Buyer", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-update-case");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+            var request = await service.CreateReturnRequestAsync(
+                result.Order.Id,
+                "buyer-update-case",
+                subOrderNumber,
+                new List<int> { 1 },
+                "Damaged",
+                ReturnRequestTypes.Return,
+                "Broken screen");
+
+            var update = await service.UpdateReturnCaseForSellerAsync(
+                result.Order.Id,
+                "seller-1",
+                request.Request!.CaseId!,
+                "accept",
+                "Approved after review");
+
+            Assert.True(update.Success);
+            Assert.NotNull(update.Request);
+            Assert.Equal(ReturnRequestStatuses.Approved, update.Request!.Status);
+
+            var detail = await service.GetReturnCaseForSellerAsync("seller-1", request.Request!.CaseId!);
+            Assert.NotNull(detail);
+            Assert.Equal(ReturnRequestStatuses.Approved, detail!.Summary.Status);
+            Assert.Contains(detail.History, h => h.Actor.Equals("Seller", StringComparison.OrdinalIgnoreCase) && h.Status == ReturnRequestStatuses.Approved);
+
+            emailSender.Verify(s => s.SendEmailAsync(
+                "caseupdate@example.com",
+                It.Is<string>(subject => subject.Contains(request.Request!.CaseId!, StringComparison.OrdinalIgnoreCase)),
+                It.IsAny<string>()),
+                Times.Once);
+        }
+
+        [Fact]
         public async Task UpdateSubOrderStatusAsync_ShouldRejectInvalidTransition()
         {
             await using var context = CreateContext();

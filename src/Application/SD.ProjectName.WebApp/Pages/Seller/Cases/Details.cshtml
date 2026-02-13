@@ -1,0 +1,198 @@
+@page "/Seller/Cases/Details/{caseId?}"
+@model SD.ProjectName.WebApp.Pages.Seller.Cases.DetailsModel
+@{
+    ViewData["Title"] = "Case details";
+}
+
+<h1 class="mb-3">Case details</h1>
+
+@if (Model.Case == null)
+{
+    <div class="alert alert-warning">Case not found.</div>
+}
+else
+{
+    var summary = Model.Case.Summary;
+    <div class="alert alert-secondary d-flex justify-content-between align-items-center">
+        <div>
+            <div class="fw-semibold">Case @summary.CaseId</div>
+            <div class="text-muted small">Opened @summary.RequestedOn.ToLocalTime().ToString("f")</div>
+        </div>
+        <div class="text-end">
+            <span class="badge bg-primary">@summary.Status</span>
+            <div class="text-muted small mt-1">@summary.Type</div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-3">
+                <div class="card-header">Request details</div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-3">Order</dt>
+                        <dd class="col-sm-9">
+                            <div class="fw-semibold">@summary.OrderNumber</div>
+                            <div class="text-muted small">Sub-order @summary.SubOrderNumber</div>
+                            <a class="btn btn-link btn-sm ps-0" asp-page="/Seller/Orders/Details" asp-route-orderId="@summary.OrderId">View order</a>
+                        </dd>
+                        <dt class="col-sm-3">Buyer</dt>
+                        <dd class="col-sm-9">
+                            <div class="fw-semibold">@summary.BuyerName</div>
+                            @if (!string.IsNullOrWhiteSpace(summary.BuyerEmail))
+                            {
+                                <div class="text-muted small">@summary.BuyerEmail</div>
+                            }
+                        </dd>
+                        <dt class="col-sm-3">Reason</dt>
+                        <dd class="col-sm-9">@Model.Case.Reason</dd>
+                        <dt class="col-sm-3">Description</dt>
+                        <dd class="col-sm-9">@(!string.IsNullOrWhiteSpace(Model.Case.Description) ? Model.Case.Description : "No additional description provided.")</dd>
+                        <dt class="col-sm-3">Items</dt>
+                        <dd class="col-sm-9">
+                            <ul class="mb-0">
+                                @foreach (var item in Model.Case.Items)
+                                {
+                                    <li>@item.Quantity x @item.Label (Product #@item.ProductId)</li>
+                                }
+                            </ul>
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">Shipping &amp; address</div>
+                <div class="card-body">
+                    <div class="fw-semibold">@Model.Case.Shipping.MethodLabel</div>
+                    <div>@Model.Case.Shipping.Cost.ToString("C")</div>
+                    @if (!string.IsNullOrWhiteSpace(Model.Case.Shipping.DeliveryEstimate))
+                    {
+                        <div class="text-muted small">Estimated: @Model.Case.Shipping.DeliveryEstimate</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Model.Case.Shipping.Description))
+                    {
+                        <div class="text-muted small">@Model.Case.Shipping.Description</div>
+                    }
+                    <hr />
+                    <div class="fw-semibold">Delivery address</div>
+                    <div>@Model.Case.Address.Recipient</div>
+                    <div>@Model.Case.Address.Line1</div>
+                    @if (!string.IsNullOrWhiteSpace(Model.Case.Address.Line2))
+                    {
+                        <div>@Model.Case.Address.Line2</div>
+                    }
+                    <div>@Model.Case.Address.City @Model.Case.Address.State @Model.Case.Address.PostalCode</div>
+                    <div>@Model.Case.Address.Country</div>
+                    @if (!string.IsNullOrWhiteSpace(Model.Case.Address.Phone))
+                    {
+                        <div class="text-muted small">Phone: @Model.Case.Address.Phone</div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header">Seller decision</div>
+                <div class="card-body">
+                    @if (Model.CanReview)
+                    {
+                        <form method="post" asp-page-handler="Decision">
+                            <input type="hidden" asp-for="CaseId" value="@summary.CaseId" />
+                            <input type="hidden" asp-for="OrderId" value="@summary.OrderId" />
+                            <div asp-validation-summary="ModelOnly" class="text-danger small"></div>
+                            <div class="mb-3">
+                                <label class="form-label form-label-sm fw-semibold">Action</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" asp-for="Decision" value="accept" id="decision-accept" />
+                                    <label class="form-check-label" for="decision-accept">Accept return</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" asp-for="Decision" value="partial" id="decision-partial" />
+                                    <label class="form-check-label" for="decision-partial">Propose partial solution</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" asp-for="Decision" value="requestinfo" id="decision-info" />
+                                    <label class="form-check-label" for="decision-info">Request more information</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" asp-for="Decision" value="reject" id="decision-reject" />
+                                    <label class="form-check-label" for="decision-reject">Reject request</label>
+                                </div>
+                                <span asp-validation-for="Decision" class="text-danger small"></span>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label form-label-sm" asp-for="Note">Message to buyer (optional)</label>
+                                <textarea asp-for="Note" class="form-control form-control-sm" rows="3" placeholder="Share details about your decision or proposed solution"></textarea>
+                                <span asp-validation-for="Note" class="text-danger small"></span>
+                            </div>
+                            <button type="submit" class="btn btn-sm btn-primary">Save decision</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <div class="text-muted small">This case is not awaiting seller review.</div>
+                    }
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">Case history</div>
+                <div class="card-body">
+                    @if (Model.Case.History.Count == 0)
+                    {
+                        <div class="text-muted small">No history available.</div>
+                    }
+                    else
+                    {
+                        <ul class="list-unstyled mb-0 small">
+                            @foreach (var entry in Model.Case.History)
+                            {
+                                <li class="text-muted mb-1">
+                                    @entry.ChangedOn.ToLocalTime().ToString("g"): @entry.Status — @entry.Actor
+                                    @if (!string.IsNullOrWhiteSpace(entry.Note))
+                                    {
+                                        <div class="ms-2">@entry.Note</div>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">Status history</div>
+                <div class="card-body">
+                    @if (Model.Case.StatusHistory.Count == 0)
+                    {
+                        <div class="text-muted small">No history available.</div>
+                    }
+                    else
+                    {
+                        <ul class="list-unstyled mb-0 small">
+                            @foreach (var entry in Model.Case.StatusHistory)
+                            {
+                                <li class="text-muted mb-1">
+                                    @entry.ChangedOn.ToLocalTime().ToString("g"): @entry.Status
+                                    @if (!string.IsNullOrWhiteSpace(entry.TrackingNumber))
+                                    {
+                                        <span class="ms-1">• Tracking: @entry.TrackingNumber</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(entry.TrackingCarrier))
+                                    {
+                                        <span class="ms-1">(@entry.TrackingCarrier)</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="mt-3">
+    <a class="btn btn-outline-secondary" asp-page="/Seller/Cases/Index">Back to cases</a>
+</div>
