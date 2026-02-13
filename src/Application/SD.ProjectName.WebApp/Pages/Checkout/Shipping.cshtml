@@ -1,0 +1,84 @@
+@page "/Checkout/Shipping"
+@model SD.ProjectName.WebApp.Pages.Checkout.ShippingModel
+@{
+    ViewData["Title"] = "Shipping method";
+}
+
+<h1 class="mb-4">Shipping</h1>
+
+@if (TempData["CheckoutShippingSaved"] != null)
+{
+    <div class="alert alert-success">Shipping preferences saved.</div>
+}
+
+<form method="post" novalidate>
+    <div class="row">
+        <div class="col-lg-8">
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+            @foreach (var seller in Model.SellerOptions)
+            {
+                var selectedForSeller = Model.Input.SelectedMethods.TryGetValue(seller.SellerId, out var chosen) ? chosen : null;
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Seller: @seller.SellerName</span>
+                        <span class="text-muted small">@seller.Options.Count option(s)</span>
+                    </div>
+                    <div class="list-group list-group-flush">
+                        @foreach (var option in seller.Options)
+                        {
+                            var inputName = $"Input.SelectedMethods[{seller.SellerId}]";
+                            var optionId = $"{seller.SellerId}-{option.Id}";
+                            var isChecked = string.Equals(selectedForSeller, option.Id, StringComparison.OrdinalIgnoreCase) || (selectedForSeller == null && option.Recommended);
+                            <label class="list-group-item list-group-item-action d-flex gap-3 align-items-start" for="@optionId">
+                                <input class="form-check-input mt-1" type="radio" name="@inputName" id="@optionId" value="@option.Id" @(isChecked ? "checked" : string.Empty) />
+                                <div class="flex-grow-1">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>@option.Label</strong>
+                                            @if (option.Recommended)
+                                            {
+                                                <span class="badge bg-success ms-2">Recommended</span>
+                                            }
+                                        </div>
+                                        <strong>@option.Cost.ToString("C")</strong>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(option.Description))
+                                    {
+                                        <div class="text-muted small">@option.Description</div>
+                                    }
+                                </div>
+                            </label>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="d-flex gap-2">
+                <a class="btn btn-outline-secondary" href="/Checkout/Address">Back to address</a>
+                <button type="submit" class="btn btn-primary">Continue to payment</button>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">Order summary</div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Items subtotal</span>
+                        <span>@Model.Summary.ItemsSubtotal.ToString("C")</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Shipping</span>
+                        <span>@Model.Summary.ShippingTotal.ToString("C")</span>
+                    </div>
+                    <hr />
+                    <div class="d-flex justify-content-between">
+                        <strong>Total</strong>
+                        <strong>@Model.Summary.GrandTotal.ToString("C")</strong>
+                    </div>
+                    <div class="text-muted small mt-2">@Model.Summary.TotalQuantity item(s)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
