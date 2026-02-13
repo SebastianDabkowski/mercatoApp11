@@ -7,6 +7,11 @@
 
 <h1>Your cart</h1>
 
+@if (TempData["PaymentMessage"] is string paymentMessage && !string.IsNullOrWhiteSpace(paymentMessage))
+{
+    <div class="alert alert-warning">@paymentMessage</div>
+}
+
 <div id="cart-feedback" class="alert alert-info d-none" role="alert"></div>
 <div id="cart-empty" class="alert alert-info @(Model.SellerGroups.Any() ? "d-none" : "")">Your cart is empty.</div>
 

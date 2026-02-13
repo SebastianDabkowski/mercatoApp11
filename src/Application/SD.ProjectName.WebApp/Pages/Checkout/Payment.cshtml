@@ -30,6 +30,7 @@ else if (Model.PaymentStatus == SD.ProjectName.WebApp.Services.CheckoutPaymentSt
 }
 
 <form method="post" novalidate>
+    <input type="hidden" asp-for="Input.CartSignature" />
     <div class="row">
         <div class="col-lg-8">
             <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>

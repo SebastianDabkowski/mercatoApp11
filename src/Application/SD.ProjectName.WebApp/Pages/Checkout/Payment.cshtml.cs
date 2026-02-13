@@ -1,3 +1,7 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -14,6 +18,10 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         private readonly ShippingOptionsService _shippingOptionsService;
         private readonly CheckoutOptions _checkoutOptions;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly JsonSerializerOptions _serializerOptions = new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
 
         public CartSummary Summary { get; private set; } = CartSummary.Empty;
 
@@ -48,6 +56,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             var summary = await _cartViewService.BuildAsync(HttpContext);
             if (summary.IsEmpty)
             {
+                TempData["PaymentMessage"] = "Some items are no longer available or have insufficient stock. Please update your cart and try again.";
                 return RedirectToPage("/Cart");
             }
 
@@ -65,6 +74,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             var sellerCountries = await LoadSellerCountriesAsync(summary.SellerGroups.Select(g => g.SellerId));
             var quote = _shippingOptionsService.BuildQuote(summary, state.Address, sellerCountries, state.ShippingSelections);
             Summary = quote.Summary;
+            Input.CartSignature = ComputeQuoteSignature(quote);
 
             Methods = _checkoutOptions.PaymentMethods ?? new List<PaymentMethodOption>();
             PaymentStatus = state.PaymentStatus;
@@ -72,7 +82,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
 
             if (!string.IsNullOrWhiteSpace(providerResult))
             {
-                var result = await HandleProviderReturn(providerResult, method ?? state.PaymentMethod, state);
+                var result = await HandleProviderReturn(providerResult, method ?? state.PaymentMethod, state, quote);
                 if (result != null)
                 {
                     return result;
@@ -95,6 +105,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             var summary = await _cartViewService.BuildAsync(HttpContext);
             if (summary.IsEmpty)
             {
+                TempData["PaymentMessage"] = "Some items are no longer available or have insufficient stock. Please update your cart and try again.";
                 return RedirectToPage("/Cart");
             }
 
@@ -112,8 +123,20 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             var sellerCountries = await LoadSellerCountriesAsync(summary.SellerGroups.Select(g => g.SellerId));
             var quote = _shippingOptionsService.BuildQuote(summary, state.Address, sellerCountries, state.ShippingSelections);
             Summary = quote.Summary;
+            var previousSignature = Input.CartSignature;
+            var signature = ComputeQuoteSignature(quote);
+            Input.CartSignature = signature;
 
             Methods = _checkoutOptions.PaymentMethods ?? new List<PaymentMethodOption>();
+            PaymentStatus = state.PaymentStatus;
+            PaymentReference = state.PaymentReference;
+
+            var cartChanged = string.IsNullOrWhiteSpace(previousSignature) || !string.Equals(previousSignature, signature, StringComparison.Ordinal);
+            if (cartChanged)
+            {
+                ModelState.AddModelError(string.Empty, "Cart updated because of stock or price changes. Review the totals and confirm again.");
+                return Page();
+            }
 
             var selected = Methods.FirstOrDefault(m => string.Equals(m.Id, Input.SelectedMethodId, StringComparison.OrdinalIgnoreCase));
             if (selected == null)
@@ -124,7 +147,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
 
             if (selected.RequiresRedirect)
             {
-                _checkoutStateService.SavePaymentSelection(HttpContext, selected.Id, CheckoutPaymentStatus.Pending, null);
+                _checkoutStateService.SavePaymentSelection(HttpContext, selected.Id, CheckoutPaymentStatus.Pending, null, signature);
                 var callbackUrl = Url.Page("/Checkout/Payment", null, new { providerResult = "success", method = selected.Id }, Request.Scheme);
                 var cancelUrl = Url.Page("/Checkout/Payment", null, new { providerResult = "cancel", method = selected.Id }, Request.Scheme);
                 TempData["PaymentRedirect"] = $"Redirecting to {selected.Provider ?? "payment provider"}...";
@@ -132,11 +155,12 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 return Redirect(callbackUrl ?? "/Checkout/Payment");
             }
 
-            _checkoutStateService.SavePaymentSelection(HttpContext, selected.Id, CheckoutPaymentStatus.Confirmed, GenerateReference(selected.Id));
+            _checkoutStateService.SavePaymentSelection(HttpContext, selected.Id, CheckoutPaymentStatus.Confirmed, GenerateReference(selected.Id), signature);
+            StoreSnapshot(quote);
             return RedirectToPage("/Checkout/Confirmation");
         }
 
-        private async Task<IActionResult?> HandleProviderReturn(string providerResult, string? methodId, CheckoutState state)
+        private async Task<IActionResult?> HandleProviderReturn(string providerResult, string? methodId, CheckoutState state, ShippingQuote quote)
         {
             var normalized = providerResult.Trim().ToLowerInvariant();
             var selectedMethod = Methods.FirstOrDefault(m => string.Equals(m.Id, methodId, StringComparison.OrdinalIgnoreCase))
@@ -149,24 +173,38 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 return Page();
             }
 
+            var currentSignature = ComputeQuoteSignature(quote);
+            if (string.IsNullOrWhiteSpace(state.CartSignature) || !string.Equals(state.CartSignature, currentSignature, StringComparison.Ordinal))
+            {
+                PaymentStatus = CheckoutPaymentStatus.Failed;
+                _checkoutStateService.SavePaymentSelection(HttpContext, selectedMethod.Id, CheckoutPaymentStatus.Failed, null, currentSignature);
+                Input.SelectedMethodId = selectedMethod.Id;
+                Input.CartSignature = currentSignature;
+                ModelState.AddModelError(string.Empty, "Cart changed because of price or stock updates. Review totals and retry payment.");
+                return Page();
+            }
+
             if (normalized == "success")
             {
-                _checkoutStateService.SavePaymentSelection(HttpContext, selectedMethod.Id, CheckoutPaymentStatus.Confirmed, GenerateReference(selectedMethod.Id));
+                _checkoutStateService.SavePaymentSelection(HttpContext, selectedMethod.Id, CheckoutPaymentStatus.Confirmed, GenerateReference(selectedMethod.Id), currentSignature);
+                StoreSnapshot(quote);
                 return RedirectToPage("/Checkout/Confirmation");
             }
 
             if (normalized is "cancel" or "canceled")
             {
                 PaymentStatus = CheckoutPaymentStatus.Canceled;
-                _checkoutStateService.SavePaymentSelection(HttpContext, selectedMethod.Id, CheckoutPaymentStatus.Canceled, null);
+                _checkoutStateService.SavePaymentSelection(HttpContext, selectedMethod.Id, CheckoutPaymentStatus.Canceled, null, currentSignature);
                 Input.SelectedMethodId = selectedMethod.Id;
+                Input.CartSignature = currentSignature;
                 TempData["PaymentMessage"] = "Payment was cancelled. You can choose another method.";
                 return Page();
             }
 
             PaymentStatus = CheckoutPaymentStatus.Failed;
-            _checkoutStateService.SavePaymentSelection(HttpContext, selectedMethod.Id, CheckoutPaymentStatus.Failed, null);
+            _checkoutStateService.SavePaymentSelection(HttpContext, selectedMethod.Id, CheckoutPaymentStatus.Failed, null, currentSignature);
             Input.SelectedMethodId = selectedMethod.Id;
+            Input.CartSignature = currentSignature;
             ModelState.AddModelError(string.Empty, "Payment authorization failed. Please try again or choose another method.");
             return Page();
         }
@@ -195,10 +233,61 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         {
             return $"{methodId}-{Guid.NewGuid():N}".ToLowerInvariant();
         }
+
+        private void StoreSnapshot(ShippingQuote quote)
+        {
+            var items = new List<CheckoutOrderItemSnapshot>();
+            foreach (var group in quote.Summary.SellerGroups)
+            {
+                foreach (var item in group.Items)
+                {
+                    items.Add(new CheckoutOrderItemSnapshot(
+                        item.Product.Id,
+                        item.Quantity,
+                        item.UnitPrice,
+                        item.LineTotal,
+                        BuildVariantKey(item.VariantAttributes)));
+                }
+            }
+
+            var snapshot = new CheckoutOrderSnapshot(items, quote.Summary.ItemsSubtotal, quote.Summary.ShippingTotal, quote.Summary.GrandTotal, quote.Summary.TotalQuantity);
+            TempData["CheckoutSnapshot"] = JsonSerializer.Serialize(snapshot, _serializerOptions);
+        }
+
+        private static string BuildVariantKey(IReadOnlyDictionary<string, string> attributes)
+        {
+            if (attributes == null || attributes.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var ordered = attributes.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase);
+            return string.Join("|", ordered.Select(kv => $"{kv.Key}:{kv.Value}"));
+        }
+
+        private static string ComputeQuoteSignature(ShippingQuote quote)
+        {
+            var builder = new StringBuilder();
+            foreach (var group in quote.Summary.SellerGroups.OrderBy(g => g.SellerId, StringComparer.OrdinalIgnoreCase))
+            {
+                builder.Append($"seller:{group.SellerId};ship:{group.Shipping.ToString(CultureInfo.InvariantCulture)};");
+                foreach (var item in group.Items.OrderBy(i => i.Product.Id).ThenBy(i => i.VariantLabel, StringComparer.OrdinalIgnoreCase))
+                {
+                    builder.Append($"p:{item.Product.Id};q:{item.Quantity};u:{item.UnitPrice.ToString(CultureInfo.InvariantCulture)};v:{BuildVariantKey(item.VariantAttributes)}|");
+                }
+            }
+
+            builder.Append($"items:{quote.Summary.ItemsSubtotal.ToString(CultureInfo.InvariantCulture)};shiptotal:{quote.Summary.ShippingTotal.ToString(CultureInfo.InvariantCulture)};grand:{quote.Summary.GrandTotal.ToString(CultureInfo.InvariantCulture)};qty:{quote.Summary.TotalQuantity}");
+            var bytes = Encoding.UTF8.GetBytes(builder.ToString());
+            var hash = SHA256.HashData(bytes);
+            return Convert.ToBase64String(hash);
+        }
     }
 
     public class PaymentInput
     {
         public string SelectedMethodId { get; set; } = string.Empty;
+
+        public string CartSignature { get; set; } = string.Empty;
     }
 }
