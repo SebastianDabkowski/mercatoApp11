@@ -194,6 +194,27 @@ namespace SD.ProjectName.WebApp.Services
         }
     }
 
+    public static class ReviewReportReasons
+    {
+        public const string Abuse = "Abuse";
+        public const string Spam = "Spam";
+        public const string FalseInformation = "False information";
+        public const string Other = "Other";
+
+        public static readonly IReadOnlyList<string> Allowed = new[] { Abuse, Spam, FalseInformation, Other };
+
+        public static string? Normalize(string? reason)
+        {
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return null;
+            }
+
+            var match = Allowed.FirstOrDefault(r => string.Equals(r, reason, StringComparison.OrdinalIgnoreCase));
+            return match;
+        }
+    }
+
     public class OrderRecord
     {
         public int Id { get; set; }
@@ -277,6 +298,21 @@ namespace SD.ProjectName.WebApp.Services
         public string? FromStatus { get; set; }
 
         public string? ToStatus { get; set; }
+
+        public DateTimeOffset CreatedOn { get; set; }
+    }
+
+    public class ProductReviewReport
+    {
+        public int Id { get; set; }
+
+        public int ReviewId { get; set; }
+
+        public string ReporterId { get; set; } = string.Empty;
+
+        public string Reason { get; set; } = string.Empty;
+
+        public string? Details { get; set; }
 
         public DateTimeOffset CreatedOn { get; set; }
     }
@@ -442,7 +478,7 @@ namespace SD.ProjectName.WebApp.Services
 
     public record SellerRatingResult(bool Success, string? Error = null, SellerRating? Rating = null, double? AverageRating = null);
 
-    public record ProductReviewView(int ProductId, int Rating, string Comment, string BuyerName, DateTimeOffset CreatedOn);
+    public record ProductReviewView(int Id, int ProductId, int Rating, string Comment, string BuyerName, DateTimeOffset CreatedOn);
     public record ProductReviewsPage(
         IReadOnlyList<ProductReviewView> Reviews,
         int TotalCount,
@@ -540,6 +576,8 @@ namespace SD.ProjectName.WebApp.Services
     public record ReturnRequestResult(bool Success, string? Error, ReturnRequest? Request = null);
 
     public record ProductReviewResult(bool Success, string? Error, ProductReview? Review = null);
+
+    public record ReviewReportResult(bool Success, string? Error);
 
     public record ReviewModerationResult(bool Success, string? Error);
 
@@ -1283,6 +1321,82 @@ namespace SD.ProjectName.WebApp.Services
             return new ProductReviewResult(true, null, review);
         }
 
+        public async Task<ReviewReportResult> ReportReviewAsync(
+            int reviewId,
+            string? reporterId,
+            string? reason,
+            string? details = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (reviewId <= 0)
+            {
+                return new ReviewReportResult(false, "Review not found.");
+            }
+
+            if (string.IsNullOrWhiteSpace(reporterId))
+            {
+                return new ReviewReportResult(false, "Sign in to report reviews.");
+            }
+
+            var normalizedReason = ReviewReportReasons.Normalize(reason);
+            if (normalizedReason == null)
+            {
+                return new ReviewReportResult(false, "Select a valid reason.");
+            }
+
+            var normalizedDetails = string.IsNullOrWhiteSpace(details) ? null : details.Trim();
+            if (normalizedDetails?.Length > 1000)
+            {
+                normalizedDetails = normalizedDetails[..1000];
+            }
+
+            var review = await _dbContext.ProductReviews.FirstOrDefaultAsync(r => r.Id == reviewId, cancellationToken);
+            if (review == null || !ReviewStatuses.IsVisible(review.Status))
+            {
+                return new ReviewReportResult(false, "Review is unavailable.");
+            }
+
+            var normalizedReporterId = reporterId.Trim();
+            var existing = await _dbContext.ProductReviewReports
+                .AnyAsync(r => r.ReviewId == reviewId && r.ReporterId == normalizedReporterId, cancellationToken);
+            if (existing)
+            {
+                return new ReviewReportResult(false, "You already reported this review.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var report = new ProductReviewReport
+            {
+                ReviewId = reviewId,
+                ReporterId = normalizedReporterId,
+                Reason = normalizedReason,
+                Details = normalizedDetails,
+                CreatedOn = now
+            };
+
+            _dbContext.ProductReviewReports.Add(report);
+
+            var previousStatus = ReviewStatuses.Normalize(review.Status);
+            review.IsFlagged = true;
+            if (ReviewStatuses.IsVisible(review.Status))
+            {
+                review.Status = ReviewStatuses.Pending;
+            }
+
+            if (string.IsNullOrWhiteSpace(review.FlagReason))
+            {
+                review.FlagReason = $"Reported: {normalizedReason}";
+            }
+
+            review.LastModeratedBy = NormalizeActor("Buyer Report");
+            review.LastModeratedOn = now;
+
+            AddReviewAudit(review, "Reported", "Buyer", normalizedReason, previousStatus, review.Status, now);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            return new ReviewReportResult(true, null);
+        }
+
         public async Task<List<ProductReviewView>> GetPublishedReviewsAsync(
             int productId,
             int take = 20,
@@ -1335,7 +1449,7 @@ namespace SD.ProjectName.WebApp.Services
                 .ToListAsync(cancellationToken);
 
             var views = reviews
-                .Select(r => new ProductReviewView(r.ProductId, r.Rating, r.Comment, r.BuyerName, r.CreatedOn))
+                .Select(r => new ProductReviewView(r.Id, r.ProductId, r.Rating, r.Comment, r.BuyerName, r.CreatedOn))
                 .ToList();
 
             return new ProductReviewsPage(views, totalCount, pageNumber, limit, normalizedSortOption, averageRating);

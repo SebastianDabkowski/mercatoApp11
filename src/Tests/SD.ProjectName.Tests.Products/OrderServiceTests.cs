@@ -364,6 +364,71 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task ReportReviewAsync_ShouldCreateReportAndFlagReview()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            var review = new ProductReview
+            {
+                ProductId = 9,
+                OrderId = 3,
+                BuyerId = "buyer-reviewer",
+                BuyerName = "Buyer Reviewer",
+                Rating = 3,
+                Comment = "Offensive content",
+                CreatedOn = DateTimeOffset.UtcNow.AddMinutes(-5),
+                Status = ReviewStatuses.Published
+            };
+            context.ProductReviews.Add(review);
+            await context.SaveChangesAsync();
+
+            var result = await service.ReportReviewAsync(review.Id, "reporter-1", ReviewReportReasons.Abuse, "Inappropriate language");
+
+            Assert.True(result.Success);
+            var report = await context.ProductReviewReports.FirstOrDefaultAsync();
+            Assert.NotNull(report);
+            Assert.Equal(review.Id, report!.ReviewId);
+            Assert.Equal(ReviewReportReasons.Abuse, report.Reason);
+            var updated = await context.ProductReviews.FirstAsync();
+            Assert.True(updated.IsFlagged);
+            Assert.Equal(ReviewStatuses.Pending, updated.Status);
+            var audit = await context.ProductReviewAudits.FirstOrDefaultAsync(a => a.ReviewId == review.Id && a.Action == "Reported");
+            Assert.NotNull(audit);
+        }
+
+        [Fact]
+        public async Task ReportReviewAsync_ShouldPreventDuplicateReportsFromSameUser()
+        {
+            await using var context = CreateContext();
+            var service = new OrderService(context, Mock.Of<IEmailSender>(), NullLogger<OrderService>.Instance);
+            var review = new ProductReview
+            {
+                ProductId = 10,
+                OrderId = 4,
+                BuyerId = "buyer-dup",
+                BuyerName = "Buyer Dup",
+                Rating = 4,
+                Comment = "Content",
+                CreatedOn = DateTimeOffset.UtcNow.AddMinutes(-5),
+                Status = ReviewStatuses.Published
+            };
+            context.ProductReviews.Add(review);
+            context.ProductReviewReports.Add(new ProductReviewReport
+            {
+                ReviewId = review.Id,
+                ReporterId = "reporter-dup",
+                Reason = ReviewReportReasons.Spam,
+                CreatedOn = DateTimeOffset.UtcNow.AddMinutes(-2)
+            });
+            await context.SaveChangesAsync();
+
+            var result = await service.ReportReviewAsync(review.Id, "reporter-dup", ReviewReportReasons.FalseInformation, null);
+
+            Assert.False(result.Success);
+            Assert.Equal(1, context.ProductReviewReports.Count());
+        }
+
+        [Fact]
         public async Task ApproveReviewAsync_ShouldPublishAndClearFlag()
         {
             await using var context = CreateContext();

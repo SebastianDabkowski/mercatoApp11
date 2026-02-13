@@ -42,6 +42,7 @@ namespace SD.ProjectName.WebApp.Pages.Products
         public int PageNumber { get; private set; } = 1;
         public int TotalPages { get; private set; } = 1;
         public string SortOption { get; private set; } = "newest";
+        public IReadOnlyList<string> ReportReasons => ReviewReportReasons.Allowed;
         private const int ReviewsPageSize = 10;
 
         [TempData]
