@@ -33,7 +33,7 @@ namespace SD.ProjectName.Modules.Products.Domain
 
             if (!includeDrafts)
             {
-                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active);
+                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active && !p.IsSellerBlocked);
             }
 
             return await query
@@ -49,7 +49,7 @@ namespace SD.ProjectName.Modules.Products.Domain
 
             if (!includeDrafts)
             {
-                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active);
+                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active && !p.IsSellerBlocked);
             }
 
             if (!string.IsNullOrWhiteSpace(workflowState))
@@ -162,7 +162,7 @@ namespace SD.ProjectName.Modules.Products.Domain
 
             if (!includeDrafts)
             {
-                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active);
+                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active && !p.IsSellerBlocked);
             }
 
             var idList = ids.Distinct().ToList();
@@ -191,7 +191,7 @@ namespace SD.ProjectName.Modules.Products.Domain
 
             if (!includeDrafts)
             {
-                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active);
+                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active && !p.IsSellerBlocked);
             }
 
             return await query
@@ -213,7 +213,7 @@ namespace SD.ProjectName.Modules.Products.Domain
 
             if (!includeDrafts)
             {
-                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active);
+                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active && !p.IsSellerBlocked);
             }
 
             return await query.FirstOrDefaultAsync(p => p.Id == id);
@@ -293,7 +293,7 @@ namespace SD.ProjectName.Modules.Products.Domain
         {
             string? normalizedSearchValue = null;
             var query = _context.Set<ProductModel>()
-                .Where(p => p.WorkflowState == ProductWorkflowStates.Active);
+                .Where(p => p.WorkflowState == ProductWorkflowStates.Active && !p.IsSellerBlocked);
 
             if (!string.IsNullOrWhiteSpace(context.Search))
             {

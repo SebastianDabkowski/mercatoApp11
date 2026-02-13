@@ -72,6 +72,12 @@ namespace SD.ProjectName.WebApp.Services
         string? IpAddress,
         string? UserAgent);
 
+    public record AdminUserAuditEntry(
+        string Action,
+        string Actor,
+        DateTimeOffset OccurredOn,
+        string? Reason);
+
     public record AdminUserDetail(
         string Id,
         string Email,
@@ -87,7 +93,11 @@ namespace SD.ProjectName.WebApp.Services
         string? LastLoginIp,
         DateTimeOffset? LockoutEnd,
         bool LockoutEnabled,
-        IReadOnlyList<AdminUserLoginActivity> RecentLogins);
+        IReadOnlyList<AdminUserLoginActivity> RecentLogins,
+        DateTimeOffset? BlockedOn,
+        string? BlockedBy,
+        string? BlockReason,
+        IReadOnlyList<AdminUserAuditEntry> AuditTrail);
 
     public class AdminUserService
     {
@@ -197,6 +207,17 @@ namespace SD.ProjectName.WebApp.Services
 
             var createdOn = user.TermsAcceptedOn ?? user.EmailVerifiedOn ?? user.OnboardingStartedOn;
 
+            var audits = await _dbContext.UserAdminAudits.AsNoTracking()
+                .Where(a => a.UserId == userId)
+                .OrderByDescending(a => a.CreatedOn)
+                .Take(20)
+                .Select(a => new AdminUserAuditEntry(
+                    a.Action,
+                    string.IsNullOrWhiteSpace(a.ActorName) ? "System" : a.ActorName!,
+                    a.CreatedOn,
+                    a.Reason))
+                .ToListAsync(cancellationToken);
+
             return new AdminUserDetail(
                 user.Id,
                 user.Email ?? string.Empty,
@@ -212,7 +233,11 @@ namespace SD.ProjectName.WebApp.Services
                 user.LastLoginIp,
                 user.LockoutEnd,
                 user.LockoutEnabled,
-                recentLogins);
+                recentLogins,
+                user.BlockedOn,
+                user.BlockedByName,
+                user.BlockReason,
+                audits);
         }
 
         private static string NormalizeRole(string? role)
