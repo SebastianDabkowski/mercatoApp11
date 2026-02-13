@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace SD.ProjectName.Modules.Products.Domain
@@ -38,6 +39,33 @@ namespace SD.ProjectName.Modules.Products.Domain
             return await query
                 .OrderByDescending(p => p.Id)
                 .ToListAsync();
+        }
+
+        public async Task<List<ProductModel>> GetListFiltered(string sellerId, bool includeDrafts, string? search = null, string? workflowState = null, CancellationToken cancellationToken = default)
+        {
+            var query = _context.Set<ProductModel>()
+                .Where(p => p.WorkflowState != ProductWorkflowStates.Archived && p.SellerId == sellerId)
+                .AsQueryable();
+
+            if (!includeDrafts)
+            {
+                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active);
+            }
+
+            if (!string.IsNullOrWhiteSpace(workflowState))
+            {
+                query = query.Where(p => p.WorkflowState == workflowState);
+            }
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim();
+                query = query.Where(p => p.Title.Contains(term) || p.MerchantSku.Contains(term));
+            }
+
+            return await query
+                .OrderByDescending(p => p.Id)
+                .ToListAsync(cancellationToken);
         }
 
         public async Task<List<ProductModel>> GetByIds(IEnumerable<int> ids, bool includeDrafts = false)

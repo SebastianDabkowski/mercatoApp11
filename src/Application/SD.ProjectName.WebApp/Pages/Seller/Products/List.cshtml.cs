@@ -17,17 +17,31 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
         private readonly ChangeProductWorkflowState _changeWorkflowState;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly ILogger<ListModel> _logger;
+        private readonly ProductCatalogExportService _exportService;
 
-        public ListModel(GetProducts getProducts, ArchiveProduct archiveProduct, ChangeProductWorkflowState changeWorkflowState, UserManager<ApplicationUser> userManager, ILogger<ListModel> logger)
+        public ListModel(GetProducts getProducts, ArchiveProduct archiveProduct, ChangeProductWorkflowState changeWorkflowState, UserManager<ApplicationUser> userManager, ILogger<ListModel> logger, ProductCatalogExportService exportService)
         {
             _getProducts = getProducts;
             _archiveProduct = archiveProduct;
             _changeWorkflowState = changeWorkflowState;
             _userManager = userManager;
             _logger = logger;
+            _exportService = exportService;
         }
 
         public List<ProductModel> Products { get; private set; } = new();
+
+        [BindProperty(SupportsGet = true)]
+        public string? Search { get; set; }
+
+        [BindProperty(SupportsGet = true)]
+        public string? WorkflowStateFilter { get; set; }
+
+        [BindProperty]
+        public string ExportFormat { get; set; } = "csv";
+
+        [BindProperty]
+        public bool ExportFilteredOnly { get; set; }
 
         public async Task<IActionResult> OnGetAsync()
         {
@@ -37,7 +51,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Challenge();
             }
 
-            Products = await _getProducts.GetList(user.Id, includeDrafts: true);
+            var normalizedState = NormalizeWorkflowState(WorkflowStateFilter);
+            WorkflowStateFilter = normalizedState;
+            Products = await _getProducts.GetFilteredList(user.Id, includeDrafts: true, Search, normalizedState);
             return Page();
         }
 
@@ -125,6 +141,41 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
             TempData["StatusMessage"] = "Product deleted.";
             return RedirectToPage();
+        }
+
+        public async Task<IActionResult> OnPostExportAsync()
+        {
+            var user = await _userManager.GetUserAsync(User);
+            if (user == null)
+            {
+                return Challenge();
+            }
+
+            var normalizedState = NormalizeWorkflowState(WorkflowStateFilter);
+            var options = new ProductExportOptions
+            {
+                Format = ExportFormat,
+                UseFilters = ExportFilteredOnly,
+                Search = ExportFilteredOnly ? Search : null,
+                WorkflowState = ExportFilteredOnly ? normalizedState : null
+            };
+
+            await _exportService.QueueAsync(user.Id, options);
+            TempData["StatusMessage"] = "Export requested. Check export history to download once ready.";
+            return RedirectToPage(new { search = Search, workflowState = WorkflowStateFilter });
+        }
+
+        private static string? NormalizeWorkflowState(string? state)
+        {
+            if (string.IsNullOrWhiteSpace(state))
+            {
+                return null;
+            }
+
+            var normalized = state.Trim().ToLowerInvariant();
+            return ProductWorkflowStates.IsValid(normalized) && normalized != ProductWorkflowStates.Archived
+                ? normalized
+                : null;
         }
     }
 }

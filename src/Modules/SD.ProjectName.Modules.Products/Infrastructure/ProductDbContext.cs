@@ -18,6 +18,7 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
         public DbSet<ProductModel> Products { get; set; }
         public DbSet<CategoryModel> Categories { get; set; }
         public DbSet<ProductImportJob> ProductImportJobs { get; set; }
+        public DbSet<ProductExportJob> ProductExportJobs { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -67,10 +68,24 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                 entity.ToTable("ProductImportJob");
                 entity.Property(j => j.Status).HasMaxLength(64).IsRequired();
                 entity.Property(j => j.FileName).HasMaxLength(200).IsRequired();
-                entity.Property(j => j.SellerId).IsRequired();
+                entity.Property(j => j.SellerId).HasMaxLength(450).IsRequired();
                 entity.Property(j => j.Summary).HasMaxLength(4000);
                 entity.Property(j => j.ContentType).HasMaxLength(128);
                 entity.Property(j => j.TemplateVersion).HasMaxLength(32).HasDefaultValue("v1");
+                entity.HasIndex(j => new { j.SellerId, j.CreatedOn });
+            });
+
+            modelBuilder.Entity<ProductExportJob>(entity =>
+            {
+                entity.ToTable("ProductExportJob");
+                entity.Property(j => j.Status).HasMaxLength(64).IsRequired();
+                entity.Property(j => j.Format).HasMaxLength(16).IsRequired();
+                entity.Property(j => j.FileName).HasMaxLength(200).IsRequired();
+                entity.Property(j => j.SellerId).HasMaxLength(450).IsRequired();
+                entity.Property(j => j.Search).HasMaxLength(200);
+                entity.Property(j => j.WorkflowState).HasMaxLength(32);
+                entity.Property(j => j.Summary).HasMaxLength(4000);
+                entity.Property(j => j.ContentType).HasMaxLength(128);
                 entity.HasIndex(j => new { j.SellerId, j.CreatedOn });
             });
         }

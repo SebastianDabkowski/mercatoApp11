@@ -1,0 +1,70 @@
+@page
+@using SD.ProjectName.Modules.Products.Domain
+@model SD.ProjectName.WebApp.Pages.Seller.Products.ExportHistoryModel
+@{
+    ViewData["Title"] = "Export history";
+}
+
+<h1>Export history</h1>
+
+<p>
+    <a class="btn btn-outline-secondary" asp-page="List">Back to products</a>
+</p>
+
+@if (Model.Jobs.Any())
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Created</th>
+                <th>Status</th>
+                <th>Format</th>
+                <th>Products</th>
+                <th>Filters</th>
+                <th>Summary</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var job in Model.Jobs)
+            {
+                <tr>
+                    <td>@job.CreatedOn.LocalDateTime.ToString("g")</td>
+                    <td class="text-capitalize">@job.Status</td>
+                    <td>@job.Format.ToUpperInvariant()</td>
+                    <td>@job.TotalProducts</td>
+                    <td>
+                        @if (job.UseFilters)
+                        {
+                            var filters = new List<string>();
+                            if (!string.IsNullOrWhiteSpace(job.Search))
+                            {
+                                filters.Add($"Search: {job.Search}");
+                            }
+                            if (!string.IsNullOrWhiteSpace(job.WorkflowState))
+                            {
+                                filters.Add($"State: {job.WorkflowState}");
+                            }
+                            @string.Join(", ", filters)
+                        }
+                        else
+                        {
+                            @:Full catalog
+                        }
+                    </td>
+                    <td>@job.Summary</td>
+                    <td>
+                        @if (job.Status == ProductExportJobStatus.Completed && job.FileContent != null)
+                        {
+                            <a class="btn btn-sm btn-primary" asp-page-handler="Download" asp-route-id="@job.Id">Download</a>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <p>No exports yet. Start an export from the products page.</p>
+}

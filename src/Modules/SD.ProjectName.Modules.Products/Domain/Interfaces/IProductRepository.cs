@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace SD.ProjectName.Modules.Products.Domain.Interfaces
@@ -19,5 +20,7 @@ namespace SD.ProjectName.Modules.Products.Domain.Interfaces
         Task Update(ProductModel product);
 
         Task<ProductModel?> GetBySku(string sellerId, string merchantSku, bool includeDrafts = false);
+
+        Task<List<ProductModel>> GetListFiltered(string sellerId, bool includeDrafts, string? search = null, string? workflowState = null, CancellationToken cancellationToken = default);
     }
 }
