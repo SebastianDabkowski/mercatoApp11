@@ -42,6 +42,23 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
             return await LoadAsync(orderId);
         }
 
+        public async Task<IActionResult> OnGetLabelAsync(int orderId)
+        {
+            var sellerId = _userManager.GetUserId(User);
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return Challenge();
+            }
+
+            var label = await _orderService.GetShippingLabelAsync(orderId, sellerId, HttpContext.RequestAborted);
+            if (label == null)
+            {
+                return NotFound();
+            }
+
+            return File(label.Content, label.ContentType, label.FileName);
+        }
+
         public async Task<IActionResult> OnPostStatusAsync(int orderId)
         {
             var sellerId = _userManager.GetUserId(User);

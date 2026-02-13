@@ -168,6 +168,21 @@ else
                     {
                         <div class="text-muted small">Phone: @Model.Order.Address.Phone</div>
                     }
+                    @if (Model.Order.HasShippingLabel)
+                    {
+                        <hr />
+                        <div class="d-flex align-items-center gap-2">
+                            <a class="btn btn-sm btn-outline-secondary" asp-page-handler="Label" asp-route-orderId="@Model.Order.Id" target="_blank" rel="noopener">Download label</a>
+                            @if (!string.IsNullOrWhiteSpace(Model.Order.ShippingLabelFileName))
+                            {
+                                <span class="text-muted small">@Model.Order.ShippingLabelFileName</span>
+                            }
+                        </div>
+                        @if (Model.Order.ShippingLabelExpiresOn.HasValue)
+                        {
+                            <div class="text-muted small mt-1">Label expires @Model.Order.ShippingLabelExpiresOn.Value.ToLocalTime().ToString("g")</div>
+                        }
+                    }
                 </div>
             </div>
         </div>
