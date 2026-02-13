@@ -15,6 +15,7 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<ShippingAddress> ShippingAddresses => Set<ShippingAddress>();
         public DbSet<ProductReview> ProductReviews => Set<ProductReview>();
         public DbSet<SellerRating> SellerRatings => Set<SellerRating>();
+        public DbSet<ProductReviewAudit> ProductReviewAudits => Set<ProductReviewAudit>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -351,6 +352,12 @@ namespace SD.ProjectName.WebApp.Data
                     .HasMaxLength(32)
                     .IsRequired();
 
+                entity.Property(r => r.FlagReason)
+                    .HasMaxLength(512);
+
+                entity.Property(r => r.LastModeratedBy)
+                    .HasMaxLength(256);
+
                 entity.Property(r => r.CreatedOn)
                     .IsRequired();
 
@@ -361,6 +368,30 @@ namespace SD.ProjectName.WebApp.Data
                     .IsUnique();
 
                 entity.HasIndex(r => new { r.ProductId, r.Status, r.CreatedOn });
+            });
+
+            builder.Entity<ProductReviewAudit>(entity =>
+            {
+                entity.Property(a => a.Action)
+                    .HasMaxLength(64)
+                    .IsRequired();
+
+                entity.Property(a => a.Actor)
+                    .HasMaxLength(256);
+
+                entity.Property(a => a.Reason)
+                    .HasMaxLength(512);
+
+                entity.Property(a => a.FromStatus)
+                    .HasMaxLength(32);
+
+                entity.Property(a => a.ToStatus)
+                    .HasMaxLength(32);
+
+                entity.Property(a => a.CreatedOn)
+                    .IsRequired();
+
+                entity.HasIndex(a => a.ReviewId);
             });
 
             builder.Entity<SellerRating>(entity =>

@@ -1,0 +1,209 @@
+@page
+@using SD.ProjectName.WebApp.Services
+@model SD.ProjectName.WebApp.Pages.Admin.Reviews.IndexModel
+@{
+    ViewData["Title"] = "Review moderation";
+}
+
+<h1 class="display-6">Review moderation</h1>
+<p class="text-muted">Flagged or reported reviews stay hidden until an admin approves them. Use the actions below to publish, hide, or reject entries and keep an audit trail.</p>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-info">@Model.StatusMessage</div>
+}
+
+<form method="get" class="card mb-3">
+    <div class="card-body row g-3 align-items-end">
+        <div class="col-md-4">
+            <label class="form-label fw-semibold" for="query">Search</label>
+            <input id="query" class="form-control" type="search" name="Query" value="@Model.Query" placeholder="Comment, buyer name, reason" />
+        </div>
+        <div class="col-md-5">
+            <div class="fw-semibold mb-1">Statuses</div>
+            <div class="d-flex flex-wrap gap-2">
+                @foreach (var status in Model.AvailableStatuses)
+                {
+                    var normalizedId = status.Replace(" ", "-", StringComparison.OrdinalIgnoreCase);
+                    var isChecked = Model.Statuses.Any(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="status" id="status-@normalizedId" value="@status" @(isChecked ? "checked" : null) />
+                        <label class="form-check-label small" for="status-@normalizedId">@status</label>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="col-md-2">
+            <input type="hidden" name="FlaggedOnly" value="false" />
+            <div class="form-check mt-4">
+                <input class="form-check-input" type="checkbox" id="flaggedOnly" name="FlaggedOnly" value="true" @(Model.FlaggedOnly ? "checked" : null) />
+                <label class="form-check-label" for="flaggedOnly">Flagged only</label>
+            </div>
+        </div>
+        <div class="col-md-1 text-end">
+            <button class="btn btn-primary" type="submit">Apply</button>
+            <a class="btn btn-link text-decoration-none" asp-page="Index">Reset</a>
+        </div>
+    </div>
+</form>
+
+@if (Model.Reviews.TotalCount == 0)
+{
+    <div class="text-muted">No reviews match these filters.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">Review</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Flags</th>
+                    <th scope="col" class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var review in Model.Reviews.Items)
+                {
+                    Model.AuditTrail.TryGetValue(review.Id, out var audit);
+                    <tr>
+                        <td>
+                            <div class="fw-semibold">Product #@review.ProductId</div>
+                            <div class="text-muted small">Order #@review.OrderId</div>
+                            <div class="small mt-1">
+                                <span class="badge text-bg-secondary">@review.Rating/5</span>
+                                <span class="ms-2">@review.BuyerName</span>
+                                <span class="text-muted">· @review.CreatedOn.ToLocalTime().ToString("g")</span>
+                            </div>
+                            <div class="mt-2">@review.Comment</div>
+                            @if (audit != null && audit.Count > 0)
+                            {
+                                <details class="small mt-2 text-muted">
+                                    <summary>Audit log (@audit.Count)</summary>
+                                    <ul class="mb-0">
+                                        @foreach (var entry in audit)
+                                        {
+                                            <li>
+                                                <span class="fw-semibold">@entry.Action</span>
+                                                <span>by @(!string.IsNullOrWhiteSpace(entry.Actor) ? entry.Actor : "System")</span>
+                                                <span class="text-muted">@entry.CreatedOn.ToLocalTime().ToString("g")</span>
+                                                @if (!string.IsNullOrWhiteSpace(entry.Reason))
+                                                {
+                                                    <div>Reason: @entry.Reason</div>
+                                                }
+                                            </li>
+                                        }
+                                    </ul>
+                                </details>
+                            }
+                        </td>
+                        <td>
+                            <div class="badge @(review.Status == ReviewStatuses.Published ? "text-bg-success" : review.Status == ReviewStatuses.Rejected ? "text-bg-danger" : "text-bg-warning-subtle text-dark")">
+                                @review.Status
+                            </div>
+                            @if (review.LastModeratedOn.HasValue)
+                            {
+                                <div class="small text-muted">Updated @review.LastModeratedOn.Value.ToLocalTime().ToString("g")</div>
+                            }
+                        </td>
+                        <td>
+                            @if (review.IsFlagged)
+                            {
+                                <span class="badge text-bg-warning text-dark">Flagged</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(review.FlagReason))
+                            {
+                                <div class="small">@review.FlagReason</div>
+                            }
+                            else if (!review.IsFlagged)
+                            {
+                                <div class="text-muted small">No flags</div>
+                            }
+                        </td>
+                        <td class="text-end">
+                            <form method="post" asp-page-handler="Approve" class="d-inline">
+                                <input type="hidden" name="reviewId" value="@review.Id" />
+                                <input type="hidden" name="page" value="@Model.PageNumber" />
+                                <input type="hidden" name="Query" value="@Model.Query" />
+                                <input type="hidden" name="FlaggedOnly" value="@Model.FlaggedOnly" />
+                                @foreach (var status in Model.Statuses)
+                                {
+                                    <input type="hidden" name="status" value="@status" />
+                                }
+                                <button type="submit" class="btn btn-sm btn-success" title="Approve and publish">Approve</button>
+                            </form>
+                            <form method="post" asp-page-handler="Reject" class="d-inline">
+                                <input type="hidden" name="reviewId" value="@review.Id" />
+                                <input type="hidden" name="page" value="@Model.PageNumber" />
+                                <input type="hidden" name="Query" value="@Model.Query" />
+                                <input type="hidden" name="FlaggedOnly" value="@Model.FlaggedOnly" />
+                                @foreach (var status in Model.Statuses)
+                                {
+                                    <input type="hidden" name="status" value="@status" />
+                                }
+                                <button type="submit" class="btn btn-sm btn-outline-danger ms-1" title="Reject and remove">Reject</button>
+                            </form>
+                            @if (review.Status == ReviewStatuses.Published)
+                            {
+                                <form method="post" asp-page-handler="Hide" class="d-inline">
+                                    <input type="hidden" name="reviewId" value="@review.Id" />
+                                    <input type="hidden" name="page" value="@Model.PageNumber" />
+                                    <input type="hidden" name="Query" value="@Model.Query" />
+                                    <input type="hidden" name="FlaggedOnly" value="@Model.FlaggedOnly" />
+                                    @foreach (var status in Model.Statuses)
+                                    {
+                                        <input type="hidden" name="status" value="@status" />
+                                    }
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary ms-1" title="Hide without rejecting">Hide</button>
+                                </form>
+                            }
+                            else
+                            {
+                                <form method="post" asp-page-handler="Publish" class="d-inline">
+                                    <input type="hidden" name="reviewId" value="@review.Id" />
+                                    <input type="hidden" name="page" value="@Model.PageNumber" />
+                                    <input type="hidden" name="Query" value="@Model.Query" />
+                                    <input type="hidden" name="FlaggedOnly" value="@Model.FlaggedOnly" />
+                                    @foreach (var status in Model.Statuses)
+                                    {
+                                        <input type="hidden" name="status" value="@status" />
+                                    }
+                                    <button type="submit" class="btn btn-sm btn-outline-primary ms-1" title="Publish review">Publish</button>
+                                </form>
+                            }
+                            @if (!review.IsFlagged)
+                            {
+                                <form method="post" asp-page-handler="Flag" class="d-inline">
+                                    <input type="hidden" name="reviewId" value="@review.Id" />
+                                    <input type="hidden" name="page" value="@Model.PageNumber" />
+                                    <input type="hidden" name="Query" value="@Model.Query" />
+                                    <input type="hidden" name="FlaggedOnly" value="@Model.FlaggedOnly" />
+                                    @foreach (var status in Model.Statuses)
+                                    {
+                                        <input type="hidden" name="status" value="@status" />
+                                    }
+                                    <button type="submit" class="btn btn-sm btn-outline-warning text-dark ms-1" title="Hold for review">Flag</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <nav aria-label="Review moderation pagination">
+        <ul class="pagination">
+            <li class="page-item @(Model.Reviews.HasPreviousPage ? "" : "disabled")">
+                <a class="page-link" asp-page="Index" asp-route-page="@(Model.PageNumber - 1)" asp-route-Query="@Model.Query" asp-route-FlaggedOnly="@Model.FlaggedOnly" asp-route-status="@Model.Statuses">Previous</a>
+            </li>
+            <li class="page-item disabled">
+                <span class="page-link">Page @Model.Reviews.PageNumber of @Model.Reviews.TotalPages</span>
+            </li>
+            <li class="page-item @(Model.Reviews.HasNextPage ? "" : "disabled")">
+                <a class="page-link" asp-page="Index" asp-route-page="@(Model.PageNumber + 1)" asp-route-Query="@Model.Query" asp-route-FlaggedOnly="@Model.FlaggedOnly" asp-route-status="@Model.Statuses">Next</a>
+            </li>
+        </ul>
+    </nav>
+}

@@ -245,7 +245,10 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
                 return Page();
             }
 
-            StatusMessage = "Review submitted. Thank you for your feedback!";
+            var requiresModeration = result.Review != null && !ReviewStatuses.IsVisible(result.Review.Status);
+            StatusMessage = requiresModeration
+                ? "Review submitted for moderation. It will appear once approved."
+                : "Review submitted. Thank you for your feedback!";
             return RedirectToPage(new { orderId });
         }
 
