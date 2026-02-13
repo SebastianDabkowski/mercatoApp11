@@ -15,6 +15,8 @@ namespace SD.ProjectName.WebApp.Services
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
+        internal string CookieName => _options.CookieName;
+
         public CartService(CartOptions options, ILogger<CartService> logger)
         {
             _options = options;
@@ -113,7 +115,7 @@ namespace SD.ProjectName.WebApp.Services
             }
         }
 
-        private List<CartItem> NormalizeItems(IEnumerable<CartItem> items)
+        internal List<CartItem> NormalizeItems(IEnumerable<CartItem> items)
         {
             var limit = GetLimit();
             var result = new List<CartItem>();
@@ -188,7 +190,7 @@ namespace SD.ProjectName.WebApp.Services
             return Math.Min(limit, MaxAllowedItems);
         }
 
-        private static Dictionary<string, string> NormalizeAttributes(IReadOnlyDictionary<string, string>? attributes)
+        internal static Dictionary<string, string> NormalizeAttributes(IReadOnlyDictionary<string, string>? attributes)
         {
             if (attributes == null || attributes.Count == 0)
             {
@@ -211,7 +213,7 @@ namespace SD.ProjectName.WebApp.Services
             return normalized;
         }
 
-        private static bool AreSameAttributes(IReadOnlyDictionary<string, string> left, IReadOnlyDictionary<string, string> right)
+        internal static bool AreSameAttributes(IReadOnlyDictionary<string, string> left, IReadOnlyDictionary<string, string> right)
         {
             if (left.Count != right.Count)
             {

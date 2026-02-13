@@ -123,5 +123,7 @@ namespace SD.ProjectName.WebApp.Identity
         public DateTimeOffset? OnboardingStartedOn { get; set; }
 
         public DateTimeOffset? OnboardingCompletedOn { get; set; }
+
+        public string? CartData { get; set; }
     }
 }

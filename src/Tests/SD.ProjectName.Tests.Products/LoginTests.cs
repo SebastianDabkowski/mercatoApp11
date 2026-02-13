@@ -269,7 +269,8 @@ namespace SD.ProjectName.Tests.Identity
             Mock<SignInManager<ApplicationUser>> signInManager,
             Mock<IEmailSender>? emailSender = null,
             KycOptions? kycOptions = null,
-            ILoginAuditService? loginAuditService = null)
+            ILoginAuditService? loginAuditService = null,
+            IUserCartService? userCartService = null)
         {
             var httpContext = new DefaultHttpContext();
             httpContext.Request.Scheme = "https";
@@ -281,7 +282,14 @@ namespace SD.ProjectName.Tests.Identity
                 ViewData = new ViewDataDictionary(new EmptyModelMetadataProvider(), modelState)
             };
 
-            var model = new LoginModel(signInManager.Object, userManager.Object, Mock.Of<ILogger<LoginModel>>(), (emailSender ?? new Mock<IEmailSender>()).Object, Options.Create(kycOptions ?? new KycOptions()), loginAuditService ?? Mock.Of<ILoginAuditService>())
+            var model = new LoginModel(
+                signInManager.Object,
+                userManager.Object,
+                Mock.Of<ILogger<LoginModel>>(),
+                (emailSender ?? new Mock<IEmailSender>()).Object,
+                Options.Create(kycOptions ?? new KycOptions()),
+                loginAuditService ?? Mock.Of<ILoginAuditService>(),
+                userCartService ?? Mock.Of<IUserCartService>())
             {
                 PageContext = pageContext,
                 Url = new TestUrlHelper(actionContext),

@@ -24,6 +24,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
         private readonly IEmailSender _emailSender;
         private readonly IOptions<KycOptions> _kycOptions;
         private readonly ILoginAuditService _loginAuditService;
+        private readonly IUserCartService _userCartService;
 
         public LoginModel(
             SignInManager<ApplicationUser> signInManager,
@@ -31,7 +32,8 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             ILogger<LoginModel> logger,
             IEmailSender emailSender,
             IOptions<KycOptions> kycOptions,
-            ILoginAuditService loginAuditService)
+            ILoginAuditService loginAuditService,
+            IUserCartService userCartService)
         {
             _signInManager = signInManager;
             _userManager = userManager;
@@ -39,6 +41,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             _emailSender = emailSender;
             _kycOptions = kycOptions;
             _loginAuditService = loginAuditService;
+            _userCartService = userCartService;
         }
 
         [BindProperty]
@@ -124,6 +127,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 {
                     _logger.LogInformation("User logged in.");
                     await LogAuditAsync(user.Id, user.Email, LoginEventTypes.PasswordSuccess, true);
+                    await _userCartService.MergeOnSignInAsync(HttpContext, user, HttpContext.RequestAborted);
                     var redirectUrl = ResolveRedirectUrl(returnUrl, user);
                     return LocalRedirect(redirectUrl);
                 }

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using SD.ProjectName.WebApp.Identity;
+using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
 {
@@ -15,15 +16,18 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly ILogger<ExternalLoginModel> _logger;
+        private readonly IUserCartService _userCartService;
 
         public ExternalLoginModel(
             SignInManager<ApplicationUser> signInManager,
             UserManager<ApplicationUser> userManager,
-            ILogger<ExternalLoginModel> logger)
+            ILogger<ExternalLoginModel> logger,
+            IUserCartService userCartService)
         {
             _signInManager = signInManager;
             _userManager = userManager;
             _logger = logger;
+            _userCartService = userCartService;
         }
 
         [TempData]
@@ -68,6 +72,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 await EnsureVerifiedAsync(existingLoginUser);
                 await _signInManager.SignInAsync(existingLoginUser, isPersistent: false, info.LoginProvider);
                 await _signInManager.UpdateExternalAuthenticationTokensAsync(info);
+                await _userCartService.MergeOnSignInAsync(HttpContext, existingLoginUser, HttpContext.RequestAborted);
                 _logger.LogInformation("User {UserId} signed in with {Provider}.", existingLoginUser.Id, info.LoginProvider);
                 return LocalRedirect(ResolveRedirectUrl(ReturnUrl, existingLoginUser.AccountType));
             }
@@ -125,6 +130,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
 
             await _signInManager.SignInAsync(user, isPersistent: false, info.LoginProvider);
             await _signInManager.UpdateExternalAuthenticationTokensAsync(info);
+            await _userCartService.MergeOnSignInAsync(HttpContext, user, HttpContext.RequestAborted);
             _logger.LogInformation("User {UserId} created/logged in using {Provider}.", user.Id, info.LoginProvider);
             return LocalRedirect(ResolveRedirectUrl(ReturnUrl, user.AccountType));
         }
