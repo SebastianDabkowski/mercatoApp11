@@ -21,14 +21,22 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
         private readonly ManageCategories _categories;
         private readonly IProductRepository _productRepository;
         private readonly ProductImageService _productImageService;
+        private readonly ProductPhotoModerationService _photoModerationService;
 
-        public AddModel(CreateProduct createProduct, UserManager<ApplicationUser> userManager, ManageCategories categories, IProductRepository productRepository, ProductImageService productImageService)
+        public AddModel(
+            CreateProduct createProduct,
+            UserManager<ApplicationUser> userManager,
+            ManageCategories categories,
+            IProductRepository productRepository,
+            ProductImageService productImageService,
+            ProductPhotoModerationService photoModerationService)
         {
             _createProduct = createProduct;
             _userManager = userManager;
             _categories = categories;
             _productRepository = productRepository;
             _productImageService = productImageService;
+            _photoModerationService = photoModerationService;
         }
 
         [BindProperty]
@@ -129,6 +137,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             Input.GalleryImageUrls = galleryImages;
 
             await _createProduct.CreateAsync(product);
+            await _photoModerationService.SyncFromProductAsync(product, HttpContext.RequestAborted);
 
             TempData["StatusMessage"] = "Product saved as draft.";
             return RedirectToPage("List");

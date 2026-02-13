@@ -164,6 +164,7 @@ builder.Services.AddScoped<IAnalyticsTracker, AnalyticsTracker>();
 builder.Services.AddSingleton<PaymentProviderService>();
 builder.Services.AddSingleton<ShippingProviderService>();
 builder.Services.AddScoped<ProductModerationService>();
+builder.Services.AddScoped<ProductPhotoModerationService>();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {
