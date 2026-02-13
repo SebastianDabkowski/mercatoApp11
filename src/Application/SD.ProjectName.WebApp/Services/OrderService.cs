@@ -27,7 +27,7 @@ namespace SD.ProjectName.WebApp.Services
             [Preparing] = new HashSet<string>(new[] { Shipped, Cancelled, Refunded }, StringComparer.OrdinalIgnoreCase),
             [Shipped] = new HashSet<string>(new[] { Delivered, Refunded }, StringComparer.OrdinalIgnoreCase),
             [Delivered] = new HashSet<string>(new[] { Refunded }, StringComparer.OrdinalIgnoreCase),
-            [Cancelled] = new HashSet<string>(Array.Empty<string>(), StringComparer.OrdinalIgnoreCase),
+            [Cancelled] = new HashSet<string>(new[] { Refunded }, StringComparer.OrdinalIgnoreCase),
             [Refunded] = new HashSet<string>(Array.Empty<string>(), StringComparer.OrdinalIgnoreCase)
         };
 
@@ -157,7 +157,7 @@ namespace SD.ProjectName.WebApp.Services
         public string DetailsJson { get; set; } = string.Empty;
     }
 
-    public record OrderItemDetail(int ProductId, string Name, string Variant, int Quantity, decimal UnitPrice, decimal LineTotal, string SellerId, string SellerName);
+    public record OrderItemDetail(int ProductId, string Name, string Variant, int Quantity, decimal UnitPrice, decimal LineTotal, string SellerId, string SellerName, string Status = OrderStatuses.Paid);
 
     public record OrderShippingDetail(string SellerId, string SellerName, string MethodId, string MethodLabel, decimal Cost, string? Description);
 
@@ -787,6 +787,7 @@ namespace SD.ProjectName.WebApp.Services
             string? trackingNumber = null,
             decimal? refundedAmount = null,
             string? trackingCarrier = null,
+            IEnumerable<int>? itemProductIds = null,
             CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(sellerId))
@@ -816,21 +817,64 @@ namespace SD.ProjectName.WebApp.Services
                 return new SubOrderStatusUpdateResult(false, "Status is required.");
             }
 
-            if (!OrderStatuses.CanTransition(subOrder.Status, normalizedStatus))
+            var targetItems = itemProductIds?
+                .Where(id => id > 0)
+                .Distinct()
+                .ToHashSet() ?? new HashSet<int>();
+
+            if (targetItems.Count == 0 && !OrderStatuses.CanTransition(subOrder.Status, normalizedStatus))
             {
                 return new SubOrderStatusUpdateResult(false, $"Cannot change status from {subOrder.Status} to {normalizedStatus}.");
             }
 
+            var updatedItems = new List<OrderItemDetail>();
+            var matchedCount = 0;
+            foreach (var item in subOrder.Items)
+            {
+                var applyUpdate = targetItems.Count == 0 || targetItems.Contains(item.ProductId);
+                if (!applyUpdate)
+                {
+                    updatedItems.Add(item);
+                    continue;
+                }
+
+                matchedCount++;
+                var currentItemStatus = OrderStatuses.Normalize(item.Status);
+                if (!OrderStatuses.CanTransition(currentItemStatus, normalizedStatus))
+                {
+                    return new SubOrderStatusUpdateResult(false, $"Cannot change status for {item.Name} from {currentItemStatus} to {normalizedStatus}.");
+                }
+
+                updatedItems.Add(item with { Status = normalizedStatus });
+            }
+
+            if (targetItems.Count > 0 && matchedCount == 0)
+            {
+                return new SubOrderStatusUpdateResult(false, "Selected items were not found in this sub-order.");
+            }
+
             var now = DateTimeOffset.UtcNow;
+            var updatedStatus = CalculateSubOrderStatusFromItems(updatedItems, normalizedStatus);
+            var computedRefund = subOrder.RefundedAmount;
+
+            if (string.Equals(normalizedStatus, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase))
+            {
+                var automaticRefund = CalculateRefundAmountForCancelledItems(updatedItems, subOrder.DiscountTotal, subOrder.Shipping, targetItems);
+                computedRefund = Math.Max(0, refundedAmount ?? automaticRefund);
+            }
+            else if (refundedAmount.HasValue)
+            {
+                computedRefund = Math.Max(0, refundedAmount.Value);
+            }
+
             var updatedSubOrder = subOrder with
             {
-                Status = normalizedStatus,
+                Items = updatedItems,
+                Status = updatedStatus,
                 TrackingNumber = string.IsNullOrWhiteSpace(trackingNumber) ? subOrder.TrackingNumber : trackingNumber.Trim(),
                 TrackingCarrier = string.IsNullOrWhiteSpace(trackingCarrier) ? subOrder.TrackingCarrier : trackingCarrier.Trim(),
-                RefundedAmount = string.Equals(normalizedStatus, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase)
-                    ? Math.Max(0, refundedAmount ?? subOrder.GrandTotal)
-                    : subOrder.RefundedAmount,
-                DeliveredOn = string.Equals(normalizedStatus, OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase)
+                RefundedAmount = computedRefund,
+                DeliveredOn = string.Equals(updatedStatus, OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase)
                     ? subOrder.DeliveredOn ?? now
                     : subOrder.DeliveredOn
             };
@@ -975,6 +1019,34 @@ namespace SD.ProjectName.WebApp.Services
             return deliveredOn.Add(ReturnPolicies.ReturnWindow) >= DateTimeOffset.UtcNow;
         }
 
+        private static decimal CalculateRefundAmountForCancelledItems(
+            List<OrderItemDetail> items,
+            decimal discountTotal,
+            decimal shipping,
+            HashSet<int> targetProducts)
+        {
+            var eligible = items
+                .Where(i => (targetProducts.Count == 0 || targetProducts.Contains(i.ProductId))
+                    && (string.Equals(i.Status, OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(i.Status, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+            if (eligible.Count == 0)
+            {
+                return 0;
+            }
+
+            var cancelledTotal = eligible.Sum(i => i.LineTotal);
+            var totalLines = Math.Max(0, items.Sum(i => i.LineTotal));
+            var normalizedDiscount = Math.Max(0, discountTotal);
+            var discountShare = totalLines <= 0
+                ? 0
+                : Math.Min(cancelledTotal, normalizedDiscount * (cancelledTotal / totalLines));
+            var shippingShare = eligible.Count == items.Count ? shipping : 0;
+            var refund = Math.Max(0, cancelledTotal + shippingShare - discountShare);
+            return Math.Round(refund, 2, MidpointRounding.AwayFromZero);
+        }
+
         private async Task SendConfirmationEmailAsync(OrderRecord order, DeliveryAddress address, OrderDetailsPayload details, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(order.BuyerEmail))
@@ -1066,7 +1138,9 @@ namespace SD.ProjectName.WebApp.Services
 
         private static OrderDetailsPayload NormalizeDetails(OrderDetailsPayload details)
         {
-            var normalizedItems = details.Items ?? new List<OrderItemDetail>();
+            var normalizedItems = (details.Items ?? new List<OrderItemDetail>())
+                .Select(i => NormalizeItem(i, OrderStatuses.Paid))
+                .ToList();
             var normalizedShipping = details.Shipping ?? new List<OrderShippingDetail>();
             var normalizedSubOrders = (details.SubOrders ?? new List<OrderSubOrder>())
                 .Select(NormalizeSubOrder)
@@ -1082,24 +1156,104 @@ namespace SD.ProjectName.WebApp.Services
 
         private static OrderSubOrder NormalizeSubOrder(OrderSubOrder subOrder)
         {
-            var items = subOrder.Items ?? new List<OrderItemDetail>();
             var status = OrderStatuses.Normalize(subOrder.Status);
+            var normalizedItems = (subOrder.Items ?? new List<OrderItemDetail>())
+                .Select(i => NormalizeItem(i, status))
+                .ToList();
+            var derivedStatus = CalculateSubOrderStatusFromItems(normalizedItems, status);
             var tracking = string.IsNullOrWhiteSpace(subOrder.TrackingNumber) ? null : subOrder.TrackingNumber.Trim();
             var carrier = string.IsNullOrWhiteSpace(subOrder.TrackingCarrier) ? null : subOrder.TrackingCarrier.Trim();
             var refunded = Math.Max(0, subOrder.RefundedAmount);
             var deliveredOn = subOrder.DeliveredOn == DateTimeOffset.MinValue ? null : subOrder.DeliveredOn;
-            var normalizedReturn = NormalizeReturnRequest(subOrder.Return, items);
+            var normalizedReturn = NormalizeReturnRequest(subOrder.Return, normalizedItems);
 
             return subOrder with
             {
-                Items = items,
-                Status = string.IsNullOrWhiteSpace(status) ? OrderStatuses.Paid : status,
+                Items = normalizedItems,
+                Status = string.IsNullOrWhiteSpace(derivedStatus) ? OrderStatuses.Paid : derivedStatus,
                 TrackingNumber = tracking,
                 TrackingCarrier = carrier,
                 RefundedAmount = refunded,
                 DeliveredOn = deliveredOn,
                 Return = normalizedReturn
             };
+        }
+
+        private static OrderItemDetail NormalizeItem(OrderItemDetail item, string fallbackStatus)
+        {
+            var normalizedStatus = OrderStatuses.Normalize(item.Status);
+            if (string.IsNullOrWhiteSpace(normalizedStatus))
+            {
+                normalizedStatus = OrderStatuses.Normalize(fallbackStatus);
+            }
+
+            return item with { Status = string.IsNullOrWhiteSpace(normalizedStatus) ? OrderStatuses.Paid : normalizedStatus };
+        }
+
+        private static string CalculateSubOrderStatusFromItems(List<OrderItemDetail> items, string fallbackStatus)
+        {
+            var normalizedFallback = string.IsNullOrWhiteSpace(fallbackStatus) ? OrderStatuses.Paid : OrderStatuses.Normalize(fallbackStatus);
+            var statuses = items
+                .Select(i => OrderStatuses.Normalize(i.Status))
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToList();
+
+            if (statuses.Count == 0)
+            {
+                return normalizedFallback;
+            }
+
+            if (statuses.All(s => string.Equals(s, OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Cancelled;
+            }
+
+            if (statuses.All(s => string.Equals(s, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Refunded;
+            }
+
+            if (statuses.All(s => string.Equals(s, OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Delivered;
+            }
+
+            if (statuses.All(s => string.Equals(s, OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(s, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase)))
+            {
+                return statuses.Any(s => string.Equals(s, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase))
+                    ? OrderStatuses.Refunded
+                    : OrderStatuses.Cancelled;
+            }
+
+            if (statuses.All(s => string.Equals(s, OrderStatuses.Shipped, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(s, OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Shipped;
+            }
+
+            if (statuses.Any(s => string.Equals(s, OrderStatuses.Shipped, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(s, OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Shipped;
+            }
+
+            if (statuses.Any(s => string.Equals(s, OrderStatuses.Preparing, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Preparing;
+            }
+
+            if (statuses.Any(s => string.Equals(s, OrderStatuses.New, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.New;
+            }
+
+            if (statuses.Any(s => string.Equals(s, OrderStatuses.Paid, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Paid;
+            }
+
+            return normalizedFallback;
         }
 
         private static ReturnRequest? NormalizeReturnRequest(ReturnRequest? request, List<OrderItemDetail> items)
