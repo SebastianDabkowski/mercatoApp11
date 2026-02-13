@@ -185,6 +185,78 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal(56.5m, summary.Settlement.SellerPayoutTotal);
         }
 
+        [Fact]
+        public async Task BuildAsync_ShouldApplySellerAndCategoryCommissionOverrides()
+        {
+            var cartOptions = new CartOptions
+            {
+                CookieName = ".Test.Cart",
+                MaxItems = 10,
+                CookieLifespanDays = 7,
+                DefaultShippingBase = 0,
+                DefaultShippingPerItem = 0,
+                PlatformCommissionRate = 0.1m,
+                CommissionPrecision = 4,
+                CategoryCommissionRates = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["electronics"] = 0.05m
+                },
+                SellerCommissionOverrides = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["seller-2"] = 0.2m
+                }
+            };
+
+            var cartService = new CartService(cartOptions, Mock.Of<ILogger<CartService>>());
+            var productOne = new ProductModel
+            {
+                Id = 1,
+                SellerId = "seller-1",
+                Title = "Laptop",
+                MerchantSku = "SKU-LAP",
+                Price = 100,
+                Stock = 2,
+                Category = "Electronics",
+                WorkflowState = ProductWorkflowStates.Active
+            };
+            var productTwo = new ProductModel
+            {
+                Id = 2,
+                SellerId = "seller-2",
+                Title = "Book",
+                MerchantSku = "SKU-BOOK",
+                Price = 50,
+                Stock = 3,
+                Category = "Books",
+                WorkflowState = ProductWorkflowStates.Active
+            };
+
+            var httpContext = BuildContextWithCart(cartService, cartOptions.CookieName, new List<CartItem>
+            {
+                new() { ProductId = productOne.Id, SellerId = productOne.SellerId, Quantity = 1, VariantAttributes = new Dictionary<string, string>() },
+                new() { ProductId = productTwo.Id, SellerId = productTwo.SellerId, Quantity = 1, VariantAttributes = new Dictionary<string, string>() }
+            });
+
+            var service = CreateService(cartService, cartOptions, productOne, productTwo);
+
+            var summary = await service.BuildAsync(httpContext);
+
+            Assert.Equal(150, summary.ItemsSubtotal);
+            Assert.Equal(0, summary.ShippingTotal);
+            Assert.Equal(150, summary.GrandTotal);
+
+            var sellerOne = Assert.Single(summary.Settlement.Sellers, s => s.SellerId == "seller-1");
+            Assert.Equal(5, sellerOne.Commission);
+            Assert.Equal(95, sellerOne.Payout);
+
+            var sellerTwo = Assert.Single(summary.Settlement.Sellers, s => s.SellerId == "seller-2");
+            Assert.Equal(10, sellerTwo.Commission);
+            Assert.Equal(40, sellerTwo.Payout);
+
+            Assert.Equal(15, summary.Settlement.PlatformCommissionTotal);
+            Assert.Equal(135, summary.Settlement.SellerPayoutTotal);
+        }
+
         private static CartViewService CreateService(CartService cartService, CartOptions options, params ProductModel[] products)
         {
             var repo = new Mock<IProductRepository>();
