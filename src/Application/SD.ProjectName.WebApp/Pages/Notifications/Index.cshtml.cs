@@ -14,6 +14,8 @@ namespace SD.ProjectName.WebApp.Pages.Notifications
         private readonly NotificationService _notificationService;
         private readonly UserManager<ApplicationUser> _userManager;
         private const int DefaultPageSize = 8;
+        private readonly PushNotificationOptions _pushOptions;
+        private readonly PushSubscriptionStore _subscriptionStore;
 
         public PagedResult<NotificationItem> Notifications { get; private set; } = new()
         {
@@ -25,16 +27,28 @@ namespace SD.ProjectName.WebApp.Pages.Notifications
 
         public int UnreadCount { get; private set; }
 
+        public bool PushNotificationsEnabled { get; private set; }
+
+        public bool HasPushSubscription { get; private set; }
+
+        public string PushPublicKey { get; private set; } = string.Empty;
+
         [BindProperty(SupportsGet = true, Name = "filter")]
         public string Filter { get; set; } = NotificationFilterOptions.Unread;
 
         [BindProperty(SupportsGet = true, Name = "page")]
         public int PageNumber { get; set; } = 1;
 
-        public IndexModel(NotificationService notificationService, UserManager<ApplicationUser> userManager)
+        public IndexModel(
+            NotificationService notificationService,
+            UserManager<ApplicationUser> userManager,
+            PushNotificationOptions pushOptions,
+            PushSubscriptionStore subscriptionStore)
         {
             _notificationService = notificationService;
             _userManager = userManager;
+            _pushOptions = pushOptions;
+            _subscriptionStore = subscriptionStore;
         }
 
         public async Task<IActionResult> OnGetAsync()
@@ -57,6 +71,9 @@ namespace SD.ProjectName.WebApp.Pages.Notifications
 
             Notifications = result.Items;
             UnreadCount = result.UnreadCount;
+            PushNotificationsEnabled = _pushOptions.Enabled;
+            PushPublicKey = _pushOptions.PublicKey ?? string.Empty;
+            HasPushSubscription = _subscriptionStore.HasAny(user.Id);
             return Page();
         }
 

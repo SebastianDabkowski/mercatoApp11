@@ -10,6 +10,45 @@
     <span class="badge bg-primary">@Model.UnreadCount unread</span>
 </div>
 
+<div class="card mb-4" data-push-settings data-api-url="@Url.Page("/Api/Notifications/Push")" data-public-key="@Model.PushPublicKey" data-subscribed="@Model.HasPushSubscription" data-enabled="@Model.PushNotificationsEnabled">
+    <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-3">
+        <div>
+            <div class="fw-semibold">Push notifications</div>
+            <div class="text-muted small mb-0">
+                @if (Model.PushNotificationsEnabled)
+                {
+                    <text>Enable browser push to get alerts even when Mercato is closed.</text>
+                }
+                else
+                {
+                    <text>Push notifications are disabled by the administrator.</text>
+                }
+            </div>
+        </div>
+        @if (Model.PushNotificationsEnabled)
+        {
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-primary" data-push-enable @(Model.HasPushSubscription ? "disabled" : string.Empty)>Enable</button>
+                <button type="button" class="btn btn-outline-secondary" data-push-disable @(Model.HasPushSubscription ? string.Empty : "disabled")>Disable</button>
+            </div>
+        }
+        else
+        {
+            <span class="badge bg-secondary">Disabled</span>
+        }
+    </div>
+    <div class="border-top px-3 py-2 small text-muted" data-push-status>
+        @if (Model.PushNotificationsEnabled)
+        {
+            <text>@(Model.HasPushSubscription ? "Push notifications are on." : "Push notifications are off. Enable to stay updated.")</text>
+        }
+        else
+        {
+            <text>Push is turned off in settings.</text>
+        }
+    </div>
+</div>
+
 <div class="btn-group mb-4" role="group" aria-label="Filter notifications">
     <a class="btn btn-outline-secondary @(Model.Filter == NotificationFilterOptions.All ? "active" : string.Empty)"
        asp-page="./Index"
