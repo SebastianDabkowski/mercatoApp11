@@ -1064,6 +1064,7 @@ namespace SD.ProjectName.WebApp.Services
         private readonly ShippingProviderService _shippingProviderService;
         private readonly EmailOptions _emailOptions;
         private readonly NotificationService? _notificationService;
+        private readonly IAnalyticsTracker? _analyticsTracker;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -1089,7 +1090,8 @@ namespace SD.ProjectName.WebApp.Services
             ShippingProviderService? shippingProviderService = null,
             CaseSlaOptions? caseSlaOptions = null,
             EmailOptions? emailOptions = null,
-            NotificationService? notificationService = null)
+            NotificationService? notificationService = null,
+            IAnalyticsTracker? analyticsTracker = null)
         {
             _dbContext = dbContext;
             _emailSender = emailSender;
@@ -1104,6 +1106,7 @@ namespace SD.ProjectName.WebApp.Services
             _shippingProviderService = shippingProviderService ?? new ShippingProviderService(new ShippingProviderOptions(), TimeProvider.System, NullLogger<ShippingProviderService>.Instance);
             _emailOptions = emailOptions ?? new EmailOptions();
             _notificationService = notificationService;
+            _analyticsTracker = analyticsTracker;
         }
 
         public async Task<OrderCreationResult> EnsureOrderAsync(
@@ -1197,6 +1200,7 @@ namespace SD.ProjectName.WebApp.Services
             if (string.Equals(details.PaymentStatus, PaymentStatuses.Paid, StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(order.Status, OrderStatuses.Failed, StringComparison.OrdinalIgnoreCase))
             {
+                await TrackOrderCompletedAsync(order, details, cancellationToken);
                 await SendConfirmationEmailAsync(order, address, details, cancellationToken);
                 foreach (var subOrder in details.SubOrders)
                 {
@@ -1205,6 +1209,28 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             return new OrderCreationResult(order, true);
+        }
+
+        private Task TrackOrderCompletedAsync(OrderRecord order, OrderDetailsPayload details, CancellationToken cancellationToken)
+        {
+            if (_analyticsTracker == null)
+            {
+                return Task.CompletedTask;
+            }
+
+            return _analyticsTracker.TrackAsync(
+                new AnalyticsEventEntry(
+                    AnalyticsEventTypes.OrderCompleted,
+                    UserId: string.IsNullOrWhiteSpace(order.BuyerId) ? null : order.BuyerId,
+                    OrderId: order.Id,
+                    Amount: order.GrandTotal,
+                    Metadata: new Dictionary<string, string?>
+                    {
+                        ["orderNumber"] = order.OrderNumber,
+                        ["paymentReference"] = order.PaymentReference,
+                        ["paymentStatus"] = details.PaymentStatus
+                    }),
+                cancellationToken);
         }
 
         private async Task<OrderRecord> UpdateOrderPaymentAsync(

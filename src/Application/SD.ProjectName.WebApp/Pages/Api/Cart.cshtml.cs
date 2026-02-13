@@ -13,13 +13,15 @@ namespace SD.ProjectName.WebApp.Pages.Api
         private readonly CartService _cartService;
         private readonly CartViewService _cartViewService;
         private readonly IUserCartService _userCartService;
+        private readonly IAnalyticsTracker? _analyticsTracker;
 
-        public CartModel(GetProducts getProducts, CartService cartService, CartViewService cartViewService, IUserCartService userCartService)
+        public CartModel(GetProducts getProducts, CartService cartService, CartViewService cartViewService, IUserCartService userCartService, IAnalyticsTracker? analyticsTracker = null)
         {
             _getProducts = getProducts;
             _cartService = cartService;
             _cartViewService = cartViewService;
             _userCartService = userCartService;
+            _analyticsTracker = analyticsTracker;
         }
 
         public async Task<IActionResult> OnPostAddAsync([FromBody] AddToCartRequest request)
@@ -91,6 +93,18 @@ namespace SD.ProjectName.WebApp.Pages.Api
                     : "Quantity updated.";
 
             await _userCartService.PersistAuthenticatedCartAsync(HttpContext, HttpContext.RequestAborted);
+            if (_analyticsTracker != null)
+            {
+                await _analyticsTracker.TrackAsync(
+                    new AnalyticsEventEntry(
+                        AnalyticsEventTypes.AddToCart,
+                        ProductId: product.Id,
+                        SellerId: product.SellerId,
+                        Quantity: allowedQuantity,
+                        Metadata: attributes.ToDictionary(k => k.Key, v => (string?)v.Value, StringComparer.OrdinalIgnoreCase)),
+                    HttpContext.RequestAborted);
+            }
+
             return new JsonResult(new AddToCartResponse(true, message, result.Quantity, result.Status.ToString().ToLowerInvariant()));
         }
 

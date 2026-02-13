@@ -21,14 +21,16 @@ namespace SD.ProjectName.WebApp.Pages.Products
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly OrderService _orderService;
         private readonly ILogger<DetailsModel> _logger;
+        private readonly IAnalyticsTracker? _analyticsTracker;
 
-        public DetailsModel(GetProducts getProducts, RecentlyViewedService recentlyViewed, UserManager<ApplicationUser> userManager, OrderService orderService, ILogger<DetailsModel> logger)
+        public DetailsModel(GetProducts getProducts, RecentlyViewedService recentlyViewed, UserManager<ApplicationUser> userManager, OrderService orderService, ILogger<DetailsModel> logger, IAnalyticsTracker? analyticsTracker = null)
         {
             _getProducts = getProducts;
             _recentlyViewed = recentlyViewed;
             _userManager = userManager;
             _orderService = orderService;
             _logger = logger;
+            _analyticsTracker = analyticsTracker;
         }
 
         public ProductModel? Product { get; private set; }
@@ -77,6 +79,16 @@ namespace SD.ProjectName.WebApp.Pages.Products
             PageNumber = reviewsPage.PageNumber;
             TotalPages = Math.Max(1, (int)Math.Ceiling(reviewsPage.TotalCount / (double)reviewsPage.PageSize));
             Questions = await _orderService.GetProductQuestionsAsync(Product.Id, HttpContext.RequestAborted);
+
+            if (_analyticsTracker != null)
+            {
+                await _analyticsTracker.TrackAsync(
+                    new AnalyticsEventEntry(
+                        AnalyticsEventTypes.ProductView,
+                        ProductId: Product.Id,
+                        SellerId: Product.SellerId),
+                    HttpContext.RequestAborted);
+            }
 
             return Page();
         }

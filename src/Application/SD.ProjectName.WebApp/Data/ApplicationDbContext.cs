@@ -19,6 +19,7 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<ProductReviewAudit> ProductReviewAudits => Set<ProductReviewAudit>();
         public DbSet<ProductReviewReport> ProductReviewReports => Set<ProductReviewReport>();
         public DbSet<ProductQuestion> ProductQuestions => Set<ProductQuestion>();
+        public DbSet<AnalyticsEvent> AnalyticsEvents => Set<AnalyticsEvent>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -490,6 +491,35 @@ namespace SD.ProjectName.WebApp.Data
 
                 entity.HasIndex(r => r.SellerId)
                     .IsUnique();
+            });
+
+            builder.Entity<AnalyticsEvent>(entity =>
+            {
+                entity.Property(e => e.EventType)
+                    .HasMaxLength(64)
+                    .IsRequired();
+
+                entity.Property(e => e.SessionId)
+                    .HasMaxLength(64);
+
+                entity.Property(e => e.UserId)
+                    .HasMaxLength(450);
+
+                entity.Property(e => e.SellerId)
+                    .HasMaxLength(450);
+
+                entity.Property(e => e.Keyword)
+                    .HasMaxLength(256);
+
+                entity.Property(e => e.MetadataJson)
+                    .HasColumnType("nvarchar(max)");
+
+                entity.Property(e => e.OccurredOn)
+                    .IsRequired();
+
+                entity.HasIndex(e => e.EventType);
+                entity.HasIndex(e => e.OccurredOn);
+                entity.HasIndex(e => new { e.EventType, e.OccurredOn });
             });
         }
     }
