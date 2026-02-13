@@ -4751,7 +4751,9 @@ namespace SD.ProjectName.WebApp.Services
                 }
 
                 var allocations = details.Escrow ?? new List<EscrowAllocation>();
-                var allocation = ResolveAllocationForSubOrder(allocations, subOrder);
+                var allocation = allocations.FirstOrDefault(e =>
+                    string.Equals(e.SubOrderNumber, subOrder.SubOrderNumber, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(e.SellerId, normalizedSeller, StringComparison.OrdinalIgnoreCase));
                 var payoutOn = allocation == null ? order.CreatedOn : ResolvePayoutDate(allocation, order.CreatedOn);
                 if (payoutOn < start || payoutOn >= endExclusive)
                 {
@@ -4853,7 +4855,9 @@ namespace SD.ProjectName.WebApp.Services
                         continue;
                     }
 
-                    var allocation = ResolveAllocationForSubOrder(allocations, subOrder);
+                    var allocation = allocations.FirstOrDefault(e =>
+                        string.Equals(e.SubOrderNumber, subOrder.SubOrderNumber, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(e.SellerId, subOrder.SellerId, StringComparison.OrdinalIgnoreCase));
                     var payoutOn = allocation == null ? order.CreatedOn : ResolvePayoutDate(allocation, order.CreatedOn);
                     if (payoutOn < startInclusive || payoutOn >= endExclusive)
                     {
