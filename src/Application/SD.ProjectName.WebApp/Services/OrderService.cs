@@ -944,6 +944,36 @@ namespace SD.ProjectName.WebApp.Services
 
     public record SellerOrderExportResult(byte[] Content, int RowCount, int TotalMatching, bool Truncated);
 
+    public record SellerOrderReportFilterOptions
+    {
+        public DateTimeOffset? FromDate { get; init; }
+
+        public DateTimeOffset? ToDate { get; init; }
+
+        public List<string> Statuses { get; init; } = new();
+    }
+
+    public record SellerOrderReportRow(
+        string OrderNumber,
+        string SubOrderNumber,
+        DateTimeOffset CreatedOn,
+        string Status,
+        string PaymentStatus,
+        decimal OrderValue,
+        decimal Commission,
+        decimal NetAmount);
+
+    public record SellerOrderReportResult(
+        IReadOnlyList<SellerOrderReportRow> Rows,
+        decimal TotalOrderValue,
+        decimal TotalCommission,
+        decimal TotalNet,
+        int TotalCount,
+        int PageNumber,
+        int TotalPages);
+
+    public record SellerOrderReportExportResult(byte[] Content, int RowCount, int TotalMatching, bool Truncated);
+
     public static class InvoiceStatuses
     {
         public const string Issued = "Issued";
@@ -1028,7 +1058,13 @@ namespace SD.ProjectName.WebApp.Services
         };
         private static readonly string[] ReviewFlagKeywords = new[] { "fraud", "scam", "abuse", "spam", "fake" };
 
-        private record SellerOrderMatch(OrderRecord Order, OrderSubOrder SubOrder, DeliveryAddress Address, string Status);
+        private record SellerOrderMatch(
+            OrderRecord Order,
+            OrderSubOrder SubOrder,
+            DeliveryAddress Address,
+            string Status,
+            string PaymentStatus,
+            EscrowAllocation? Allocation);
 
         public OrderService(
             ApplicationDbContext dbContext,
@@ -4024,6 +4060,7 @@ namespace SD.ProjectName.WebApp.Services
             foreach (var order in candidates)
             {
                 var details = DeserializeDetails(order.DetailsJson);
+                var paymentStatus = PaymentStatuses.Normalize(details.PaymentStatus);
                 var subOrder = details.SubOrders.FirstOrDefault(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
                 if (subOrder == null)
                 {
@@ -4052,7 +4089,8 @@ namespace SD.ProjectName.WebApp.Services
                 }
 
                 var address = DeserializeAddress(order.DeliveryAddressJson);
-                matches.Add(new SellerOrderMatch(order, subOrder, address, normalizedStatus));
+                var allocation = ResolveAllocationForSubOrder(details.Escrow ?? new List<EscrowAllocation>(), subOrder);
+                matches.Add(new SellerOrderMatch(order, subOrder, address, normalizedStatus, paymentStatus, allocation));
             }
 
             return matches;
@@ -4155,6 +4193,172 @@ namespace SD.ProjectName.WebApp.Services
 
             return new SellerOrderExportResult(Encoding.UTF8.GetBytes(builder.ToString()), ordered.Count, totalMatches, truncated);
         }
+
+        public async Task<SellerOrderReportResult> GetSellerOrderReportAsync(
+            string sellerId,
+            SellerOrderReportFilterOptions? filters = null,
+            int pageNumber = 1,
+            int pageSize = 50,
+            CancellationToken cancellationToken = default)
+        {
+            var normalizedSeller = sellerId?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedSeller))
+            {
+                return new SellerOrderReportResult(Array.Empty<SellerOrderReportRow>(), 0, 0, 0, 0, 1, 0);
+            }
+
+            var normalizedFilters = NormalizeFilters(filters);
+            pageNumber = Math.Max(1, pageNumber);
+            pageSize = Math.Clamp(pageSize, 1, 200);
+
+            var matches = await GetSellerOrderMatchesAsync(
+                normalizedSeller,
+                new SellerOrderFilterOptions
+                {
+                    FromDate = normalizedFilters.FromDate,
+                    ToDate = normalizedFilters.ToDate,
+                    Statuses = normalizedFilters.Statuses
+                },
+                cancellationToken);
+
+            var rows = BuildSellerOrderReportRows(matches);
+            var totalCount = rows.Count;
+            var totalPages = pageSize <= 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pageSize);
+            if (totalPages == 0)
+            {
+                pageNumber = 1;
+            }
+            else if (pageNumber > totalPages)
+            {
+                pageNumber = totalPages;
+            }
+
+            var pagedRows = rows
+                .OrderByDescending(r => r.CreatedOn)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+
+            return new SellerOrderReportResult(
+                pagedRows,
+                RoundAmount(rows.Sum(r => r.OrderValue)),
+                RoundAmount(rows.Sum(r => r.Commission)),
+                RoundAmount(rows.Sum(r => r.NetAmount)),
+                totalCount,
+                pageNumber,
+                totalPages);
+        }
+
+        public async Task<SellerOrderReportExportResult?> ExportSellerOrderReportAsync(
+            string sellerId,
+            SellerOrderReportFilterOptions? filters = null,
+            CancellationToken cancellationToken = default)
+        {
+            var normalizedSeller = sellerId?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedSeller))
+            {
+                return null;
+            }
+
+            var normalizedFilters = NormalizeFilters(filters);
+            var matches = await GetSellerOrderMatchesAsync(
+                normalizedSeller,
+                new SellerOrderFilterOptions
+                {
+                    FromDate = normalizedFilters.FromDate,
+                    ToDate = normalizedFilters.ToDate,
+                    Statuses = normalizedFilters.Statuses
+                },
+                cancellationToken);
+            var rows = BuildSellerOrderReportRows(matches);
+            if (rows.Count == 0)
+            {
+                return null;
+            }
+
+            var ordered = rows
+                .OrderByDescending(r => r.CreatedOn)
+                .Take(SellerExportRowLimit)
+                .ToList();
+            var truncated = ordered.Count < rows.Count;
+
+            var builder = new StringBuilder();
+            builder.AppendLine("OrderNumber,SubOrderNumber,CreatedOn,Status,PaymentStatus,OrderValue,Commission,NetAmount");
+            foreach (var row in ordered)
+            {
+                builder.AppendLine(string.Join(",", new[]
+                {
+                    CsvEscape(row.OrderNumber),
+                    CsvEscape(row.SubOrderNumber),
+                    CsvEscape(row.CreatedOn.ToString("u", CultureInfo.InvariantCulture)),
+                    CsvEscape(row.Status),
+                    CsvEscape(row.PaymentStatus),
+                    CsvEscape(row.OrderValue.ToString("F2", CultureInfo.InvariantCulture)),
+                    CsvEscape(row.Commission.ToString("F2", CultureInfo.InvariantCulture)),
+                    CsvEscape(row.NetAmount.ToString("F2", CultureInfo.InvariantCulture))
+                }));
+            }
+
+            return new SellerOrderReportExportResult(Encoding.UTF8.GetBytes(builder.ToString()), ordered.Count, rows.Count, truncated);
+        }
+
+        private SellerOrderReportFilterOptions NormalizeFilters(SellerOrderReportFilterOptions? filters)
+        {
+            var normalized = filters ?? new SellerOrderReportFilterOptions();
+            var normalizedStatuses = normalized.Statuses
+                .Select(OrderStatuses.Normalize)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var from = normalized.FromDate;
+            var to = normalized.ToDate;
+            if (from.HasValue && to.HasValue && from > to)
+            {
+                (from, to) = (to, from);
+            }
+
+            return new SellerOrderReportFilterOptions
+            {
+                FromDate = from,
+                ToDate = to,
+                Statuses = normalizedStatuses
+            };
+        }
+
+        private List<SellerOrderReportRow> BuildSellerOrderReportRows(List<SellerOrderMatch> matches)
+        {
+            var rows = new List<SellerOrderReportRow>();
+
+            foreach (var match in matches)
+            {
+                var orderValue = match.Allocation?.HeldAmount ?? match.SubOrder.GrandTotal;
+                var commission = match.Allocation?.CommissionAmount ?? 0;
+                var net = match.Allocation?.ReleasedToSeller > 0
+                    ? match.Allocation.ReleasedToSeller
+                    : match.Allocation?.SellerPayoutAmount ?? Math.Max(0, orderValue - commission);
+
+                rows.Add(new SellerOrderReportRow(
+                    match.Order.OrderNumber,
+                    match.SubOrder.SubOrderNumber,
+                    match.Order.CreatedOn,
+                    match.Status,
+                    match.PaymentStatus,
+                    RoundAmount(orderValue),
+                    RoundAmount(commission),
+                    RoundAmount(net)));
+            }
+
+            return rows;
+        }
+
+        private static EscrowAllocation? ResolveAllocationForSubOrder(List<EscrowAllocation> allocations, OrderSubOrder subOrder)
+        {
+            return allocations.FirstOrDefault(a => string.Equals(a.SubOrderNumber, subOrder.SubOrderNumber, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static decimal RoundAmount(decimal amount) =>
+            Math.Round(amount, 2, MidpointRounding.AwayFromZero);
 
         private async Task<List<SellerOrderSummaryView>> GetSellerOrderSummariesAsync(
             string sellerId,
