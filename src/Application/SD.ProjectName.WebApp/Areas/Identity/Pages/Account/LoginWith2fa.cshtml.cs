@@ -67,6 +67,12 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 return NotFound("Unable to load two-factor authentication user.");
             }
 
+            if (await _userManager.IsLockedOutAsync(user))
+            {
+                ModelState.AddModelError(string.Empty, BuildLockedOutMessage(user));
+                return Page();
+            }
+
             ReturnUrl = returnUrl;
             RememberMe = rememberMe;
 
@@ -91,6 +97,13 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 return NotFound("Unable to load two-factor authentication user.");
             }
 
+            if (await _userManager.IsLockedOutAsync(user))
+            {
+                ModelState.AddModelError(string.Empty, BuildLockedOutMessage(user));
+                await LogAuditAsync(user, LoginEventTypes.LockedOut, false);
+                return Page();
+            }
+
             var code = Input.Code.Replace(" ", string.Empty, StringComparison.Ordinal)
                 .Replace("-", string.Empty, StringComparison.Ordinal);
 
@@ -112,7 +125,8 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             {
                 _logger.LogWarning("User account locked out after 2fa.");
                 await LogAuditAsync(user, LoginEventTypes.LockedOut, false);
-                return RedirectToPage("./Lockout");
+                ModelState.AddModelError(string.Empty, BuildLockedOutMessage(user));
+                return Page();
             }
 
             _logger.LogWarning("Invalid authenticator code entered for user {UserId}.", user.Id);
@@ -146,6 +160,23 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
                 UserAgent = Request.Headers.UserAgent.ToString()
             });
+        }
+
+        private static string BuildLockedOutMessage(ApplicationUser user)
+        {
+            if (user.LockoutEnd.HasValue && user.LockoutEnd.Value == DateTimeOffset.MaxValue)
+            {
+                return string.IsNullOrWhiteSpace(user.BlockReason)
+                    ? "Your account has been blocked. Please contact support."
+                    : $"Your account has been blocked: {user.BlockReason}";
+            }
+
+            if (user.LockoutEnd.HasValue && user.LockoutEnd.Value >= DateTimeOffset.UtcNow)
+            {
+                return $"Account locked due to too many attempts. Try again after {user.LockoutEnd.Value.ToLocalTime():g}.";
+            }
+
+            return "Account is locked. Please try again later.";
         }
     }
 }

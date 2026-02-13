@@ -9,6 +9,7 @@ namespace SD.ProjectName.WebApp.Data
     public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     {
         public DbSet<LoginAudit> LoginAudits => Set<LoginAudit>();
+        public DbSet<UserAdminAudit> UserAdminAudits => Set<UserAdminAudit>();
         public DbSet<SellerTeamMember> SellerTeamMembers => Set<SellerTeamMember>();
         public DbSet<OrderRecord> Orders => Set<OrderRecord>();
         public DbSet<SellerShippingMethod> SellerShippingMethods => Set<SellerShippingMethod>();
@@ -149,6 +150,17 @@ namespace SD.ProjectName.WebApp.Data
 
                 entity.Property(u => u.CartData)
                     .HasColumnType("nvarchar(max)");
+
+                entity.Property(u => u.BlockedOn);
+
+                entity.Property(u => u.BlockedByUserId)
+                    .HasMaxLength(450);
+
+                entity.Property(u => u.BlockedByName)
+                    .HasMaxLength(256);
+
+                entity.Property(u => u.BlockReason)
+                    .HasMaxLength(512);
             });
 
             builder.Entity<SellerTeamMember>(entity =>
@@ -491,6 +503,32 @@ namespace SD.ProjectName.WebApp.Data
 
                 entity.HasIndex(r => r.SellerId)
                     .IsUnique();
+            });
+
+            builder.Entity<UserAdminAudit>(entity =>
+            {
+                entity.Property(a => a.UserId)
+                    .HasMaxLength(450)
+                    .IsRequired();
+
+                entity.Property(a => a.ActorUserId)
+                    .HasMaxLength(450);
+
+                entity.Property(a => a.ActorName)
+                    .HasMaxLength(256);
+
+                entity.Property(a => a.Action)
+                    .HasMaxLength(64)
+                    .IsRequired();
+
+                entity.Property(a => a.Reason)
+                    .HasMaxLength(512);
+
+                entity.Property(a => a.CreatedOn)
+                    .IsRequired();
+
+                entity.HasIndex(a => a.UserId);
+                entity.HasIndex(a => new { a.UserId, a.CreatedOn });
             });
 
             builder.Entity<AnalyticsEvent>(entity =>

@@ -73,5 +73,7 @@ namespace SD.ProjectName.Modules.Products.Domain
 
         [Required]
         public string SellerId { get; set; } = string.Empty;
+
+        public bool IsSellerBlocked { get; set; }
     }
 }

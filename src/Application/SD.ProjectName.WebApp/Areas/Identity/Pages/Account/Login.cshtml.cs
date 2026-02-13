@@ -102,6 +102,15 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             var user = await _userManager.FindByEmailAsync(Input.Email);
             if (user != null)
             {
+                if (await _userManager.IsLockedOutAsync(user))
+                {
+                    var message = BuildBlockedMessage(user);
+                    ModelState.AddModelError(string.Empty, message);
+                    _logger.LogWarning("Blocked login attempt for {Email}.", Input.Email);
+                    await LogAuditAsync(user.Id, user.Email, LoginEventTypes.LockedOut, false);
+                    return Page();
+                }
+
                 if (user.AccountStatus == AccountStatuses.Unverified || !await _userManager.IsEmailConfirmedAsync(user))
                 {
                     await SendVerificationEmailAsync(user, returnUrl);
@@ -141,8 +150,9 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 if (result.IsLockedOut)
                 {
                     _logger.LogWarning("User account locked out.");
+                    ModelState.AddModelError(string.Empty, BuildLockedOutMessage(user));
                     await LogAuditAsync(user.Id, user.Email, LoginEventTypes.LockedOut, false);
-                    return RedirectToPage("./Lockout");
+                    return Page();
                 }
 
                 await LogAuditAsync(user.Id, user.Email, LoginEventTypes.PasswordFailed, false);
@@ -177,6 +187,31 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             return accountType != null && accountType.Equals(AccountTypes.Seller, StringComparison.OrdinalIgnoreCase)
                 ? "Seller accounts must verify email before logging in. We sent you a new verification link."
                 : "Please verify your email before logging in. We sent you a new verification link.";
+        }
+
+        private static string BuildBlockedMessage(ApplicationUser user)
+        {
+            if (!string.IsNullOrWhiteSpace(user.BlockReason))
+            {
+                return $"Your account has been blocked: {user.BlockReason}";
+            }
+
+            return "Your account has been blocked. Please contact support.";
+        }
+
+        private static string BuildLockedOutMessage(ApplicationUser user)
+        {
+            if (user.LockoutEnd.HasValue && user.LockoutEnd.Value == DateTimeOffset.MaxValue)
+            {
+                return BuildBlockedMessage(user);
+            }
+
+            if (user.LockoutEnd.HasValue && user.LockoutEnd.Value >= DateTimeOffset.UtcNow)
+            {
+                return $"Account locked due to too many attempts. Try again after {user.LockoutEnd.Value.ToLocalTime():g}.";
+            }
+
+            return "Account is locked. Please try again later.";
         }
 
         private string ResolveRedirectUrl(string? returnUrl, ApplicationUser user)

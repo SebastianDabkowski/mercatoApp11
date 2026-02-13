@@ -219,6 +219,24 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task FilterActiveProducts_ShouldExcludeBlockedSellers()
+        {
+            await using var context = CreateContext();
+            context.Products.AddRange(
+                new ProductModel { Title = "Visible", MerchantSku = "SKU-BLOCK-1", Price = 25, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1", IsSellerBlocked = false },
+                new ProductModel { Title = "Hidden", MerchantSku = "SKU-BLOCK-2", Price = 30, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-2", IsSellerBlocked = true }
+            );
+            await context.SaveChangesAsync();
+
+            var repository = new ProductRepository(context);
+            var results = await repository.FilterActiveProducts(new ProductFilterOptions());
+
+            Assert.Single(results);
+            Assert.DoesNotContain(results, p => p.IsSellerBlocked);
+            Assert.Equal("Visible", results[0].Title);
+        }
+
+        [Fact]
         public async Task FilterActiveProducts_ShouldSortByPriceAscending()
         {
             await using var context = CreateContext();

@@ -127,5 +127,13 @@ namespace SD.ProjectName.WebApp.Identity
         public DateTimeOffset? OnboardingCompletedOn { get; set; }
 
         public string? CartData { get; set; }
+
+        public DateTimeOffset? BlockedOn { get; set; }
+
+        public string? BlockedByUserId { get; set; }
+
+        public string? BlockedByName { get; set; }
+
+        public string? BlockReason { get; set; }
     }
 }

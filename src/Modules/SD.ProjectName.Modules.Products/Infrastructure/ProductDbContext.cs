@@ -39,6 +39,8 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                 entity.Property(p => p.ShippingMethods).HasMaxLength(200);
                 entity.Property(p => p.HasVariants).HasDefaultValue(false);
                 entity.Property(p => p.VariantData).HasMaxLength(8000);
+                entity.Property(p => p.IsSellerBlocked)
+                      .HasDefaultValue(false);
                 entity.Property(p => p.WorkflowState)
                       .HasMaxLength(32)
                       .HasDefaultValue(ProductWorkflowStates.Draft)

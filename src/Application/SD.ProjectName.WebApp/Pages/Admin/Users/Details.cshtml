@@ -16,6 +16,11 @@
     <a class="btn btn-link text-decoration-none" asp-page="./Index">&larr; Back to users</a>
 </div>
 
+@if (!string.IsNullOrWhiteSpace(Model.AlertMessage))
+{
+    <div class="alert alert-success">@Model.AlertMessage</div>
+}
+
 <h1 class="display-6">@user.FullName</h1>
 <div class="d-flex align-items-center gap-2 mb-3">
     <span class="badge text-bg-secondary">@user.AccountType</span>
@@ -62,7 +67,15 @@
                         @if (user.LockoutEnabled && user.LockoutEnd.HasValue && user.LockoutEnd.Value >= DateTimeOffset.UtcNow)
                         {
                             <span class="badge text-bg-danger">Blocked</span>
-                            <span class="text-muted small">until @user.LockoutEnd.Value.ToLocalTime().ToString("g")</span>
+                            <span class="text-muted small">since @user.BlockedOn?.ToLocalTime().ToString("g") ?? user.LockoutEnd.Value.ToLocalTime().ToString("g")</span>
+                            if (!string.IsNullOrWhiteSpace(user.BlockedBy))
+                            {
+                                <div class="text-muted small">By @user.BlockedBy</div>
+                            }
+                            if (!string.IsNullOrWhiteSpace(user.BlockReason))
+                            {
+                                <div class="text-muted">Reason: @user.BlockReason</div>
+                            }
                         }
                         else
                         {
@@ -120,6 +133,45 @@
 </div>
 
 <div class="card mt-3">
+    <div class="card-header fw-semibold">Account actions</div>
+    <div class="card-body">
+        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+        @if (user.LockoutEnabled && user.LockoutEnd.HasValue && user.LockoutEnd.Value >= DateTimeOffset.UtcNow)
+        {
+            <form method="post" asp-page-handler="Unblock" asp-route-id="@user.Id" class="d-flex flex-column gap-2">
+                <div>
+                    <div class="fw-semibold">This account is blocked.</div>
+                    <div class="text-muted small">
+                        Blocked on @user.BlockedOn?.ToLocalTime().ToString("g") ?? user.LockoutEnd?.ToLocalTime().ToString("g")
+                        @if (!string.IsNullOrWhiteSpace(user.BlockedBy))
+                        {
+                            <span>by @user.BlockedBy</span>
+                        }
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(user.BlockReason))
+                    {
+                        <div class="text-muted small">Reason: @user.BlockReason</div>
+                    }
+                </div>
+                <button class="btn btn-success align-self-start" type="submit">Unblock account</button>
+            </form>
+        }
+        else
+        {
+            <form method="post" asp-page-handler="Block" asp-route-id="@user.Id" class="d-flex flex-column gap-2">
+                <div class="mb-2">
+                    <label asp-for="Block.Reason" class="form-label fw-semibold"></label>
+                    <textarea asp-for="Block.Reason" class="form-control" rows="3" placeholder="Optional: describe why this account is being blocked"></textarea>
+                    <span asp-validation-for="Block.Reason" class="text-danger"></span>
+                </div>
+                <button class="btn btn-danger align-self-start" type="submit">Block account</button>
+                <div class="text-muted small">Blocking will prevent login and hide public listings for this user.</div>
+            </form>
+        }
+    </div>
+</div>
+
+<div class="card mt-3">
     <div class="card-header fw-semibold">Flags & notes</div>
     <div class="card-body">
         <ul class="mb-0">
@@ -128,7 +180,13 @@
                 if (user.LockoutEnabled && user.LockoutEnd.HasValue && user.LockoutEnd.Value >= DateTimeOffset.UtcNow)
                 {
                     hasFlags = true;
-                    <li>Account is blocked until @user.LockoutEnd.Value.ToLocalTime().ToString("g").</li>
+                    <li>
+                        Account is blocked.
+                        @if (!string.IsNullOrWhiteSpace(user.BlockReason))
+                        {
+                            <span>Reason: @user.BlockReason</span>
+                        }
+                    </li>
                 }
                 if (!user.EmailConfirmed || string.Equals(user.AccountStatus, AccountStatuses.Unverified, StringComparison.OrdinalIgnoreCase))
                 {
@@ -146,5 +204,41 @@
                 <li class="text-muted">No administrative flags on record.</li>
             }
         </ul>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-header fw-semibold">Admin audit log</div>
+    <div class="card-body">
+        @if (user.AuditTrail.Count == 0)
+        {
+            <div class="text-muted">No administrative actions recorded.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead>
+                        <tr>
+                            <th scope="col">Action</th>
+                            <th scope="col">Actor</th>
+                            <th scope="col">When</th>
+                            <th scope="col">Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var audit in user.AuditTrail)
+                        {
+                            <tr>
+                                <td>@audit.Action</td>
+                                <td>@audit.Actor</td>
+                                <td>@audit.OccurredOn.ToLocalTime().ToString("g")</td>
+                                <td>@(string.IsNullOrWhiteSpace(audit.Reason) ? "-" : audit.Reason)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     </div>
 </div>
