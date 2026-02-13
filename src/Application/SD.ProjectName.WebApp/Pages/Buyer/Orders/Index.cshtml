@@ -85,7 +85,7 @@ else
                         <td class="text-end">@order.GrandTotal.ToString("C")</td>
                         <td>@order.Status</td>
                         <td class="text-end">
-                            <a class="btn btn-sm btn-outline-primary" asp-page="/Checkout/Confirmation" asp-route-orderId="@order.Id">View</a>
+                            <a class="btn btn-sm btn-outline-primary" asp-page="/Buyer/Orders/Details" asp-route-orderId="@order.Id">View</a>
                         </td>
                     </tr>
                 }
