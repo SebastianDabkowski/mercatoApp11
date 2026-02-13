@@ -188,6 +188,28 @@ else
                     {
                         <div class="text-danger small mb-2">Refunded: @Model.Order.RefundedAmount.ToString("C")</div>
                     }
+                    @if (Model.Order.StatusHistory != null && Model.Order.StatusHistory.Count > 0)
+                    {
+                        <div class="mb-2">
+                            <div class="fw-semibold small mb-1">Status history</div>
+                            <ul class="list-unstyled small mb-0">
+                                @foreach (var entry in Model.Order.StatusHistory.OrderByDescending(h => h.ChangedOn))
+                                {
+                                    <li class="text-muted">
+                                        @entry.ChangedOn.ToLocalTime().ToString("g"): @entry.Status
+                                        @if (!string.IsNullOrWhiteSpace(entry.TrackingNumber))
+                                        {
+                                            <span class="ms-1">• Tracking: @entry.TrackingNumber</span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(entry.TrackingCarrier))
+                                        {
+                                            <span class="ms-1">(@entry.TrackingCarrier)</span>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                    }
                     @if (Model.Order.ReturnRequest != null)
                     {
                         var returnItems = Model.Order.ReturnRequest.Items.Select(i =>

@@ -409,6 +409,58 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task UpdateSubOrderStatusAsync_ShouldSendShippedNotification_WithTracking()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-ship-email", "sig-ship-email");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-ship-email", "shipnotify@example.com", "Ship Notify", "Card", "card");
+            Assert.True(result.Created);
+
+            var shipped = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Shipped, "TRACK-EMAIL-1", null, "Carrier Email");
+            Assert.True(shipped.Success);
+
+            emailSender.Verify(
+                e => e.SendEmailAsync(
+                    "shipnotify@example.com",
+                    It.Is<string>(s => s.Contains("shipped", StringComparison.OrdinalIgnoreCase)),
+                    It.Is<string>(body => body.Contains("TRACK-EMAIL-1") && body.Contains("Carrier Email"))),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task UpdateSubOrderStatusAsync_ShouldTrackStatusHistory()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-status-history", "sig-status-history");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-history", "history@example.com", "History Buyer", "Card", "card");
+            Assert.True(result.Created);
+
+            var preparing = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Preparing);
+            Assert.True(preparing.Success);
+
+            var shipped = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Shipped, "TRACK-HIST", null, "Carrier Hist");
+            Assert.True(shipped.Success);
+
+            var delivered = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+            Assert.True(delivered.Success);
+
+            var sellerOrder = await service.GetSellerOrderAsync(result.Order.Id, "seller-1");
+            Assert.NotNull(sellerOrder);
+            var history = sellerOrder!.StatusHistory;
+            Assert.True(history.Count >= 3);
+            Assert.Contains(history, h => h.Status == OrderStatuses.Shipped && h.TrackingNumber == "TRACK-HIST");
+            Assert.Equal(OrderStatuses.Delivered, history.Last().Status);
+        }
+
+        [Fact]
         public async Task RunSellerPayoutsAsync_ShouldProcessEligibleWeeklyPayout()
         {
             await using var context = CreateContext();
