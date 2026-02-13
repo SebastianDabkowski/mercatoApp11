@@ -141,6 +141,7 @@ builder.Services.AddSingleton<PushSubscriptionStore>();
 builder.Services.AddSingleton<WebPushClient>();
 builder.Services.AddSingleton<IPushNotificationDispatcher, PushNotificationDispatcher>();
 builder.Services.AddScoped<ISessionTokenService, DistributedSessionTokenService>();
+builder.Services.AddScoped<CurrencyConfigurationService>();
 builder.Services.AddScoped<ILoginAuditService, LoginAuditService>();
 builder.Services.AddScoped<SessionCookieEvents>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, LoggingAuthorizationMiddlewareResultHandler>();

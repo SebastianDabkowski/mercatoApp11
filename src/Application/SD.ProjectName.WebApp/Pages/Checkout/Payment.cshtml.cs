@@ -25,6 +25,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         private readonly PromoCodeService _promoCodeService;
         private readonly PaymentProviderService _paymentProvider;
         private readonly SellerShippingMethodService _sellerShippingMethodService;
+        private readonly CurrencyConfigurationService _currencyConfiguration;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -52,7 +53,8 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             CartService cartService,
             PromoCodeService promoCodeService,
             PaymentProviderService paymentProvider,
-            SellerShippingMethodService sellerShippingMethodService)
+            SellerShippingMethodService sellerShippingMethodService,
+            CurrencyConfigurationService currencyConfiguration)
         {
             _cartViewService = cartViewService;
             _userCartService = userCartService;
@@ -65,6 +67,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             _promoCodeService = promoCodeService;
             _paymentProvider = paymentProvider;
             _sellerShippingMethodService = sellerShippingMethodService;
+            _currencyConfiguration = currencyConfiguration;
         }
 
         public async Task<IActionResult> OnGetAsync(string? providerToken = null, string? method = null)
@@ -176,7 +179,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 return Page();
             }
 
-            var currency = ResolveCurrency();
+            var currency = await ResolveCurrencyAsync();
             if (selected.RequiresRedirect)
             {
                 var callbackUrl = Url.Page("/Checkout/Payment", null, new { method = selected.Id }, Request.Scheme) ?? "/Checkout/Payment";
@@ -236,7 +239,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             }
 
             var currentSignature = ComputeQuoteSignature(quote);
-            var currency = ResolveCurrency();
+            var currency = await ResolveCurrencyAsync();
             var validation = _paymentProvider.ValidateReturn(providerToken, quote.Summary.GrandTotal, currency, selectedMethod.Id);
 
             if (string.IsNullOrWhiteSpace(state.CartSignature) || !string.Equals(state.CartSignature, currentSignature, StringComparison.Ordinal))
@@ -284,16 +287,16 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 .ToList();
         }
 
-        private static string ResolveCurrency()
+        private async Task<string> ResolveCurrencyAsync()
         {
             try
             {
                 var region = new RegionInfo(CultureInfo.CurrentCulture.LCID);
-                return region.ISOCurrencySymbol;
+                return await _currencyConfiguration.ResolveTransactionCurrencyAsync(region.ISOCurrencySymbol, HttpContext.RequestAborted);
             }
             catch
             {
-                return "USD";
+                return await _currencyConfiguration.ResolveTransactionCurrencyAsync("USD", HttpContext.RequestAborted);
             }
         }
 

@@ -1,0 +1,163 @@
+@page
+@using Microsoft.AspNetCore.Authorization
+@using SD.ProjectName.WebApp.Identity
+@attribute [Authorize(Roles = AccountTypes.Admin)]
+@model SD.ProjectName.WebApp.Pages.Admin.Settings.CurrenciesModel
+@{
+    ViewData["Title"] = "Currency settings";
+}
+
+<h1 class="display-6">Currency configuration</h1>
+<p class="text-muted">Manage the platform base currency and which currencies are enabled for display and transactions.</p>
+
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <div class="alert alert-success">@Model.SuccessMessage</div>
+}
+
+<div class="alert alert-warning">
+    Changing the base currency affects invoices, commissions, and reports. Confirm the change before saving.
+</div>
+
+<form method="post">
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between">
+                    <div>
+                        <div class="fw-semibold">Configured currencies</div>
+                        <div class="text-muted small">Disable a currency to stop new listings and transactions from using it.</div>
+                    </div>
+                    <div class="text-muted small">Base currency: <span class="fw-semibold">@Model.BaseCurrency</span></div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Code</th>
+                                <th>Name</th>
+                                <th>Display</th>
+                                <th>Transactions</th>
+                                <th>Base</th>
+                                <th>Last rate</th>
+                                <th>Updated</th>
+                                <th>Source</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @if (Model.Currencies.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-3">No currencies configured yet.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            for (var i = 0; i < Model.Currencies.Count; i++)
+                            {
+                                <tr>
+                                    <td>
+                                        <input type="hidden" asp-for="Currencies[i].Id" />
+                                        <input type="hidden" asp-for="Currencies[i].Code" />
+                                        <span class="fw-semibold">@Model.Currencies[i].Code</span>
+                                    </td>
+                                    <td>
+                                        <input asp-for="Currencies[i].Name" class="form-control form-control-sm" placeholder="@Model.Currencies[i].Code" />
+                                    </td>
+                                    <td>
+                                        <div class="form-check">
+                                            <input asp-for="Currencies[i].EnabledForDisplay" class="form-check-input" />
+                                            <label class="form-check-label" asp-for="Currencies[i].EnabledForDisplay"> </label>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="form-check">
+                                            <input asp-for="Currencies[i].EnabledForTransactions" class="form-check-input" />
+                                            <label class="form-check-label" asp-for="Currencies[i].EnabledForTransactions"> </label>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="BaseCurrency" value="@Model.Currencies[i].Code" @(Model.BaseCurrency == Model.Currencies[i].Code ? "checked" : string.Empty) />
+                                            <label class="form-check-label">Base</label>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        @(Model.Currencies[i].LatestRate?.ToString("F4") ?? "—")
+                                    </td>
+                                    <td class="text-nowrap">
+                                        @(Model.Currencies[i].RateUpdatedOn?.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")
+                                    </td>
+                                    <td>
+                                        @(!string.IsNullOrWhiteSpace(Model.Currencies[i].RateSource) ? Model.Currencies[i].RateSource : "—")
+                                    </td>
+                                </tr>
+                            }
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header">
+                    <div class="fw-semibold">Add currency</div>
+                    <div class="text-muted small">Optional: add a new currency code to manage.</div>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label asp-for="NewCurrency.Code" class="form-label">Currency code</label>
+                        <input asp-for="NewCurrency.Code" class="form-control" maxlength="16" />
+                        <span asp-validation-for="NewCurrency.Code" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="NewCurrency.Name" class="form-label">Display name (optional)</label>
+                        <input asp-for="NewCurrency.Name" class="form-control" maxlength="128" />
+                        <span asp-validation-for="NewCurrency.Name" class="text-danger"></span>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input asp-for="NewCurrency.EnabledForDisplay" class="form-check-input" />
+                        <label asp-for="NewCurrency.EnabledForDisplay" class="form-check-label"></label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input asp-for="NewCurrency.EnabledForTransactions" class="form-check-input" />
+                        <label asp-for="NewCurrency.EnabledForTransactions" class="form-check-label"></label>
+                    </div>
+                    <p class="text-muted small mb-0">Rates are supplied by integrations; last update and source are shown in the table.</p>
+                </div>
+            </div>
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <div class="fw-semibold">Confirm base currency change</div>
+                    <div class="text-muted small">Required when switching the base currency.</div>
+                </div>
+                <div class="card-body">
+                    <div class="form-check mb-3">
+                        <input asp-for="ConfirmBaseCurrencyChange" class="form-check-input" />
+                        <label asp-for="ConfirmBaseCurrencyChange" class="form-check-label">I understand changing base currency impacts accounting and reporting.</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Save currency settings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+@if (Model.Errors.Count > 0)
+{
+    <div class="alert alert-danger mt-3">
+        <ul class="mb-0">
+            @foreach (var error in Model.Errors)
+            {
+                <li>@error</li>
+            }
+        </ul>
+    </div>
+}
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
