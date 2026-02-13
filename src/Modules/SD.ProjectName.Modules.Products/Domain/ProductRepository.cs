@@ -75,23 +75,63 @@ namespace SD.ProjectName.Modules.Products.Domain
                 return new List<ProductModel>();
             }
 
-            var term = search.Trim();
-            if (term.Length > 200)
+            return await FilterActiveProducts(new ProductFilterOptions { Search = search }, cancellationToken);
+        }
+
+        public async Task<List<ProductModel>> FilterActiveProducts(ProductFilterOptions filters, CancellationToken cancellationToken = default)
+        {
+            var query = BuildActiveQuery(filters);
+
+            if (filters.MinPrice.HasValue)
             {
-                term = term[..200];
+                query = query.Where(p => p.Price >= filters.MinPrice.Value);
             }
 
-            var normalizedTerm = term.ToLowerInvariant();
+            if (filters.MaxPrice.HasValue)
+            {
+                query = query.Where(p => p.Price <= filters.MaxPrice.Value);
+            }
 
-            var query = _context.Set<ProductModel>()
-                .Where(p => p.WorkflowState == ProductWorkflowStates.Active)
-                .Where(p =>
-                    p.Title.ToLower().Contains(normalizedTerm) ||
-                    (!string.IsNullOrWhiteSpace(p.Description) && p.Description!.ToLower().Contains(normalizedTerm)));
+            if (!string.IsNullOrWhiteSpace(filters.Condition) && ProductConditions.IsValid(filters.Condition))
+            {
+                var normalizedCondition = ProductConditions.Normalize(filters.Condition);
+                query = query.Where(p =>
+                    p.Condition == normalizedCondition ||
+                    (string.IsNullOrEmpty(p.Condition) && normalizedCondition == ProductConditions.New));
+            }
+
+            if (!string.IsNullOrWhiteSpace(filters.SellerId))
+            {
+                query = query.Where(p => p.SellerId == filters.SellerId);
+            }
 
             return await query
                 .OrderByDescending(p => p.Id)
                 .ToListAsync(cancellationToken);
+        }
+
+        public async Task<ProductFilterMetadata> GetFilterMetadata(ProductFilterContext context, CancellationToken cancellationToken = default)
+        {
+            var query = BuildActiveQuery(context);
+            var metadata = new ProductFilterMetadata();
+
+            if (!await query.AnyAsync(cancellationToken))
+            {
+                return metadata;
+            }
+
+            metadata.MinPrice = await query.MinAsync(p => p.Price, cancellationToken);
+            metadata.MaxPrice = await query.MaxAsync(p => p.Price, cancellationToken);
+            metadata.Conditions = await query
+                .Select(p => string.IsNullOrWhiteSpace(p.Condition) ? ProductConditions.New : p.Condition)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+            metadata.SellerIds = await query
+                .Select(p => p.SellerId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            return metadata;
         }
 
         public async Task<List<ProductModel>> GetByIds(IEnumerable<int> ids, bool includeDrafts = false)
@@ -186,6 +226,43 @@ namespace SD.ProjectName.Modules.Products.Domain
             }
 
             return await query.FirstOrDefaultAsync();
+        }
+
+        private IQueryable<ProductModel> BuildActiveQuery(ProductFilterContext context)
+        {
+            var query = _context.Set<ProductModel>()
+                .Where(p => p.WorkflowState == ProductWorkflowStates.Active);
+
+            if (!string.IsNullOrWhiteSpace(context.Search))
+            {
+                var term = NormalizeSearch(context.Search!);
+                var normalizedTerm = term.ToLowerInvariant();
+                query = query.Where(p =>
+                    p.Title.ToLower().Contains(normalizedTerm) ||
+                    (!string.IsNullOrWhiteSpace(p.Description) && p.Description!.ToLower().Contains(normalizedTerm)));
+            }
+
+            if (context.CategoryIds != null)
+            {
+                var ids = context.CategoryIds.Where(id => id > 0).Distinct().ToList();
+                if (ids.Count > 0)
+                {
+                    query = query.Where(p => p.CategoryId != null && ids.Contains(p.CategoryId.Value));
+                }
+            }
+
+            return query;
+        }
+
+        private static string NormalizeSearch(string search)
+        {
+            var term = search.Trim();
+            if (term.Length > 200)
+            {
+                term = term[..200];
+            }
+
+            return term;
         }
     }
 }

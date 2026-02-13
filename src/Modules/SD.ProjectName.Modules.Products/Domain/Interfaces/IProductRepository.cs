@@ -26,5 +26,9 @@ namespace SD.ProjectName.Modules.Products.Domain.Interfaces
         Task<List<ProductModel>> GetListFiltered(string sellerId, bool includeDrafts, string? search = null, string? workflowState = null, CancellationToken cancellationToken = default);
 
         Task<List<ProductModel>> SearchActiveProducts(string search, CancellationToken cancellationToken = default);
+
+        Task<List<ProductModel>> FilterActiveProducts(ProductFilterOptions filters, CancellationToken cancellationToken = default);
+
+        Task<ProductFilterMetadata> GetFilterMetadata(ProductFilterContext context, CancellationToken cancellationToken = default);
     }
 }

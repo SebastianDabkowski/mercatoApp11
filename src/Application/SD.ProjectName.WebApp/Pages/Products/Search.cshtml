@@ -20,6 +20,26 @@
         </p>
     </div>
     <form method="get" class="d-flex flex-wrap gap-2" asp-page="/Products/Search">
+        @if (!string.IsNullOrWhiteSpace(Model.Condition))
+        {
+            <input type="hidden" name="condition" value="@Model.Condition" />
+        }
+        @if (Model.CategoryId.HasValue)
+        {
+            <input type="hidden" name="categoryId" value="@Model.CategoryId" />
+        }
+        @if (!string.IsNullOrWhiteSpace(Model.SellerId))
+        {
+            <input type="hidden" name="sellerId" value="@Model.SellerId" />
+        }
+        @if (Model.MinPrice.HasValue)
+        {
+            <input type="hidden" name="minPrice" value="@Model.MinPrice" />
+        }
+        @if (Model.MaxPrice.HasValue)
+        {
+            <input type="hidden" name="maxPrice" value="@Model.MaxPrice" />
+        }
         <input type="search"
                name="q"
                value="@query"
@@ -30,15 +50,87 @@
     </form>
 </div>
 
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <h2 class="h5 mb-0">Filters</h2>
+            <div class="d-flex gap-2">
+                <a class="btn btn-outline-secondary btn-sm" asp-page="/Products/Search" asp-route-q="@query">Clear all filters</a>
+                <button type="submit" form="searchFilters" class="btn btn-primary btn-sm">Apply filters</button>
+            </div>
+        </div>
+        <form id="searchFilters" method="get" asp-page="/Products/Search">
+            <input type="hidden" name="q" value="@query" />
+            <div class="row g-3">
+                <div class="col-12 col-md-6 col-lg-3">
+                    <label class="form-label" for="filterCategory">Category</label>
+                    <select id="filterCategory" name="categoryId" class="form-select">
+                        <option value="">All categories</option>
+                        @foreach (var option in Model.CategoryOptions)
+                        {
+                            <option value="@option.Value" selected="@(option.Selected ? "selected" : null)">@option.Text</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <label class="form-label" for="filterSeller">Seller</label>
+                    <select id="filterSeller" name="sellerId" class="form-select">
+                        <option value="">All sellers</option>
+                        @foreach (var seller in Model.SellerOptions)
+                        {
+                            <option value="@seller.Value" selected="@(seller.Selected ? "selected" : null)">@seller.Text</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <label class="form-label" for="filterCondition">Condition</label>
+                    <select id="filterCondition" name="condition" class="form-select">
+                        <option value="">Any condition</option>
+                        @foreach (var condition in Model.ConditionOptions)
+                        {
+                            <option value="@condition" selected="@(string.Equals(Model.Condition, condition, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@condition</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <label class="form-label">Price range</label>
+                    <div class="d-flex gap-2">
+                        <input type="number" step="0.01" min="0" name="minPrice" value="@(Model.MinPrice?.ToString() ?? string.Empty)" class="form-control" placeholder="Min" />
+                        <input type="number" step="0.01" min="0" name="maxPrice" value="@(Model.MaxPrice?.ToString() ?? string.Empty)" class="form-control" placeholder="Max" />
+                    </div>
+                </div>
+            </div>
+        </form>
+        @if (Model.HasActiveFilters)
+        {
+            <div class="d-flex align-items-center gap-2 mt-3 flex-wrap">
+                <span class="text-muted small">Active filters:</span>
+                @foreach (var filter in Model.ActiveFilters)
+                {
+                    <span class="badge bg-primary">@filter</span>
+                }
+                <a class="btn btn-link btn-sm text-decoration-none" asp-page="/Products/Search" asp-route-q="@query">Clear</a>
+            </div>
+        }
+    </div>
+</div>
+
 @if (!Model.Results.Any())
 {
     <div class="alert alert-info">
         <p class="mb-1">@Model.StatusMessage</p>
-        <ul class="mb-0">
-            <li>Try shorter or alternate keywords.</li>
-            <li>Check spelling or remove special characters.</li>
-            <li><a asp-page="/Products/Category">Browse categories</a> to explore the catalog.</li>
-        </ul>
+        @if (Model.HasActiveFilters)
+        {
+            <p class="mb-0">Active filters are highlighted above. <a class="link-primary" asp-page="/Products/Search" asp-route-q="@query">Clear filters</a> to see all results.</p>
+        }
+        else
+        {
+            <ul class="mb-0">
+                <li>Try shorter or alternate keywords.</li>
+                <li>Check spelling or remove special characters.</li>
+                <li><a asp-page="/Products/Category">Browse categories</a> to explore the catalog.</li>
+            </ul>
+        }
     </div>
 }
 else

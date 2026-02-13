@@ -152,6 +152,58 @@ namespace SD.ProjectName.Tests.Products
             Assert.Empty(longResults);
         }
 
+        [Fact]
+        public async Task FilterActiveProducts_ShouldApplyAllCriteria()
+        {
+            await using var context = CreateContext();
+            context.Products.AddRange(
+                new ProductModel { Title = "Camera New", Description = "DSLR", MerchantSku = "SKU-FILT-1", Price = 550, Stock = 3, Category = "Electronics", CategoryId = 1, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1", Condition = ProductConditions.New },
+                new ProductModel { Title = "Camera Used", Description = "DSLR", MerchantSku = "SKU-FILT-2", Price = 300, Stock = 2, Category = "Electronics", CategoryId = 1, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1", Condition = ProductConditions.Used },
+                new ProductModel { Title = "Headphones", Description = "Noise cancelling", MerchantSku = "SKU-FILT-3", Price = 200, Stock = 5, Category = "Audio", CategoryId = 2, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-2", Condition = ProductConditions.New }
+            );
+            await context.SaveChangesAsync();
+
+            var repository = new ProductRepository(context);
+            var filters = new ProductFilterOptions
+            {
+                Search = "Camera",
+                CategoryIds = new[] { 1 },
+                MinPrice = 400,
+                MaxPrice = 600,
+                Condition = ProductConditions.New,
+                SellerId = "seller-1"
+            };
+
+            var results = await repository.FilterActiveProducts(filters);
+
+            Assert.Single(results);
+            Assert.Equal("Camera New", results[0].Title);
+        }
+
+        [Fact]
+        public async Task GetFilterMetadata_ShouldReturnDistinctValues()
+        {
+            await using var context = CreateContext();
+            context.Products.AddRange(
+                new ProductModel { Title = "New Item", MerchantSku = "SKU-META-1", Price = 120, Stock = 2, Category = "Electronics", CategoryId = 5, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1", Condition = ProductConditions.New },
+                new ProductModel { Title = "Used Item", MerchantSku = "SKU-META-2", Price = 80, Stock = 1, Category = "Electronics", CategoryId = 5, WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-2", Condition = ProductConditions.Used },
+                new ProductModel { Title = "Archived Item", MerchantSku = "SKU-META-3", Price = 50, Stock = 1, Category = "Electronics", CategoryId = 5, WorkflowState = ProductWorkflowStates.Archived, SellerId = "seller-3", Condition = ProductConditions.Refurbished }
+            );
+            await context.SaveChangesAsync();
+
+            var repository = new ProductRepository(context);
+            var metadata = await repository.GetFilterMetadata(new ProductFilterContext { CategoryIds = new[] { 5 } });
+
+            Assert.Equal(80, metadata.MinPrice);
+            Assert.Equal(120, metadata.MaxPrice);
+            Assert.Contains(ProductConditions.New, metadata.Conditions);
+            Assert.Contains(ProductConditions.Used, metadata.Conditions);
+            Assert.DoesNotContain(ProductConditions.Refurbished, metadata.Conditions);
+            Assert.Contains("seller-1", metadata.SellerIds);
+            Assert.Contains("seller-2", metadata.SellerIds);
+            Assert.DoesNotContain("seller-3", metadata.SellerIds);
+        }
+
         private static ProductDbContext CreateContext()
         {
             var options = new DbContextOptionsBuilder<ProductDbContext>()

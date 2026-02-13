@@ -43,12 +43,20 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                       .HasMaxLength(32)
                       .HasDefaultValue(ProductWorkflowStates.Draft)
                       .IsRequired();
+                entity.Property(p => p.Condition)
+                      .HasMaxLength(32)
+                      .HasDefaultValue(ProductConditions.New);
                 entity.Property(p => p.SellerId).IsRequired();
                 entity.HasOne<CategoryModel>()
                       .WithMany()
                       .HasForeignKey(p => p.CategoryId)
                       .OnDelete(DeleteBehavior.SetNull);
                 entity.HasIndex(p => new { p.SellerId, p.MerchantSku }).IsUnique();
+                entity.HasIndex(p => p.CategoryId);
+                entity.HasIndex(p => p.Price);
+                entity.HasIndex(p => p.SellerId);
+                entity.HasIndex(p => p.Condition);
+                entity.HasIndex(p => new { p.WorkflowState, p.CategoryId });
             });
 
             modelBuilder.Entity<CategoryModel>(entity =>

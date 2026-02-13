@@ -44,5 +44,15 @@ namespace SD.ProjectName.Modules.Products.Application
             return await _repository.SearchActiveProducts(search, cancellationToken);
         }
 
+        public async Task<List<ProductModel>> FilterActive(ProductFilterOptions filters, CancellationToken cancellationToken = default)
+        {
+            return await _repository.FilterActiveProducts(filters, cancellationToken);
+        }
+
+        public async Task<ProductFilterMetadata> GetFilterMetadata(ProductFilterContext context, CancellationToken cancellationToken = default)
+        {
+            return await _repository.GetFilterMetadata(context, cancellationToken);
+        }
+
     }
 }

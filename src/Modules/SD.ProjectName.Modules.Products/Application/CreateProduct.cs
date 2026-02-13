@@ -19,6 +19,8 @@ namespace SD.ProjectName.Modules.Products.Application
                 product.WorkflowState = ProductWorkflowStates.Draft;
             }
 
+            product.Condition = ProductConditions.Normalize(product.Condition);
+
             await _repository.Add(product);
             return product;
         }
