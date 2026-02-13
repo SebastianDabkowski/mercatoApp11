@@ -36,7 +36,7 @@ namespace SD.ProjectName.WebApp.Pages.Admin.Reviews
             TotalCount = 0
         };
 
-        public Dictionary<int, List<ReviewAuditView>> AuditTrail { get; private set; } = new();
+        public Dictionary<string, List<ReviewAuditView>> AuditTrail { get; private set; } = new();
 
         public List<string> AvailableStatuses { get; } = new()
         {
@@ -45,6 +45,8 @@ namespace SD.ProjectName.WebApp.Pages.Admin.Reviews
             ReviewStatuses.Hidden,
             ReviewStatuses.Rejected
         };
+
+        public IReadOnlyList<string> RemovalReasons => ReviewModerationReasons.Allowed;
 
         public bool HasFilters =>
             !string.IsNullOrWhiteSpace(Query)
@@ -65,29 +67,44 @@ namespace SD.ProjectName.WebApp.Pages.Admin.Reviews
             await LoadAuditTrailAsync(Reviews.Items);
         }
 
-        public Task<IActionResult> OnPostApproveAsync(int reviewId, string? note = null)
+        public Task<IActionResult> OnPostApproveAsync(int reviewId, string reviewType = ReviewTargetTypes.Product, string? note = null)
         {
-            return ModerateAsync(() => _orderService.ApproveReviewAsync(reviewId, GetActor(), note));
+            var normalizedType = ReviewTargetTypes.Normalize(reviewType);
+            return ModerateAsync(() => normalizedType == ReviewTargetTypes.Seller
+                ? _orderService.ApproveSellerRatingAsync(reviewId, GetActor(), note)
+                : _orderService.ApproveReviewAsync(reviewId, GetActor(), note));
         }
 
-        public Task<IActionResult> OnPostRejectAsync(int reviewId, string? note = null)
+        public Task<IActionResult> OnPostRejectAsync(int reviewId, string reviewType = ReviewTargetTypes.Product, string? note = null)
         {
-            return ModerateAsync(() => _orderService.RejectReviewAsync(reviewId, GetActor(), note));
+            var normalizedType = ReviewTargetTypes.Normalize(reviewType);
+            return ModerateAsync(() => normalizedType == ReviewTargetTypes.Seller
+                ? _orderService.RejectSellerRatingAsync(reviewId, GetActor(), note)
+                : _orderService.RejectReviewAsync(reviewId, GetActor(), note));
         }
 
-        public Task<IActionResult> OnPostHideAsync(int reviewId, string? note = null)
+        public Task<IActionResult> OnPostHideAsync(int reviewId, string reviewType = ReviewTargetTypes.Product, string? note = null)
         {
-            return ModerateAsync(() => _orderService.UpdateReviewVisibilityAsync(reviewId, GetActor(), false, note));
+            var normalizedType = ReviewTargetTypes.Normalize(reviewType);
+            return ModerateAsync(() => normalizedType == ReviewTargetTypes.Seller
+                ? _orderService.UpdateSellerRatingVisibilityAsync(reviewId, GetActor(), false, note)
+                : _orderService.UpdateReviewVisibilityAsync(reviewId, GetActor(), false, note));
         }
 
-        public Task<IActionResult> OnPostPublishAsync(int reviewId, string? note = null)
+        public Task<IActionResult> OnPostPublishAsync(int reviewId, string reviewType = ReviewTargetTypes.Product, string? note = null)
         {
-            return ModerateAsync(() => _orderService.UpdateReviewVisibilityAsync(reviewId, GetActor(), true, note));
+            var normalizedType = ReviewTargetTypes.Normalize(reviewType);
+            return ModerateAsync(() => normalizedType == ReviewTargetTypes.Seller
+                ? _orderService.UpdateSellerRatingVisibilityAsync(reviewId, GetActor(), true, note)
+                : _orderService.UpdateReviewVisibilityAsync(reviewId, GetActor(), true, note));
         }
 
-        public Task<IActionResult> OnPostFlagAsync(int reviewId, string? note = null)
+        public Task<IActionResult> OnPostFlagAsync(int reviewId, string reviewType = ReviewTargetTypes.Product, string? note = null)
         {
-            return ModerateAsync(() => _orderService.FlagReviewAsync(reviewId, GetActor(), note));
+            var normalizedType = ReviewTargetTypes.Normalize(reviewType);
+            return ModerateAsync(() => normalizedType == ReviewTargetTypes.Seller
+                ? _orderService.FlagSellerRatingAsync(reviewId, GetActor(), note)
+                : _orderService.FlagReviewAsync(reviewId, GetActor(), note));
         }
 
         private async Task<IActionResult> ModerateAsync(Func<Task<ReviewModerationResult>> action)
@@ -120,12 +137,17 @@ namespace SD.ProjectName.WebApp.Pages.Admin.Reviews
 
         private async Task LoadAuditTrailAsync(IEnumerable<ReviewModerationItem> reviews)
         {
-            AuditTrail = new Dictionary<int, List<ReviewAuditView>>();
+            AuditTrail = new Dictionary<string, List<ReviewAuditView>>();
             foreach (var review in reviews)
             {
-                var audit = await _orderService.GetReviewAuditAsync(review.Id, HttpContext.RequestAborted);
-                AuditTrail[review.Id] = audit;
+                var audit = await _orderService.GetReviewAuditAsync(review.Id, review.Type, HttpContext.RequestAborted);
+                AuditTrail[GetAuditKey(review)] = audit;
             }
+        }
+
+        public string GetAuditKey(ReviewModerationItem review)
+        {
+            return $"{review.Type}:{review.Id}";
         }
     }
 }

@@ -476,8 +476,27 @@ namespace SD.ProjectName.WebApp.Data
                     .HasMaxLength(450)
                     .IsRequired();
 
+                entity.Property(r => r.BuyerName)
+                    .HasMaxLength(256)
+                    .IsRequired();
+
+                entity.Property(r => r.SellerName)
+                    .HasMaxLength(256)
+                    .IsRequired();
+
                 entity.Property(r => r.Rating)
                     .IsRequired();
+
+                entity.Property(r => r.Status)
+                    .HasMaxLength(32)
+                    .IsRequired()
+                    .HasDefaultValue(ReviewStatuses.Published);
+
+                entity.Property(r => r.FlagReason)
+                    .HasMaxLength(512);
+
+                entity.Property(r => r.LastModeratedBy)
+                    .HasMaxLength(256);
 
                 entity.Property(r => r.CreatedOn)
                     .IsRequired();
@@ -485,7 +504,7 @@ namespace SD.ProjectName.WebApp.Data
                 entity.HasIndex(r => new { r.OrderId, r.SellerId, r.BuyerId })
                     .IsUnique();
 
-                entity.HasIndex(r => new { r.SellerId, r.CreatedOn });
+                entity.HasIndex(r => new { r.SellerId, r.Status, r.CreatedOn });
             });
 
             builder.Entity<SellerReputation>(entity =>
