@@ -59,7 +59,7 @@ else
                     <th scope="col">Order</th>
                     <th scope="col">Buyer</th>
                     <th scope="col">Type</th>
-                    <th scope="col">Opened</th>
+                    <th scope="col">Updated</th>
                     <th scope="col">Status</th>
                     <th scope="col" class="text-end"></th>
                 </tr>
@@ -81,7 +81,14 @@ else
                             }
                         </td>
                         <td>@item.Type</td>
-                        <td>@item.RequestedOn.ToLocalTime().ToString("g")</td>
+                        <td>
+                            <div>@item.LastUpdatedOn.ToLocalTime().ToString("g")</div>
+                            <div class="text-muted small">Opened @item.RequestedOn.ToLocalTime().ToString("g")</div>
+                            @if (item.LastUpdatedOn > item.RequestedOn.AddSeconds(1))
+                            {
+                                <span class="badge bg-info text-dark">New activity</span>
+                            }
+                        </td>
                         <td>@item.Status</td>
                         <td class="text-end">
                             <a class="btn btn-sm btn-outline-primary" asp-page="/Seller/Cases/Details" asp-route-caseId="@item.CaseId">Review</a>

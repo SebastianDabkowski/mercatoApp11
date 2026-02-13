@@ -214,7 +214,9 @@ namespace SD.ProjectName.WebApp.Services
 
     public record ReturnRequestHistoryEntry(string Status, string Actor, DateTimeOffset ChangedOn, string? Note = null);
 
-    public record ReturnRequest(string SubOrderNumber, string Status, string Reason, DateTimeOffset RequestedOn, List<ReturnRequestItem> Items, string Type = ReturnRequestTypes.Return, string? Description = null, string? CaseId = null, List<ReturnRequestHistoryEntry>? History = null);
+    public record ReturnRequestMessage(string Actor, string Message, DateTimeOffset SentOn);
+
+    public record ReturnRequest(string SubOrderNumber, string Status, string Reason, DateTimeOffset RequestedOn, List<ReturnRequestItem> Items, string Type = ReturnRequestTypes.Return, string? Description = null, string? CaseId = null, List<ReturnRequestHistoryEntry>? History = null, List<ReturnRequestMessage>? Messages = null);
 
     public record OrderStatusChange(string Status, DateTimeOffset ChangedOn, string? TrackingNumber = null, string? TrackingCarrier = null);
 
@@ -412,6 +414,8 @@ namespace SD.ProjectName.WebApp.Services
 
     public record ReturnRequestResult(bool Success, string? Error, ReturnRequest? Request = null);
 
+    public record CaseMessageView(string Actor, string Message, DateTimeOffset SentOn);
+
     public record BuyerCaseSummaryView(
         string CaseId,
         int OrderId,
@@ -421,6 +425,7 @@ namespace SD.ProjectName.WebApp.Services
         string Type,
         string Status,
         DateTimeOffset RequestedOn,
+        DateTimeOffset LastUpdatedOn,
         decimal RefundedAmount,
         string PaymentStatus,
         string? PaymentReference);
@@ -436,7 +441,7 @@ namespace SD.ProjectName.WebApp.Services
         List<BuyerCaseItemView> Items,
         CaseResolutionView Resolution,
         List<OrderStatusChange> StatusHistory,
-        List<string> Messages);
+        List<CaseMessageView> Messages);
 
     public record SellerCaseSummaryView(
         string CaseId,
@@ -447,7 +452,8 @@ namespace SD.ProjectName.WebApp.Services
         string BuyerEmail,
         string Type,
         string Status,
-        DateTimeOffset RequestedOn);
+        DateTimeOffset RequestedOn,
+        DateTimeOffset LastUpdatedOn);
 
     public record SellerCaseDetailView(
         SellerCaseSummaryView Summary,
@@ -460,7 +466,8 @@ namespace SD.ProjectName.WebApp.Services
         string? PaymentReference,
         decimal RefundedAmount,
         List<OrderStatusChange> StatusHistory,
-        List<ReturnRequestHistoryEntry> History);
+        List<ReturnRequestHistoryEntry> History,
+        List<CaseMessageView> Messages);
 
     public record ReturnCaseFilterOptions
     {
@@ -1071,7 +1078,7 @@ namespace SD.ProjectName.WebApp.Services
 
             var skip = (pageNumber - 1) * pageSize;
             var items = cases
-                .OrderByDescending(c => c.RequestedOn)
+                .OrderByDescending(c => c.LastUpdatedOn)
                 .Skip(skip)
                 .Take(pageSize)
                 .ToList();
@@ -1127,14 +1134,10 @@ namespace SD.ProjectName.WebApp.Services
             var items = BuildBuyerCaseItems(subOrder, normalizedRequest);
             var resolution = BuildCaseResolution(subOrder, normalizedRequest, details.PaymentStatus, order.PaymentReference);
             var history = subOrder.StatusHistory?.OrderByDescending(h => h.ChangedOn).ToList() ?? new List<OrderStatusChange>();
-            var messages = normalizedRequest.History?
-                .OrderByDescending(h => h.ChangedOn)
-                .Select(h =>
-                {
-                    var note = string.IsNullOrWhiteSpace(h.Note) ? string.Empty : $" — {h.Note}";
-                    return $"{h.ChangedOn.ToLocalTime():g}: {h.Actor} set status to {h.Status}{note}";
-                })
-                .ToList() ?? new List<string>();
+            var messages = normalizedRequest.Messages?
+                .OrderBy(m => m.SentOn)
+                .Select(m => new CaseMessageView(m.Actor, m.Message, m.SentOn))
+                .ToList() ?? new List<CaseMessageView>();
 
             return new BuyerCaseDetailView(
                 summary,
@@ -1193,6 +1196,7 @@ namespace SD.ProjectName.WebApp.Services
                         continue;
                     }
 
+                    var lastUpdated = CalculateCaseLastUpdated(normalizedRequest);
                     cases.Add(new SellerCaseSummaryView(
                         string.IsNullOrWhiteSpace(normalizedRequest.CaseId) ? BuildCaseId(subOrder.SubOrderNumber, normalizedRequest.RequestedOn) : normalizedRequest.CaseId!,
                         order.Id,
@@ -1202,7 +1206,8 @@ namespace SD.ProjectName.WebApp.Services
                         order.BuyerEmail ?? string.Empty,
                         normalizedRequest.Type,
                         ReturnRequestStatuses.Normalize(normalizedRequest.Status),
-                        normalizedRequest.RequestedOn));
+                        normalizedRequest.RequestedOn,
+                        lastUpdated));
                 }
             }
 
@@ -1219,7 +1224,7 @@ namespace SD.ProjectName.WebApp.Services
 
             var skip = (pageNumber - 1) * pageSize;
             var items = cases
-                .OrderByDescending(c => c.RequestedOn)
+                .OrderByDescending(c => c.LastUpdatedOn)
                 .Skip(skip)
                 .Take(pageSize)
                 .ToList();
@@ -1275,6 +1280,7 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             var buyerName = string.IsNullOrWhiteSpace(order.BuyerName) ? "Buyer" : order.BuyerName;
+            var lastUpdated = CalculateCaseLastUpdated(normalizedRequest);
             var summary = new SellerCaseSummaryView(
                 string.IsNullOrWhiteSpace(normalizedRequest.CaseId) ? BuildCaseId(subOrder.SubOrderNumber, normalizedRequest.RequestedOn) : normalizedRequest.CaseId!,
                 order.Id,
@@ -1284,7 +1290,8 @@ namespace SD.ProjectName.WebApp.Services
                 order.BuyerEmail ?? string.Empty,
                 normalizedRequest.Type,
                 ReturnRequestStatuses.Normalize(normalizedRequest.Status),
-                normalizedRequest.RequestedOn);
+                normalizedRequest.RequestedOn,
+                lastUpdated);
 
             var items = BuildBuyerCaseItems(subOrder, normalizedRequest);
             var address = DeserializeAddress(order.DeliveryAddressJson);
@@ -1292,6 +1299,10 @@ namespace SD.ProjectName.WebApp.Services
             var paymentStatus = PaymentStatuses.Normalize(details.PaymentStatus);
             var paymentReference = string.IsNullOrWhiteSpace(order.PaymentReference) ? null : order.PaymentReference.Trim();
             var history = normalizedRequest.History?.OrderByDescending(h => h.ChangedOn).ToList() ?? new List<ReturnRequestHistoryEntry>();
+            var messages = normalizedRequest.Messages?
+                .OrderBy(m => m.SentOn)
+                .Select(m => new CaseMessageView(m.Actor, m.Message, m.SentOn))
+                .ToList() ?? new List<CaseMessageView>();
 
             return new SellerCaseDetailView(
                 summary,
@@ -1304,7 +1315,199 @@ namespace SD.ProjectName.WebApp.Services
                 paymentReference,
                 Math.Max(0, subOrder.RefundedAmount),
                 statusHistory,
-                history);
+                history,
+                messages);
+        }
+
+        public async Task<SellerCaseDetailView?> GetReturnCaseForAdminAsync(
+            string caseId,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(caseId))
+            {
+                return null;
+            }
+
+            var normalizedCase = caseId.Trim();
+            var order = await _dbContext.Orders.AsNoTracking()
+                .FirstOrDefaultAsync(o => o.DetailsJson.Contains(normalizedCase), cancellationToken);
+            if (order == null)
+            {
+                return null;
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            var subOrder = details.SubOrders.FirstOrDefault(s =>
+                s.Return != null
+                && (string.Equals(s.Return.CaseId, normalizedCase, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(s.SubOrderNumber, normalizedCase, StringComparison.OrdinalIgnoreCase)));
+
+            if (subOrder?.Return == null)
+            {
+                return null;
+            }
+
+            var normalizedRequest = NormalizeReturnRequest(subOrder.Return, subOrder.Items);
+            if (normalizedRequest == null)
+            {
+                return null;
+            }
+
+            var buyerName = string.IsNullOrWhiteSpace(order.BuyerName) ? "Buyer" : order.BuyerName;
+            var summary = new SellerCaseSummaryView(
+                string.IsNullOrWhiteSpace(normalizedRequest.CaseId) ? BuildCaseId(subOrder.SubOrderNumber, normalizedRequest.RequestedOn) : normalizedRequest.CaseId!,
+                order.Id,
+                order.OrderNumber,
+                subOrder.SubOrderNumber,
+                buyerName,
+                order.BuyerEmail ?? string.Empty,
+                normalizedRequest.Type,
+                ReturnRequestStatuses.Normalize(normalizedRequest.Status),
+                normalizedRequest.RequestedOn,
+                CalculateCaseLastUpdated(normalizedRequest));
+
+            var items = BuildBuyerCaseItems(subOrder, normalizedRequest);
+            var address = DeserializeAddress(order.DeliveryAddressJson);
+            var statusHistory = subOrder.StatusHistory?.OrderByDescending(h => h.ChangedOn).ToList() ?? new List<OrderStatusChange>();
+            var paymentStatus = PaymentStatuses.Normalize(details.PaymentStatus);
+            var paymentReference = string.IsNullOrWhiteSpace(order.PaymentReference) ? null : order.PaymentReference.Trim();
+            var history = normalizedRequest.History?.OrderByDescending(h => h.ChangedOn).ToList() ?? new List<ReturnRequestHistoryEntry>();
+            var messages = normalizedRequest.Messages?
+                .OrderBy(m => m.SentOn)
+                .Select(m => new CaseMessageView(m.Actor, m.Message, m.SentOn))
+                .ToList() ?? new List<CaseMessageView>();
+
+            return new SellerCaseDetailView(
+                summary,
+                normalizedRequest.Reason,
+                normalizedRequest.Description,
+                items,
+                address,
+                subOrder.ShippingDetail,
+                paymentStatus,
+                paymentReference,
+                Math.Max(0, subOrder.RefundedAmount),
+                statusHistory,
+                history,
+                messages);
+        }
+
+        public async Task<ReturnRequestResult> AddReturnCaseMessageForBuyerAsync(
+            string buyerId,
+            string caseId,
+            string message,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(buyerId))
+            {
+                return new ReturnRequestResult(false, "Buyer is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(caseId))
+            {
+                return new ReturnRequestResult(false, "Case ID is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return new ReturnRequestResult(false, "Enter a message.");
+            }
+
+            var normalizedBuyer = buyerId.Trim();
+            var normalizedCase = caseId.Trim();
+            var normalizedMessage = message.Trim();
+
+            var order = await _dbContext.Orders.FirstOrDefaultAsync(
+                o => o.BuyerId == normalizedBuyer && o.DetailsJson.Contains(normalizedCase),
+                cancellationToken);
+            if (order == null)
+            {
+                return new ReturnRequestResult(false, "Case not found.");
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            var subOrderIndex = details.SubOrders.FindIndex(s =>
+                s.Return != null
+                && (string.Equals(s.Return.CaseId, normalizedCase, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(s.SubOrderNumber, normalizedCase, StringComparison.OrdinalIgnoreCase)));
+            if (subOrderIndex < 0)
+            {
+                return new ReturnRequestResult(false, "Case not found.");
+            }
+
+            var subOrder = details.SubOrders[subOrderIndex];
+            var normalizedRequest = NormalizeReturnRequest(subOrder.Return, subOrder.Items);
+            if (normalizedRequest == null)
+            {
+                return new ReturnRequestResult(false, "Case not found.");
+            }
+
+            var updatedRequest = AppendReturnMessage(normalizedRequest, "Buyer", normalizedMessage, DateTimeOffset.UtcNow);
+            details.SubOrders[subOrderIndex] = subOrder with { Return = updatedRequest };
+            order.DetailsJson = JsonSerializer.Serialize(details, _serializerOptions);
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return new ReturnRequestResult(true, null, updatedRequest);
+        }
+
+        public async Task<ReturnRequestResult> AddReturnCaseMessageForSellerAsync(
+            string sellerId,
+            string caseId,
+            string message,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return new ReturnRequestResult(false, "Seller is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(caseId))
+            {
+                return new ReturnRequestResult(false, "Case ID is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return new ReturnRequestResult(false, "Enter a message.");
+            }
+
+            var normalizedSeller = sellerId.Trim();
+            var normalizedCase = caseId.Trim();
+            var normalizedMessage = message.Trim();
+            var sellerToken = $"\"sellerId\":\"{normalizedSeller}\"";
+
+            var order = await _dbContext.Orders.FirstOrDefaultAsync(
+                o => o.DetailsJson.Contains(normalizedCase) && o.DetailsJson.Contains(sellerToken),
+                cancellationToken);
+            if (order == null)
+            {
+                return new ReturnRequestResult(false, "Case not found.");
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            var subOrderIndex = details.SubOrders.FindIndex(s =>
+                string.Equals(s.SellerId, normalizedSeller, StringComparison.OrdinalIgnoreCase)
+                && s.Return != null
+                && (string.Equals(s.Return.CaseId, normalizedCase, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(s.SubOrderNumber, normalizedCase, StringComparison.OrdinalIgnoreCase)));
+            if (subOrderIndex < 0)
+            {
+                return new ReturnRequestResult(false, "Case not found.");
+            }
+
+            var subOrder = details.SubOrders[subOrderIndex];
+            var normalizedRequest = NormalizeReturnRequest(subOrder.Return, subOrder.Items);
+            if (normalizedRequest == null)
+            {
+                return new ReturnRequestResult(false, "Case not found.");
+            }
+
+            var updatedRequest = AppendReturnMessage(normalizedRequest, "Seller", normalizedMessage, DateTimeOffset.UtcNow);
+            details.SubOrders[subOrderIndex] = subOrder with { Return = updatedRequest };
+            order.DetailsJson = JsonSerializer.Serialize(details, _serializerOptions);
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return new ReturnRequestResult(true, null, updatedRequest);
         }
 
         public async Task<ReturnRequestResult> UpdateReturnCaseForSellerAsync(
@@ -3268,11 +3471,32 @@ namespace SD.ProjectName.WebApp.Services
             return true;
         }
 
+        private static DateTimeOffset CalculateCaseLastUpdated(ReturnRequest request)
+        {
+            var timestamps = new List<DateTimeOffset> { request.RequestedOn };
+            if (request.History != null && request.History.Count > 0)
+            {
+                timestamps.AddRange(request.History.Select(h => h.ChangedOn));
+            }
+
+            if (request.Messages != null && request.Messages.Count > 0)
+            {
+                timestamps.AddRange(request.Messages.Select(m => m.SentOn));
+            }
+
+            var normalized = timestamps
+                .Where(t => t != DateTimeOffset.MinValue)
+                .ToList();
+
+            return normalized.Count == 0 ? DateTimeOffset.UtcNow : normalized.Max();
+        }
+
         private static BuyerCaseSummaryView BuildBuyerCaseSummary(OrderRecord order, OrderSubOrder subOrder, ReturnRequest request, string paymentStatus)
         {
             var sellerName = string.IsNullOrWhiteSpace(subOrder.SellerName) ? subOrder.SellerId : subOrder.SellerName;
             var normalizedPaymentStatus = PaymentStatuses.Normalize(paymentStatus);
             var paymentReference = string.IsNullOrWhiteSpace(order.PaymentReference) ? null : order.PaymentReference.Trim();
+            var lastUpdated = CalculateCaseLastUpdated(request);
 
             return new BuyerCaseSummaryView(
                 string.IsNullOrWhiteSpace(request.CaseId) ? BuildCaseId(subOrder.SubOrderNumber, request.RequestedOn) : request.CaseId!,
@@ -3283,6 +3507,7 @@ namespace SD.ProjectName.WebApp.Services
                 request.Type,
                 ReturnRequestStatuses.Normalize(request.Status),
                 request.RequestedOn,
+                lastUpdated,
                 Math.Max(0, subOrder.RefundedAmount),
                 normalizedPaymentStatus,
                 paymentReference);
@@ -4310,6 +4535,7 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             var normalizedHistory = NormalizeReturnHistory(request.History, normalizedStatus, requestedOn);
+            var normalizedMessages = NormalizeReturnMessages(request.Messages, requestedOn);
 
             return request with
             {
@@ -4320,7 +4546,8 @@ namespace SD.ProjectName.WebApp.Services
                 Items = normalizedItems,
                 CaseId = string.IsNullOrWhiteSpace(request.CaseId) ? BuildCaseId(request.SubOrderNumber, requestedOn) : request.CaseId.Trim(),
                 RequestedOn = requestedOn,
-                History = normalizedHistory
+                History = normalizedHistory,
+                Messages = normalizedMessages
             };
         }
 
@@ -4349,6 +4576,20 @@ namespace SD.ProjectName.WebApp.Services
             return normalized;
         }
 
+        private static List<ReturnRequestMessage> NormalizeReturnMessages(List<ReturnRequestMessage>? messages, DateTimeOffset requestedOn)
+        {
+            var normalized = messages?
+                .Where(m => !string.IsNullOrWhiteSpace(m.Message))
+                .Select(m => new ReturnRequestMessage(
+                    string.IsNullOrWhiteSpace(m.Actor) ? "System" : m.Actor.Trim(),
+                    m.Message.Trim(),
+                    m.SentOn == DateTimeOffset.MinValue ? requestedOn : m.SentOn))
+                .OrderBy(m => m.SentOn)
+                .ToList() ?? new List<ReturnRequestMessage>();
+
+            return normalized;
+        }
+
         private static ReturnRequest AppendReturnHistory(ReturnRequest request, string status, string actor, string? note, DateTimeOffset changedOn)
         {
             var history = request.History?.ToList() ?? new List<ReturnRequestHistoryEntry>();
@@ -4361,6 +4602,28 @@ namespace SD.ProjectName.WebApp.Services
             history.Add(entry);
             history = history.OrderBy(h => h.ChangedOn).ToList();
             return request with { History = history, Status = ReturnRequestStatuses.Normalize(status) };
+        }
+
+        private static ReturnRequest AppendReturnMessage(ReturnRequest request, string actor, string message, DateTimeOffset sentOn)
+        {
+            var messages = request.Messages?.ToList() ?? new List<ReturnRequestMessage>();
+            var normalizedMessage = string.IsNullOrWhiteSpace(message) ? string.Empty : message.Trim();
+            if (normalizedMessage.Length == 0)
+            {
+                return request;
+            }
+
+            messages.Add(new ReturnRequestMessage(
+                string.IsNullOrWhiteSpace(actor) ? "System" : actor.Trim(),
+                normalizedMessage,
+                sentOn == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : sentOn));
+
+            messages = messages
+                .Where(m => !string.IsNullOrWhiteSpace(m.Message))
+                .OrderBy(m => m.SentOn)
+                .ToList();
+
+            return request with { Messages = messages };
         }
 
         private static string CalculateOrderStatus(IEnumerable<OrderSubOrder> subOrders, string? fallbackStatus = null)
