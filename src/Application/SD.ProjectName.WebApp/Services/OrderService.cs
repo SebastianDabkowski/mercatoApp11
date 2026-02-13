@@ -380,6 +380,8 @@ namespace SD.ProjectName.WebApp.Services
         public DateTimeOffset? ToDate { get; init; }
 
         public string? BuyerQuery { get; init; }
+
+        public bool MissingTrackingOnly { get; init; }
     }
 
     public record SellerPayoutFilterOptions
@@ -418,6 +420,8 @@ namespace SD.ProjectName.WebApp.Services
         decimal AdjustmentTotal);
 
     public record SellerMonthlySettlementDetail(SellerMonthlySettlementSummary Summary, List<SellerMonthlySettlementLine> Orders);
+
+    public record SellerOrderExportResult(byte[] Content, int RowCount, int TotalMatching, bool Truncated);
 
     public static class InvoiceStatuses
     {
@@ -480,6 +484,8 @@ namespace SD.ProjectName.WebApp.Services
 
     public class OrderService
     {
+        private const int SellerExportRowLimit = 5000;
+
         private readonly ApplicationDbContext _dbContext;
         private readonly IEmailSender _emailSender;
         private readonly ILogger<OrderService> _logger;
@@ -493,6 +499,8 @@ namespace SD.ProjectName.WebApp.Services
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
+
+        private record SellerOrderMatch(OrderRecord Order, OrderSubOrder SubOrder, DeliveryAddress Address, string Status);
 
         public OrderService(ApplicationDbContext dbContext, IEmailSender emailSender, ILogger<OrderService> logger, EscrowOptions? escrowOptions = null, CartOptions? cartOptions = null, SettlementOptions? settlementOptions = null, InvoiceOptions? invoiceOptions = null)
         {
@@ -927,6 +935,81 @@ namespace SD.ProjectName.WebApp.Services
             };
         }
 
+        private async Task<List<SellerOrderMatch>> GetSellerOrderMatchesAsync(
+            string sellerId,
+            SellerOrderFilterOptions? filters,
+            CancellationToken cancellationToken)
+        {
+            var normalizedStatuses = filters?.Statuses
+                .Select(OrderStatuses.Normalize)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
+
+            var buyerQuery = filters?.BuyerQuery?.Trim();
+            var sellerToken = $"\"sellerId\":\"{sellerId}\"";
+
+            var query = _dbContext.Orders.AsNoTracking()
+                .Where(o => o.DetailsJson.Contains(sellerToken));
+
+            if (filters?.FromDate.HasValue == true)
+            {
+                query = query.Where(o => o.CreatedOn >= filters.FromDate.Value);
+            }
+
+            if (filters?.ToDate.HasValue == true)
+            {
+                query = query.Where(o => o.CreatedOn <= filters.ToDate.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(buyerQuery))
+            {
+                var like = $"%{buyerQuery}%";
+                query = query.Where(o => EF.Functions.Like(o.BuyerName, like) || EF.Functions.Like(o.BuyerEmail, like));
+            }
+
+            var candidates = await query
+                .OrderByDescending(o => o.CreatedOn)
+                .ToListAsync(cancellationToken);
+
+            var matches = new List<SellerOrderMatch>();
+            foreach (var order in candidates)
+            {
+                var details = DeserializeDetails(order.DetailsJson);
+                var subOrder = details.SubOrders.FirstOrDefault(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
+                if (subOrder == null)
+                {
+                    continue;
+                }
+
+                var normalizedStatus = OrderStatuses.Normalize(subOrder.Status);
+                if (normalizedStatuses.Count > 0 && !normalizedStatuses.Contains(normalizedStatus))
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(buyerQuery))
+                {
+                    var matchesBuyer = (!string.IsNullOrWhiteSpace(order.BuyerName) && order.BuyerName.Contains(buyerQuery, StringComparison.OrdinalIgnoreCase))
+                        || (!string.IsNullOrWhiteSpace(order.BuyerEmail) && order.BuyerEmail.Contains(buyerQuery, StringComparison.OrdinalIgnoreCase));
+                    if (!matchesBuyer)
+                    {
+                        continue;
+                    }
+                }
+
+                if (filters?.MissingTrackingOnly == true && !string.IsNullOrWhiteSpace(subOrder.TrackingNumber))
+                {
+                    continue;
+                }
+
+                var address = DeserializeAddress(order.DeliveryAddressJson);
+                matches.Add(new SellerOrderMatch(order, subOrder, address, normalizedStatus));
+            }
+
+            return matches;
+        }
+
         public async Task<PagedResult<SellerOrderSummaryView>> GetSummariesForSellerAsync(
             string sellerId,
             SellerOrderFilterOptions? filters = null,
@@ -965,31 +1048,64 @@ namespace SD.ProjectName.WebApp.Services
             };
         }
 
-        public async Task<byte[]> ExportSellerOrdersAsync(
+        public async Task<SellerOrderExportResult?> ExportSellerOrdersAsync(
             string sellerId,
             SellerOrderFilterOptions? filters = null,
             CancellationToken cancellationToken = default)
         {
-            var summaries = await GetSellerOrderSummariesAsync(sellerId, filters, cancellationToken);
-            var builder = new StringBuilder();
-            builder.AppendLine("SubOrder,Order,CreatedOn,Status,Buyer,BuyerEmail,Total,ShippingMethod");
-
-            foreach (var summary in summaries.OrderByDescending(s => s.CreatedOn))
+            var matches = await GetSellerOrderMatchesAsync(sellerId, filters, cancellationToken);
+            var totalMatches = matches.Count;
+            if (totalMatches == 0)
             {
+                return null;
+            }
+
+            var ordered = matches
+                .OrderByDescending(s => s.Order.CreatedOn)
+                .Take(SellerExportRowLimit)
+                .ToList();
+            var truncated = ordered.Count < totalMatches;
+            var builder = new StringBuilder();
+            builder.AppendLine("SubOrder,Order,CreatedOn,Status,BuyerName,BuyerEmail,BuyerPhone,Recipient,AddressLine1,AddressLine2,City,State,PostalCode,Country,ShippingMethod,ShippingCost,TrackingNumber,TrackingCarrier,Items,TotalQuantity,GrandTotal,PaymentReference");
+
+            foreach (var match in ordered)
+            {
+                var subOrder = match.SubOrder;
+                var address = match.Address;
+                var buyerName = string.IsNullOrWhiteSpace(match.Order.BuyerName) ? match.Order.BuyerEmail ?? string.Empty : match.Order.BuyerName;
+                var shippingMethod = string.IsNullOrWhiteSpace(subOrder.ShippingDetail.MethodLabel)
+                    ? subOrder.ShippingDetail.MethodId
+                    : subOrder.ShippingDetail.MethodLabel;
+                var items = string.Join(" | ", subOrder.Items.Select(FormatItemForExport));
+
                 builder.AppendLine(string.Join(",", new[]
                 {
-                    CsvEscape(summary.SubOrderNumber),
-                    CsvEscape(summary.OrderNumber),
-                    CsvEscape(summary.CreatedOn.ToString("u", CultureInfo.InvariantCulture)),
-                    CsvEscape(summary.Status),
-                    CsvEscape(summary.BuyerName),
-                    CsvEscape(summary.BuyerEmail),
-                    CsvEscape(summary.GrandTotal.ToString("F2", CultureInfo.InvariantCulture)),
-                    CsvEscape(summary.ShippingMethod)
+                    CsvEscape(subOrder.SubOrderNumber),
+                    CsvEscape(match.Order.OrderNumber),
+                    CsvEscape(match.Order.CreatedOn.ToString("u", CultureInfo.InvariantCulture)),
+                    CsvEscape(match.Status),
+                    CsvEscape(buyerName),
+                    CsvEscape(match.Order.BuyerEmail ?? string.Empty),
+                    CsvEscape(address.Phone ?? string.Empty),
+                    CsvEscape(address.Recipient),
+                    CsvEscape(address.Line1),
+                    CsvEscape(address.Line2 ?? string.Empty),
+                    CsvEscape(address.City),
+                    CsvEscape(address.State),
+                    CsvEscape(address.PostalCode),
+                    CsvEscape(address.Country),
+                    CsvEscape(shippingMethod),
+                    CsvEscape(subOrder.Shipping.ToString("F2", CultureInfo.InvariantCulture)),
+                    CsvEscape(subOrder.TrackingNumber ?? string.Empty),
+                    CsvEscape(subOrder.TrackingCarrier ?? string.Empty),
+                    CsvEscape(items),
+                    CsvEscape(subOrder.TotalQuantity.ToString(CultureInfo.InvariantCulture)),
+                    CsvEscape(subOrder.GrandTotal.ToString("F2", CultureInfo.InvariantCulture)),
+                    CsvEscape(match.Order.PaymentReference ?? string.Empty)
                 }));
             }
 
-            return Encoding.UTF8.GetBytes(builder.ToString());
+            return new SellerOrderExportResult(Encoding.UTF8.GetBytes(builder.ToString()), ordered.Count, totalMatches, truncated);
         }
 
         private async Task<List<SellerOrderSummaryView>> GetSellerOrderSummariesAsync(
@@ -997,84 +1113,36 @@ namespace SD.ProjectName.WebApp.Services
             SellerOrderFilterOptions? filters,
             CancellationToken cancellationToken)
         {
-            var normalizedStatuses = filters?.Statuses
-                .Select(OrderStatuses.Normalize)
-                .Where(s => !string.IsNullOrWhiteSpace(s))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList() ?? new List<string>();
-
-            var buyerQuery = filters?.BuyerQuery?.Trim();
-            var sellerToken = $"\"sellerId\":\"{sellerId}\"";
-
-            var query = _dbContext.Orders.AsNoTracking()
-                .Where(o => o.DetailsJson.Contains(sellerToken));
-
-            if (filters?.FromDate.HasValue == true)
-            {
-                query = query.Where(o => o.CreatedOn >= filters.FromDate.Value);
-            }
-
-            if (filters?.ToDate.HasValue == true)
-            {
-                query = query.Where(o => o.CreatedOn <= filters.ToDate.Value);
-            }
-
-            if (!string.IsNullOrWhiteSpace(buyerQuery))
-            {
-                var like = $"%{buyerQuery}%";
-                query = query.Where(o => EF.Functions.Like(o.BuyerName, like) || EF.Functions.Like(o.BuyerEmail, like));
-            }
-
-            var candidates = await query
-                .OrderByDescending(o => o.CreatedOn)
-                .ToListAsync(cancellationToken);
-
+            var matches = await GetSellerOrderMatchesAsync(sellerId, filters, cancellationToken);
             var summaries = new List<SellerOrderSummaryView>();
-            foreach (var order in candidates)
+            foreach (var match in matches)
             {
-                var details = DeserializeDetails(order.DetailsJson);
-                var match = details.SubOrders.FirstOrDefault(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
-                if (match == null)
-                {
-                    continue;
-                }
-
-                var normalizedStatus = OrderStatuses.Normalize(match.Status);
-                if (normalizedStatuses.Count > 0 && !normalizedStatuses.Contains(normalizedStatus))
-                {
-                    continue;
-                }
-
-                if (!string.IsNullOrWhiteSpace(buyerQuery))
-                {
-                    var matchesBuyer = (!string.IsNullOrWhiteSpace(order.BuyerName) && order.BuyerName.Contains(buyerQuery, StringComparison.OrdinalIgnoreCase))
-                        || (!string.IsNullOrWhiteSpace(order.BuyerEmail) && order.BuyerEmail.Contains(buyerQuery, StringComparison.OrdinalIgnoreCase));
-                    if (!matchesBuyer)
-                    {
-                        continue;
-                    }
-                }
-
-                var shippingMethod = string.IsNullOrWhiteSpace(match.ShippingDetail.MethodLabel)
-                    ? match.ShippingDetail.MethodId
-                    : match.ShippingDetail.MethodLabel;
-                var buyerName = string.IsNullOrWhiteSpace(order.BuyerName) ? order.BuyerEmail ?? string.Empty : order.BuyerName;
+                var shippingMethod = string.IsNullOrWhiteSpace(match.SubOrder.ShippingDetail.MethodLabel)
+                    ? match.SubOrder.ShippingDetail.MethodId
+                    : match.SubOrder.ShippingDetail.MethodLabel;
+                var buyerName = string.IsNullOrWhiteSpace(match.Order.BuyerName) ? match.Order.BuyerEmail ?? string.Empty : match.Order.BuyerName;
 
                 summaries.Add(new SellerOrderSummaryView(
-                    order.Id,
-                    order.OrderNumber,
-                    match.SubOrderNumber,
-                    order.CreatedOn,
-                    normalizedStatus,
-                    match.GrandTotal,
-                    match.TotalQuantity,
-                    match.SellerName,
+                    match.Order.Id,
+                    match.Order.OrderNumber,
+                    match.SubOrder.SubOrderNumber,
+                    match.Order.CreatedOn,
+                    match.Status,
+                    match.SubOrder.GrandTotal,
+                    match.SubOrder.TotalQuantity,
+                    match.SubOrder.SellerName,
                     buyerName,
-                    order.BuyerEmail ?? string.Empty,
+                    match.Order.BuyerEmail ?? string.Empty,
                     shippingMethod));
             }
 
             return summaries;
+        }
+
+        private static string FormatItemForExport(OrderItemDetail item)
+        {
+            var variant = string.IsNullOrWhiteSpace(item.Variant) ? string.Empty : $" ({item.Variant})";
+            return $"{item.Name}{variant} x{item.Quantity}";
         }
 
         private static string CsvEscape(string value)
