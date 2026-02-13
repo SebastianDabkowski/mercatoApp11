@@ -1,0 +1,169 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using SD.ProjectName.Modules.Products.Infrastructure;
+using SD.ProjectName.WebApp.Data;
+using SD.ProjectName.WebApp.Services;
+using Xunit;
+
+namespace SD.ProjectName.Tests.Products
+{
+    public class AdminReportingServiceTests
+    {
+        private static readonly JsonSerializerOptions SerializerOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+        [Fact]
+        public async Task GetOrderReportAsync_FiltersBySellerStatusAndPayment()
+        {
+            await using var appContext = CreateApplicationContext();
+            await using var productContext = CreateProductContext();
+
+            var paid = CreateOrder("ORD-1", "seller-1", 100, 10, 10, new DateTimeOffset(2026, 2, 1, 8, 0, 0, TimeSpan.Zero), OrderStatuses.Paid, PaymentStatuses.Paid, "Buyer One", "buyer1@test.com");
+            var pending = CreateOrder("ORD-2", "seller-1", 50, 5, 5, new DateTimeOffset(2026, 2, 2, 10, 0, 0, TimeSpan.Zero), OrderStatuses.Paid, PaymentStatuses.Pending, "Buyer Two", "buyer2@test.com");
+            var otherSeller = CreateOrder("ORD-3", "seller-2", 70, 7, 7, new DateTimeOffset(2026, 2, 3, 10, 0, 0, TimeSpan.Zero), OrderStatuses.Paid, PaymentStatuses.Paid, "Buyer Three", "buyer3@test.com");
+            appContext.Orders.AddRange(paid, pending, otherSeller);
+            await appContext.SaveChangesAsync();
+
+            var service = new AdminReportingService(appContext, productContext, new AdminReportOptions(), NullLogger<AdminReportingService>.Instance);
+
+            var filters = new AdminOrderReportFilterOptions
+            {
+                SellerId = "seller-1",
+                Statuses = new List<string> { OrderStatuses.Paid },
+                PaymentStatuses = new List<string> { PaymentStatuses.Paid },
+                FromDate = new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero),
+                ToDate = new DateTimeOffset(2026, 2, 10, 23, 59, 59, TimeSpan.Zero)
+            };
+
+            var result = await service.GetOrderReportAsync(filters, pageNumber: 1, pageSize: 20);
+
+            Assert.Equal(1, result.TotalCount);
+            var row = Assert.Single(result.Rows);
+            Assert.Equal("ORD-1", row.OrderNumber);
+            Assert.Equal("seller-1", row.SellerId);
+            Assert.Equal(110, row.OrderValue);
+            Assert.Equal(10, row.Commission);
+            Assert.Equal(100, row.Payout);
+        }
+
+        [Fact]
+        public async Task ExportOrdersAsync_EnforcesExportLimit()
+        {
+            await using var appContext = CreateApplicationContext();
+            await using var productContext = CreateProductContext();
+
+            var createdOn = new DateTimeOffset(2026, 2, 5, 12, 0, 0, TimeSpan.Zero);
+            appContext.Orders.Add(CreateOrder("ORD-10", "seller-1", 30, 5, 3, createdOn, OrderStatuses.Paid, PaymentStatuses.Paid, "Buyer A", "a@test.com"));
+            appContext.Orders.Add(CreateOrder("ORD-11", "seller-1", 40, 5, 4, createdOn, OrderStatuses.Paid, PaymentStatuses.Paid, "Buyer B", "b@test.com"));
+            appContext.Orders.Add(CreateOrder("ORD-12", "seller-1", 50, 5, 5, createdOn, OrderStatuses.Paid, PaymentStatuses.Paid, "Buyer C", "c@test.com"));
+            await appContext.SaveChangesAsync();
+
+            var options = new AdminReportOptions { ExportRowLimit = 2 };
+            var service = new AdminReportingService(appContext, productContext, options, NullLogger<AdminReportingService>.Instance);
+
+            var export = await service.ExportOrdersAsync(new AdminOrderReportFilterOptions
+            {
+                SellerId = "seller-1"
+            });
+
+            Assert.NotNull(export);
+            Assert.True(export!.Truncated);
+            Assert.Equal(2, export.RowCount);
+            Assert.Equal(3, export.TotalMatching);
+            var csv = System.Text.Encoding.UTF8.GetString(export.Content);
+            Assert.Contains("OrderNumber,SubOrderNumber,CreatedOn,Buyer,BuyerEmail,SellerId,SellerName,Status,PaymentStatus,OrderValue,Commission,PayoutAmount", csv);
+        }
+
+        private static ApplicationDbContext CreateApplicationContext()
+        {
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            return new ApplicationDbContext(options);
+        }
+
+        private static ProductDbContext CreateProductContext()
+        {
+            var options = new DbContextOptionsBuilder<ProductDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            return new ProductDbContext(options);
+        }
+
+        private static OrderRecord CreateOrder(
+            string orderNumber,
+            string sellerId,
+            decimal itemsSubtotal,
+            decimal shipping,
+            decimal commission,
+            DateTimeOffset createdOn,
+            string orderStatus,
+            string paymentStatus,
+            string buyerName,
+            string buyerEmail)
+        {
+            var items = new List<OrderItemDetail>
+            {
+                new(1, "Item", "Default", 1, itemsSubtotal, itemsSubtotal, sellerId, sellerId, orderStatus, "Category/Item")
+            };
+            var grandTotal = itemsSubtotal + shipping;
+            var subOrder = new OrderSubOrder(
+                $"{orderNumber}-01",
+                sellerId,
+                sellerId,
+                itemsSubtotal,
+                shipping,
+                0,
+                grandTotal,
+                items.Sum(i => i.Quantity),
+                items,
+                new OrderShippingDetail(sellerId, sellerId, "standard", "Standard", shipping, "Standard shipping"),
+                orderStatus,
+                null,
+                null,
+                0);
+            var details = new OrderDetailsPayload(
+                items,
+                new List<OrderShippingDetail> { subOrder.ShippingDetail },
+                subOrder.TotalQuantity,
+                0,
+                null,
+                new List<OrderSubOrder> { subOrder },
+                new List<EscrowAllocation>
+                {
+                    new(
+                        subOrder.SubOrderNumber,
+                        sellerId,
+                        grandTotal,
+                        commission,
+                        grandTotal - commission,
+                        0,
+                        grandTotal - commission,
+                        true,
+                        new List<EscrowLedgerEntry>())
+                },
+                paymentStatus);
+            return new OrderRecord
+            {
+                OrderNumber = orderNumber,
+                Status = orderStatus,
+                BuyerId = "buyer-1",
+                BuyerName = buyerName,
+                BuyerEmail = buyerEmail,
+                PaymentMethodId = "card",
+                PaymentMethodLabel = "Card",
+                ItemsSubtotal = itemsSubtotal,
+                ShippingTotal = shipping,
+                GrandTotal = grandTotal,
+                TotalQuantity = subOrder.TotalQuantity,
+                CreatedOn = createdOn,
+                DetailsJson = JsonSerializer.Serialize(details, SerializerOptions),
+                DeliveryAddressJson = "{}"
+            };
+        }
+    }
+}
