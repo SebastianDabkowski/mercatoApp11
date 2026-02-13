@@ -1,0 +1,205 @@
+@page "/Seller/Payouts/Details/{orderId:int}"
+@using SD.ProjectName.WebApp.Services
+@model SD.ProjectName.WebApp.Pages.Seller.Payouts.DetailsModel
+@{
+    ViewData["Title"] = "Payout details";
+}
+
+<h1 class="mb-3">Payout details</h1>
+
+@if (Model.Payout == null)
+{
+    <div class="alert alert-warning">Payout not found.</div>
+}
+else
+{
+    var statusClass = "badge bg-secondary";
+    if (Model.Payout.Status.Equals(PayoutStatuses.Paid, StringComparison.OrdinalIgnoreCase))
+    {
+        statusClass = "badge bg-success";
+    }
+    else if (Model.Payout.Status.Equals(PayoutStatuses.Processing, StringComparison.OrdinalIgnoreCase))
+    {
+        statusClass = "badge bg-warning text-dark";
+    }
+    else if (Model.Payout.Status.Equals(PayoutStatuses.Failed, StringComparison.OrdinalIgnoreCase))
+    {
+        statusClass = "badge bg-danger";
+    }
+
+    <div class="text-muted mb-2">Parent #@Model.Payout.OrderNumber · Sub-order @Model.Payout.SubOrderNumber</div>
+    <div class="alert alert-secondary">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+            <div>
+                <div class="fw-semibold">Status: <span class="@statusClass">@Model.Payout.Status</span></div>
+                <div class="text-muted small">Payout date: @Model.Payout.PayoutOn.ToLocalTime().ToString("g")</div>
+                <div class="text-muted small">Payment status: @Model.Payout.PaymentStatus</div>
+                <div class="text-muted small">Paid with: @Model.Payout.PaymentMethod</div>
+                @if (!string.IsNullOrWhiteSpace(Model.Payout.ErrorReference))
+                {
+                    <div class="text-danger small">Failure reason: @Model.Payout.ErrorReference</div>
+                }
+            </div>
+            <div class="text-end">
+                <div class="fw-semibold fs-4">@Model.Payout.PayoutAmount.ToString("C")</div>
+                <div class="text-muted small">Released to seller: @Model.Payout.ReleasedToSeller.ToString("C")</div>
+                <div class="text-muted small">Commission: @Model.Payout.CommissionAmount.ToString("C")</div>
+                <div class="text-muted small">Held in escrow: @Model.Payout.HeldAmount.ToString("C")</div>
+                <div class="text-muted small">Refunded to buyer: @Model.Payout.ReleasedToBuyer.ToString("C")</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-3">
+                <div class="card-header">Order breakdown</div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Item</th>
+                                    <th scope="col">Status</th>
+                                    <th scope="col" class="text-end">Qty</th>
+                                    <th scope="col" class="text-end">Unit</th>
+                                    <th scope="col" class="text-end">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in Model.Payout.SubOrder.Items)
+                                {
+                                    var itemStatus = OrderStatuses.Normalize(item.Status);
+                                    var badgeClass = "badge bg-secondary";
+                                    if (itemStatus.Equals("Delivered", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        badgeClass = "badge bg-success";
+                                    }
+                                    else if (itemStatus.Equals("Shipped", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        badgeClass = "badge bg-primary";
+                                    }
+                                    else if (itemStatus.Equals("Preparing", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        badgeClass = "badge bg-info text-dark";
+                                    }
+                                    else if (itemStatus.Equals("Cancelled", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        badgeClass = "badge bg-warning text-dark";
+                                    }
+                                    else if (itemStatus.Equals("Refunded", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        badgeClass = "badge bg-light text-dark border";
+                                    }
+
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">@item.Name</div>
+                                            @if (!string.IsNullOrWhiteSpace(item.Variant))
+                                            {
+                                                <div class="text-muted small">@item.Variant</div>
+                                            }
+                                        </td>
+                                        <td><span class="@badgeClass">@itemStatus</span></td>
+                                        <td class="text-end">@item.Quantity</td>
+                                        <td class="text-end">@item.UnitPrice.ToString("C")</td>
+                                        <td class="text-end">@item.LineTotal.ToString("C")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">Ledger</div>
+                <div class="card-body">
+                    @if (Model.Payout.Ledger.Count == 0)
+                    {
+                        <div class="text-muted">No ledger entries recorded.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Date</th>
+                                        <th scope="col">Type</th>
+                                        <th scope="col" class="text-end">Amount</th>
+                                        <th scope="col">Note</th>
+                                        <th scope="col">Reference</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var entry in Model.Payout.Ledger.OrderByDescending(l => l.RecordedOn))
+                                    {
+                                        <tr>
+                                            <td>@entry.RecordedOn.ToLocalTime().ToString("g")</td>
+                                            <td>@entry.Type</td>
+                                            <td class="text-end">@entry.Amount.ToString("C")</td>
+                                            <td class="text-muted small">@entry.Note</td>
+                                            <td class="text-muted small">@entry.Reference</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header">Payout totals</div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">Sub-order total</span>
+                        <span class="fw-semibold">@Model.Payout.SubOrder.GrandTotal.ToString("C")</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">Commission</span>
+                        <span class="fw-semibold">@Model.Payout.CommissionAmount.ToString("C")</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">Released to buyer</span>
+                        <span class="fw-semibold">@Model.Payout.ReleasedToBuyer.ToString("C")</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">Eligible payout</span>
+                        <span class="fw-semibold">@Model.Payout.PayoutAmount.ToString("C")</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">Paid out</span>
+                        <span class="fw-semibold">@Model.Payout.ReleasedToSeller.ToString("C")</span>
+                    </div>
+                </div>
+            </div>
+            <div class="card mb-3">
+                <div class="card-header">Shipping &amp; buyer</div>
+                <div class="card-body">
+                    <div class="fw-semibold">@Model.Payout.SubOrder.ShippingDetail.MethodLabel</div>
+                    <div class="text-muted small mb-2">@Model.Payout.SubOrder.ShippingDetail.Description</div>
+                    <div class="fw-semibold">Buyer</div>
+                    <div>@Model.Payout.BuyerName</div>
+                    <div class="text-muted small">@Model.Payout.BuyerEmail</div>
+                    @if (!string.IsNullOrWhiteSpace(Model.Payout.BuyerPhone))
+                    {
+                        <div class="text-muted small">Phone: @Model.Payout.BuyerPhone</div>
+                    }
+                    <hr />
+                    <div class="fw-semibold">Delivery address</div>
+                    <div>@Model.Payout.Address.Recipient</div>
+                    <div>@Model.Payout.Address.Line1</div>
+                    @if (!string.IsNullOrWhiteSpace(Model.Payout.Address.Line2))
+                    {
+                        <div>@Model.Payout.Address.Line2</div>
+                    }
+                    <div>@Model.Payout.Address.City @Model.Payout.Address.State @Model.Payout.Address.PostalCode</div>
+                    <div>@Model.Payout.Address.Country</div>
+                </div>
+            </div>
+        </div>
+    </div>
+}

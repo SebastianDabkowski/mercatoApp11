@@ -208,6 +208,8 @@ namespace SD.ProjectName.WebApp.Services
 
         private static readonly string[] Ordered = { Scheduled, Processing, Paid, Failed };
 
+        public static IReadOnlyList<string> All => Ordered;
+
         public static string Normalize(string? status)
         {
             if (string.IsNullOrWhiteSpace(status))
@@ -311,6 +313,36 @@ namespace SD.ProjectName.WebApp.Services
 
     public record SellerPayoutScheduleView(string Schedule, string Status, decimal EligibleAmount, decimal ProcessingAmount, decimal PaidAmount, decimal Threshold, string? ErrorReference);
 
+    public record SellerPayoutSummaryView(
+        int OrderId,
+        string OrderNumber,
+        string SubOrderNumber,
+        DateTimeOffset PayoutOn,
+        decimal Amount,
+        string Status,
+        string? ErrorReference);
+
+    public record SellerPayoutDetailView(
+        int OrderId,
+        string OrderNumber,
+        string SubOrderNumber,
+        DateTimeOffset PayoutOn,
+        string Status,
+        decimal PayoutAmount,
+        decimal ReleasedToSeller,
+        decimal CommissionAmount,
+        decimal HeldAmount,
+        decimal ReleasedToBuyer,
+        string PaymentMethod,
+        string PaymentStatus,
+        string BuyerName,
+        string BuyerEmail,
+        string? BuyerPhone,
+        DeliveryAddress Address,
+        OrderSubOrder SubOrder,
+        List<EscrowLedgerEntry> Ledger,
+        string? ErrorReference);
+
     public record PayoutRunResult(bool Success, string Status, decimal ProcessedAmount, string? ErrorReference = null);
 
     public record OrderCreationResult(OrderRecord Order, bool Created);
@@ -341,6 +373,15 @@ namespace SD.ProjectName.WebApp.Services
         public DateTimeOffset? ToDate { get; init; }
 
         public string? BuyerQuery { get; init; }
+    }
+
+    public record SellerPayoutFilterOptions
+    {
+        public List<string> Statuses { get; init; } = new();
+
+        public DateTimeOffset? FromDate { get; init; }
+
+        public DateTimeOffset? ToDate { get; init; }
     }
 
     public record SellerFilterOption(string Id, string Name);
@@ -1020,6 +1061,147 @@ namespace SD.ProjectName.WebApp.Services
                 paymentStatus,
                 subOrder.Return,
                 escrow);
+        }
+
+        public async Task<PagedResult<SellerPayoutSummaryView>> GetPayoutsForSellerAsync(
+            string sellerId,
+            SellerPayoutFilterOptions? filters = null,
+            int pageNumber = 1,
+            int pageSize = 10,
+            CancellationToken cancellationToken = default)
+        {
+            pageNumber = Math.Max(1, pageNumber);
+            pageSize = Math.Clamp(pageSize, 1, 50);
+
+            var normalizedStatuses = filters?.Statuses
+                .Select(PayoutStatuses.Normalize)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
+
+            var sellerToken = $"\"sellerId\":\"{sellerId}\"";
+            var orders = await _dbContext.Orders.AsNoTracking()
+                .Where(o => o.DetailsJson.Contains(sellerToken))
+                .OrderByDescending(o => o.CreatedOn)
+                .ToListAsync(cancellationToken);
+
+            var payouts = new List<SellerPayoutSummaryView>();
+            foreach (var order in orders)
+            {
+                var details = DeserializeDetails(order.DetailsJson);
+                var subOrder = details.SubOrders.FirstOrDefault(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
+                var allocation = details.Escrow?.FirstOrDefault(e =>
+                    string.Equals(e.SubOrderNumber, subOrder?.SubOrderNumber, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(e.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
+                if (subOrder == null || allocation == null)
+                {
+                    continue;
+                }
+
+                var status = PayoutStatuses.Normalize(allocation.PayoutStatus);
+                if (normalizedStatuses.Count > 0 && !normalizedStatuses.Contains(status))
+                {
+                    continue;
+                }
+
+                var payoutOn = ResolvePayoutDate(allocation, order.CreatedOn);
+                if (filters?.FromDate.HasValue == true && payoutOn < filters.FromDate.Value)
+                {
+                    continue;
+                }
+
+                if (filters?.ToDate.HasValue == true && payoutOn > filters.ToDate.Value)
+                {
+                    continue;
+                }
+
+                var amount = Math.Max(allocation.SellerPayoutAmount, allocation.ReleasedToSeller);
+                payouts.Add(new SellerPayoutSummaryView(
+                    order.Id,
+                    order.OrderNumber,
+                    subOrder.SubOrderNumber,
+                    payoutOn,
+                    amount,
+                    status,
+                    allocation.PayoutErrorReference));
+            }
+
+            var totalCount = payouts.Count;
+            var totalPages = pageSize <= 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pageSize);
+            if (totalPages == 0)
+            {
+                pageNumber = 1;
+            }
+            else if (pageNumber > totalPages)
+            {
+                pageNumber = totalPages;
+            }
+
+            var skip = (pageNumber - 1) * pageSize;
+            var items = payouts
+                .OrderByDescending(p => p.PayoutOn)
+                .Skip(skip)
+                .Take(pageSize)
+                .ToList();
+
+            return new PagedResult<SellerPayoutSummaryView>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            };
+        }
+
+        public async Task<SellerPayoutDetailView?> GetSellerPayoutAsync(int orderId, string sellerId, CancellationToken cancellationToken = default)
+        {
+            var sellerToken = $"\"sellerId\":\"{sellerId}\"";
+            var order = await _dbContext.Orders.AsNoTracking()
+                .FirstOrDefaultAsync(o => o.Id == orderId && o.DetailsJson.Contains(sellerToken), cancellationToken);
+            if (order == null)
+            {
+                return null;
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            var subOrder = details.SubOrders.FirstOrDefault(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
+            if (subOrder == null)
+            {
+                return null;
+            }
+
+            var allocation = details.Escrow?.FirstOrDefault(e =>
+                string.Equals(e.SubOrderNumber, subOrder.SubOrderNumber, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(e.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
+            if (allocation == null)
+            {
+                return null;
+            }
+
+            var address = DeserializeAddress(order.DeliveryAddressJson);
+            var paymentStatus = ResolvePaymentStatusForSubOrder(details, subOrder);
+            var payoutOn = ResolvePayoutDate(allocation, order.CreatedOn);
+
+            return new SellerPayoutDetailView(
+                order.Id,
+                order.OrderNumber,
+                subOrder.SubOrderNumber,
+                payoutOn,
+                PayoutStatuses.Normalize(allocation.PayoutStatus),
+                allocation.SellerPayoutAmount,
+                allocation.ReleasedToSeller,
+                allocation.CommissionAmount,
+                allocation.HeldAmount,
+                allocation.ReleasedToBuyer,
+                string.IsNullOrWhiteSpace(order.PaymentMethodLabel) ? order.PaymentMethodId : order.PaymentMethodLabel,
+                paymentStatus,
+                order.BuyerName,
+                order.BuyerEmail,
+                address.Phone,
+                address,
+                subOrder,
+                allocation.Ledger ?? new List<EscrowLedgerEntry>(),
+                allocation.PayoutErrorReference);
         }
 
         public async Task<SellerPayoutScheduleView> GetSellerPayoutScheduleAsync(string sellerId, string payoutSchedule, CancellationToken cancellationToken = default)
@@ -1910,6 +2092,22 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             return PaymentStatuses.Paid;
+        }
+
+        private static DateTimeOffset ResolvePayoutDate(EscrowAllocation allocation, DateTimeOffset fallback)
+        {
+            var ledgerDate = allocation.Ledger?
+                .Where(l => string.Equals(l.Type, EscrowEntryTypes.PayoutEligible, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(l => l.RecordedOn)
+                .Select(l => l.RecordedOn)
+                .FirstOrDefault(d => d != DateTimeOffset.MinValue);
+
+            if (ledgerDate.HasValue && ledgerDate.Value != default)
+            {
+                return ledgerDate.Value;
+            }
+
+            return fallback;
         }
 
         private static OrderSubOrder NormalizeSubOrder(OrderSubOrder subOrder)
