@@ -39,13 +39,19 @@ namespace SD.ProjectName.WebApp.Pages.Products
         public bool HasSellerLink => !string.IsNullOrWhiteSpace(SellerSlug) && !string.IsNullOrWhiteSpace(SellerDisplayName);
         public IReadOnlyList<ProductReviewView> Reviews { get; private set; } = Array.Empty<ProductReviewView>();
         public double? AverageRating { get; private set; }
+        public int PageNumber { get; private set; } = 1;
+        public int TotalPages { get; private set; } = 1;
+        public string SortOption { get; private set; } = "newest";
+        private const int ReviewsPageSize = 10;
 
         [TempData]
         public string? StatusMessage { get; set; }
 
-        public async Task<IActionResult> OnGetAsync(int id, string? returnUrl = null)
+        public async Task<IActionResult> OnGetAsync(int id, string? returnUrl = null, string? sort = null, int page = 1)
         {
             ReturnUrl = GetSafeReturnUrl(returnUrl);
+            SortOption = NormalizeSortOption(sort);
+            PageNumber = page <= 0 ? 1 : page;
             Product = await _getProducts.GetById(id);
             if (Product == null)
             {
@@ -59,11 +65,12 @@ namespace SD.ProjectName.WebApp.Pages.Products
             await LoadSellerMetadata(Product.SellerId);
             _recentlyViewed.RememberProduct(HttpContext, Product.Id);
             RecentlyViewedProducts = await _recentlyViewed.GetProductsAsync(HttpContext, Product.Id);
-            Reviews = await _orderService.GetPublishedReviewsAsync(Product.Id, 20, HttpContext.RequestAborted);
-            if (Reviews.Any())
-            {
-                AverageRating = Math.Round(Reviews.Average(r => r.Rating), 1);
-            }
+            var reviewsPage = await _orderService.GetPublishedReviewsPageAsync(Product.Id, PageNumber, ReviewsPageSize, SortOption, HttpContext.RequestAborted);
+            Reviews = reviewsPage.Reviews;
+            AverageRating = reviewsPage.AverageRating;
+            SortOption = reviewsPage.Sort;
+            PageNumber = reviewsPage.PageNumber;
+            TotalPages = Math.Max(1, (int)Math.Ceiling(reviewsPage.TotalCount / (double)reviewsPage.PageSize));
 
             return Page();
         }
@@ -125,6 +132,16 @@ namespace SD.ProjectName.WebApp.Pages.Products
             }
 
             return builder.ToString().Trim('-');
+        }
+
+        private static string NormalizeSortOption(string? sort)
+        {
+            return sort?.Trim().ToLowerInvariant() switch
+            {
+                "highest" or "rating_desc" => "highest",
+                "lowest" or "rating_asc" => "lowest",
+                _ => "newest"
+            };
         }
     }
 }
