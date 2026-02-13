@@ -130,6 +130,21 @@ else
                     {
                         <div class="text-danger small mb-2">Refunded: @Model.Order.RefundedAmount.ToString("C")</div>
                     }
+                    @if (Model.Order.ReturnRequest != null)
+                    {
+                        var returnItems = Model.Order.ReturnRequest.Items.Select(i =>
+                        {
+                            var match = Model.Order.Items.FirstOrDefault(it => it.ProductId == i.ProductId);
+                            var label = match == null ? "Item" : match.Name;
+                            return $"{i.Quantity} x {label}";
+                        });
+                        <div class="alert alert-info py-2 px-3">
+                            <div class="fw-semibold mb-1">Return @Model.Order.ReturnRequest.Status</div>
+                            <div class="text-muted small mb-1">Requested @Model.Order.ReturnRequest.RequestedOn.ToLocalTime().ToString("g")</div>
+                            <div class="small mb-1">Reason: @Model.Order.ReturnRequest.Reason</div>
+                            <div class="small mb-0">Items: @string.Join(", ", returnItems)</div>
+                        </div>
+                    }
                     @if (Model.NextStatuses.Count == 0)
                     {
                         <div class="text-muted small">No further status changes are allowed.</div>
