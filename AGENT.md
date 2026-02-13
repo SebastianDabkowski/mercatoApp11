@@ -334,6 +334,8 @@ PRs affecting architecture require:
 
 If behavior or responsibilities change:
 
+\- Trigger doc-sync automation when architecture or agent responsibilities change so `ARCHITECTURE.md` and `AGENT.md` always reflect the implemented structure.
+
 \- Auto-update Architecture.md in the same PR when module boundaries, cross-cutting flows, or infrastructure change, and reference the relevant ADR id.
 
 \- Auto-update AGENT.md whenever an agent is added, removed, or its responsibilities shift.
@@ -342,7 +344,7 @@ If behavior or responsibilities change:
 
 \- Add or update an ADR in `docs/adr` for every architectural decision and keep status current (Proposed / Accepted).
 
-\- Run an ADR validation pass before merge: confirm architecture changes are covered by an ADR, Architecture.md/AGENT.md are synchronized, and create the missing ADR immediately when gaps are found.
+\- Run an ADR validation pass before merge: validate ADRs against the current architecture, confirm Architecture.md/AGENT.md are synchronized, and create the missing ADR immediately when gaps are found.
 
 
 

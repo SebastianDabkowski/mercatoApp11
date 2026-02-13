@@ -1,3 +1,4 @@
+using System;
 using System.Text.RegularExpressions;
 
 namespace SD.ProjectName.Tests.Products
@@ -55,6 +56,19 @@ namespace SD.ProjectName.Tests.Products
             Assert.Contains("Auto-update Architecture.md", agentDoc);
             Assert.Contains("Auto-update AGENT.md", agentDoc);
             Assert.Contains("ADR validation", agentDoc, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void Documentation_ShouldDescribeAutomationAndAdrRemediation()
+        {
+            var repoRoot = FindRepoRoot();
+            var architectureDoc = File.ReadAllText(Path.Combine(repoRoot, "ARCHITECTURE.md"));
+            var agentDoc = File.ReadAllText(Path.Combine(repoRoot, "AGENT.md"));
+
+            Assert.Contains("doc-sync automation", agentDoc, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("validate ADRs against the current architecture", agentDoc, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("doc-sync automation", architectureDoc, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("missing ADR", architectureDoc, StringComparison.OrdinalIgnoreCase);
         }
 
         private static string FindRepoRoot()
