@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -8,6 +9,7 @@ using Moq;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.Modules.Products.Domain.Interfaces;
+using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Pages.Products;
 using SD.ProjectName.WebApp.Services;
 
@@ -61,16 +63,23 @@ namespace SD.ProjectName.Tests.Products
             var getProducts = new GetProducts(repository);
             var recentlyViewed = new RecentlyViewedService(getProducts, new RecentlyViewedOptions(), Mock.Of<ILogger<RecentlyViewedService>>());
             var logger = Mock.Of<ILogger<DetailsModel>>();
+            var userManager = CreateUserManager();
             var httpContext = new DefaultHttpContext();
             var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
             var pageContext = new PageContext(actionContext);
 
-            var model = new DetailsModel(getProducts, recentlyViewed, logger)
+            var model = new DetailsModel(getProducts, recentlyViewed, userManager, logger)
             {
                 PageContext = pageContext
             };
 
             return model;
+        }
+
+        private static UserManager<ApplicationUser> CreateUserManager()
+        {
+            var store = new Mock<IUserStore<ApplicationUser>>();
+            return new Mock<UserManager<ApplicationUser>>(store.Object, null!, null!, null!, null!, null!, null!, null!, null!).Object;
         }
     }
 }

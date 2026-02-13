@@ -173,9 +173,20 @@
             <tbody>
                 @foreach (var product in Model.Products)
                 {
+                    var resultReturnUrl = Url.Page("/Products/Category", new
+                    {
+                        id = Model.CurrentCategory?.Id,
+                        includeSubcategories = Model.IncludeSubcategories,
+                        sellerId = Model.SellerId,
+                        condition = Model.Condition,
+                        minPrice = Model.MinPrice,
+                        maxPrice = Model.MaxPrice,
+                        sort = Model.Sort,
+                        page = Model.PageNumber
+                    });
                     <tr>
                         <td>
-                            <a asp-page="/Products/Details" asp-route-id="@product.Id">@product.Title</a>
+                            <a asp-page="/Products/Details" asp-route-id="@product.Id" asp-route-returnUrl="@resultReturnUrl">@product.Title</a>
                         </td>
                         <td>@product.Price.ToString("C")</td>
                         <td>@product.Category</td>
