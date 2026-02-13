@@ -1,0 +1,67 @@
+@page
+@model SD.ProjectName.WebApp.Pages.Buyer.Addresses.AddModel
+@{
+    ViewData["Title"] = "Add shipping address";
+}
+
+<h1 class="mb-3">Add shipping address</h1>
+
+<form method="post" class="card">
+    <div class="card-body">
+        <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label asp-for="Input.Recipient" class="form-label"></label>
+                <input asp-for="Input.Recipient" class="form-control" autocomplete="name" />
+                <span asp-validation-for="Input.Recipient" class="text-danger"></span>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="Input.Phone" class="form-label"></label>
+                <input asp-for="Input.Phone" class="form-control" autocomplete="tel" />
+                <span asp-validation-for="Input.Phone" class="text-danger"></span>
+            </div>
+            <div class="col-12">
+                <label asp-for="Input.Line1" class="form-label"></label>
+                <input asp-for="Input.Line1" class="form-control" autocomplete="address-line1" />
+                <span asp-validation-for="Input.Line1" class="text-danger"></span>
+            </div>
+            <div class="col-12">
+                <label asp-for="Input.Line2" class="form-label"></label>
+                <input asp-for="Input.Line2" class="form-control" autocomplete="address-line2" />
+                <span asp-validation-for="Input.Line2" class="text-danger"></span>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="Input.City" class="form-label"></label>
+                <input asp-for="Input.City" class="form-control" autocomplete="address-level2" />
+                <span asp-validation-for="Input.City" class="text-danger"></span>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="Input.State" class="form-label"></label>
+                <input asp-for="Input.State" class="form-control" autocomplete="address-level1" />
+                <span asp-validation-for="Input.State" class="text-danger"></span>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="Input.PostalCode" class="form-label"></label>
+                <input asp-for="Input.PostalCode" class="form-control" autocomplete="postal-code" />
+                <span asp-validation-for="Input.PostalCode" class="text-danger"></span>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="Input.Country" class="form-label"></label>
+                <input asp-for="Input.Country" class="form-control" autocomplete="country-name" />
+                <span asp-validation-for="Input.Country" class="text-danger"></span>
+            </div>
+            <div class="col-12 form-check mt-2">
+                <input asp-for="SetAsDefault" class="form-check-input" />
+                <label asp-for="SetAsDefault" class="form-check-label">Set as default for checkout</label>
+            </div>
+        </div>
+    </div>
+    <div class="card-footer d-flex justify-content-between">
+        <a class="btn btn-outline-secondary" asp-page="./Index">Cancel</a>
+        <button type="submit" class="btn btn-primary">Save address</button>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

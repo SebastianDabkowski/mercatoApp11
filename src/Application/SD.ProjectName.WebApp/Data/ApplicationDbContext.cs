@@ -11,6 +11,7 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<LoginAudit> LoginAudits => Set<LoginAudit>();
         public DbSet<SellerTeamMember> SellerTeamMembers => Set<SellerTeamMember>();
         public DbSet<OrderRecord> Orders => Set<OrderRecord>();
+        public DbSet<ShippingAddress> ShippingAddresses => Set<ShippingAddress>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -192,6 +193,59 @@ namespace SD.ProjectName.WebApp.Data
                 entity.HasIndex(e => e.OccurredOn);
             });
 
+            builder.Entity<ShippingAddress>(entity =>
+            {
+                entity.Property(a => a.UserId)
+                    .IsRequired()
+                    .HasMaxLength(450);
+
+                entity.Property(a => a.Recipient)
+                    .IsRequired()
+                    .HasMaxLength(256);
+
+                entity.Property(a => a.Line1)
+                    .IsRequired()
+                    .HasMaxLength(256);
+
+                entity.Property(a => a.Line2)
+                    .HasMaxLength(256);
+
+                entity.Property(a => a.City)
+                    .HasMaxLength(128);
+
+                entity.Property(a => a.State)
+                    .HasMaxLength(128);
+
+                entity.Property(a => a.PostalCode)
+                    .IsRequired()
+                    .HasMaxLength(32);
+
+                entity.Property(a => a.Country)
+                    .IsRequired()
+                    .HasMaxLength(120);
+
+                entity.Property(a => a.Phone)
+                    .IsRequired()
+                    .HasMaxLength(32);
+
+                entity.Property(a => a.CreatedOn)
+                    .IsRequired();
+
+                entity.Property(a => a.UpdatedOn)
+                    .IsRequired();
+
+                entity.HasOne(a => a.User)
+                    .WithMany()
+                    .HasForeignKey(a => a.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(a => new { a.UserId, a.IsDefault })
+                    .HasFilter("[IsDefault] = 1")
+                    .IsUnique();
+
+                entity.HasIndex(a => new { a.UserId, a.CreatedOn });
+            });
+
             builder.Entity<OrderRecord>(entity =>
             {
                 entity.Property(o => o.OrderNumber)
@@ -222,6 +276,9 @@ namespace SD.ProjectName.WebApp.Data
 
                 entity.Property(o => o.CartSignature)
                     .HasMaxLength(256);
+
+                entity.Property(o => o.SavedAddressKey)
+                    .HasMaxLength(64);
 
                 entity.Property(o => o.DeliveryAddressJson)
                     .IsRequired();
