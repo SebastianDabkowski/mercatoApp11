@@ -1,0 +1,118 @@
+@page
+@using SD.ProjectName.WebApp.Services
+@model SD.ProjectName.WebApp.Pages.Seller.Payouts.IndexModel
+@{
+    ViewData["Title"] = "Payouts";
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div>
+        <h1 class="mb-1">Payouts</h1>
+        <p class="text-muted mb-0">Review completed and pending payouts with their current status.</p>
+    </div>
+</div>
+
+<div class="card mb-3 mt-3">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-12">
+                <label class="form-label fw-semibold d-block">Status</label>
+                <div class="d-flex flex-wrap gap-2">
+                    @foreach (var status in Model.AvailableStatuses)
+                    {
+                        var inputId = $"status-{status.ToLower()}";
+                        var isChecked = Model.StatusFilters.Any(s => s.Equals(status, StringComparison.OrdinalIgnoreCase));
+                        <div class="form-check me-2">
+                            <input class="form-check-input" type="checkbox" name="status" value="@status" id="@inputId" @(isChecked ? "checked" : null) />
+                            <label class="form-check-label" for="@inputId">@status</label>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <label class="form-label fw-semibold" for="fromDate">From</label>
+                <input id="fromDate" class="form-control" type="date" name="FromDate" value="@(Model.FromDate?.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-6 col-lg-3">
+                <label class="form-label fw-semibold" for="toDate">To</label>
+                <input id="toDate" class="form-control" type="date" name="ToDate" value="@(Model.ToDate?.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-12 col-lg-2 text-lg-end">
+                <input type="hidden" name="page" value="1" />
+                <button type="submit" class="btn btn-primary w-100">Apply</button>
+                @if (Model.HasFilters)
+                {
+                    <a class="btn btn-link text-decoration-none mt-2 w-100" asp-page="./Index">Clear</a>
+                }
+            </div>
+        </form>
+    </div>
+</div>
+
+@if (Model.Payouts.Count == 0)
+{
+    <div class="alert alert-info">
+        @(Model.HasFilters ? "No payouts match these filters." : "Payouts will appear here once orders are processed for settlement.")
+    </div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">Payout date</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Sub-order</th>
+                    <th scope="col">Order</th>
+                    <th scope="col" class="text-end">Amount</th>
+                    <th scope="col">Reason</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var payout in Model.Payouts)
+                {
+                    var statusClass = "badge bg-secondary";
+                    if (payout.Status.Equals(PayoutStatuses.Paid, StringComparison.OrdinalIgnoreCase))
+                    {
+                        statusClass = "badge bg-success";
+                    }
+                    else if (payout.Status.Equals(PayoutStatuses.Processing, StringComparison.OrdinalIgnoreCase))
+                    {
+                        statusClass = "badge bg-warning text-dark";
+                    }
+                    else if (payout.Status.Equals(PayoutStatuses.Failed, StringComparison.OrdinalIgnoreCase))
+                    {
+                        statusClass = "badge bg-danger";
+                    }
+                    <tr>
+                        <td>@payout.PayoutOn.ToLocalTime().ToString("g")</td>
+                        <td><span class="@statusClass">@payout.Status</span></td>
+                        <td class="fw-semibold">@payout.SubOrderNumber</td>
+                        <td>@payout.OrderNumber</td>
+                        <td class="text-end">@payout.Amount.ToString("C")</td>
+                        <td class="text-danger small">@payout.ErrorReference</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary" asp-page="/Seller/Payouts/Details" asp-route-orderId="@payout.OrderId">Details</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (Model.TotalPages > 1)
+    {
+        <nav aria-label="Payouts pagination">
+            <ul class="pagination justify-content-center">
+                <li class="page-item @(Model.PageNumber <= 1 ? "disabled" : "")">
+                    <a class="page-link" href="@Url.Page(null, new { page = Model.PageNumber - 1, status = Model.StatusFilters, fromDate = Model.FromDate?.ToString("yyyy-MM-dd"), toDate = Model.ToDate?.ToString("yyyy-MM-dd") })">Previous</a>
+                </li>
+                <li class="page-item @(Model.PageNumber >= Model.TotalPages ? "disabled" : "")">
+                    <a class="page-link" href="@Url.Page(null, new { page = Model.PageNumber + 1, status = Model.StatusFilters, fromDate = Model.FromDate?.ToString("yyyy-MM-dd"), toDate = Model.ToDate?.ToString("yyyy-MM-dd") })">Next</a>
+                </li>
+            </ul>
+        </nav>
+    }
+}

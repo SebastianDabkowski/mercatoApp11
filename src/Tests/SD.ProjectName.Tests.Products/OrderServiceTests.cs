@@ -377,6 +377,79 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task GetPayoutsForSellerAsync_ShouldFilterByStatusAndReason()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var now = DateTimeOffset.UtcNow;
+            var serializerOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+            var paidState = new CheckoutState("profile", TestAddress, now, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-payout-hist-1", "sig-payout-hist-1");
+            var paidOrder = await service.EnsureOrderAsync(paidState, BuildQuote(), TestAddress, "buyer-hist", "hist@example.com", "Hist Buyer", "Card", "card", OrderStatuses.Delivered, PaymentStatuses.Paid);
+            await service.RunSellerPayoutsAsync("seller-1");
+
+            var paidRecord = context.Orders.Single(o => o.Id == paidOrder.Order.Id);
+            var paidDetails = JsonSerializer.Deserialize<OrderDetailsPayload>(paidRecord.DetailsJson, serializerOptions)!;
+            var paidAllocation = Assert.Single(paidDetails.Escrow);
+            paidAllocation = paidAllocation with
+            {
+                Ledger = paidAllocation.Ledger.Select(l => l.Type == EscrowEntryTypes.PayoutEligible ? l with { RecordedOn = now.AddDays(-1) } : l).ToList()
+            };
+            paidDetails = paidDetails with { Escrow = new List<EscrowAllocation> { paidAllocation } };
+            paidRecord.DetailsJson = JsonSerializer.Serialize(paidDetails, serializerOptions);
+            paidRecord.CreatedOn = now.AddDays(-1);
+
+            var failedState = new CheckoutState("profile", TestAddress, now, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-payout-hist-2", "sig-payout-hist-2");
+            var failedOrder = await service.EnsureOrderAsync(failedState, BuildQuote(), TestAddress, "buyer-hist", "hist@example.com", "Hist Buyer", "Card", "card", OrderStatuses.Delivered, PaymentStatuses.Paid);
+
+            var failedRecord = context.Orders.Single(o => o.Id == failedOrder.Order.Id);
+            var failedDetails = JsonSerializer.Deserialize<OrderDetailsPayload>(failedRecord.DetailsJson, serializerOptions)!;
+            if (failedDetails.Escrow == null || failedDetails.Escrow.Count == 0)
+            {
+                var failedView = await service.GetSellerOrderAsync(failedOrder.Order.Id, "seller-1");
+                var fallbackAllocation = failedView?.Escrow ?? paidAllocation;
+                failedDetails = failedDetails with { Escrow = new List<EscrowAllocation> { fallbackAllocation! } };
+            }
+
+            var failedAllocation = Assert.Single(failedDetails.Escrow);
+            failedAllocation = failedAllocation with
+            {
+                PayoutStatus = PayoutStatuses.Failed,
+                PayoutErrorReference = "bank_rejected",
+                Ledger = failedAllocation.Ledger.Select(l => l with { RecordedOn = now }).ToList()
+            };
+            failedDetails = failedDetails with { Escrow = new List<EscrowAllocation> { failedAllocation } };
+            failedRecord.DetailsJson = JsonSerializer.Serialize(failedDetails, serializerOptions);
+            failedRecord.CreatedOn = now;
+            await context.SaveChangesAsync();
+
+            var allPayouts = await service.GetPayoutsForSellerAsync("seller-1", null, 1, 10);
+            Assert.Equal(2, allPayouts.TotalCount);
+            Assert.Contains(allPayouts.Items, p => p.Status == PayoutStatuses.Failed);
+
+            var filters = new SellerPayoutFilterOptions
+            {
+                Statuses = new List<string> { PayoutStatuses.Failed },
+                FromDate = now.AddDays(-2),
+                ToDate = now.AddDays(1)
+            };
+
+            var paged = await service.GetPayoutsForSellerAsync("seller-1", filters, 1, 10);
+
+            Assert.Equal(1, paged.TotalCount);
+            var summary = Assert.Single(paged.Items);
+            Assert.Equal(PayoutStatuses.Failed, summary.Status);
+            Assert.Equal("bank_rejected", summary.ErrorReference);
+
+            var detail = await service.GetSellerPayoutAsync(summary.OrderId, "seller-1");
+            Assert.NotNull(detail);
+            Assert.Equal(summary.SubOrderNumber, detail!.SubOrder.SubOrderNumber);
+            Assert.Equal(PayoutStatuses.Failed, detail.Status);
+            Assert.Equal("bank_rejected", detail.ErrorReference);
+        }
+
+        [Fact]
         public async Task UpdateSubOrderStatusAsync_ShouldUpdateSelectedItemsWithoutAffectingOthers()
         {
             await using var context = CreateContext();
