@@ -76,6 +76,7 @@ else
                     <th scope="col">Buyer</th>
                     <th scope="col">Type</th>
                     <th scope="col">Activity</th>
+                    <th scope="col">SLA</th>
                     <th scope="col">Status</th>
                     <th scope="col" class="text-end"></th>
                 </tr>
@@ -106,6 +107,24 @@ else
                             <div>@item.LastUpdatedOn.ToLocalTime().ToString("g")</div>
                             <div class="text-muted small">Opened @item.RequestedOn.ToLocalTime().ToString("g")</div>
                             <div class="text-muted small">Age: @Math.Max(0, (int)age.TotalDays) days</div>
+                        </td>
+                        <td>
+                            @if (item.IsSlaBreached)
+                            {
+                                <span class="badge bg-danger">SLA breached</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-success">On track</span>
+                            }
+                            @if (item.FirstResponseDueOn.HasValue)
+                            {
+                                <div class="text-muted small">First response due @item.FirstResponseDueOn.Value.ToLocalTime().ToString("g")</div>
+                            }
+                            @if (item.ResolutionDueOn.HasValue)
+                            {
+                                <div class="text-muted small">Resolution due @item.ResolutionDueOn.Value.ToLocalTime().ToString("g")</div>
+                            }
                         </td>
                         <td>
                             <span class="badge bg-primary">@item.Status</span>

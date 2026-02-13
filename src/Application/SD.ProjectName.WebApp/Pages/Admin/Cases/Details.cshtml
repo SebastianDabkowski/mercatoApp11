@@ -20,6 +20,10 @@ else
         </div>
         <div class="text-end">
             <span class="badge bg-primary">@summary.Status</span>
+            @if (summary.IsSlaBreached)
+            {
+                <span class="badge bg-danger ms-2">SLA breached</span>
+            }
             <div class="text-muted small mt-1">@summary.Type</div>
         </div>
     </div>
@@ -121,6 +125,32 @@ else
             </div>
         </div>
         <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header">SLA</div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="fw-semibold">Current status</span>
+                        <span class="badge @(summary.IsSlaBreached ? "bg-danger" : "bg-success")">
+                            @(summary.IsSlaBreached ? "Breached" : "On track")
+                        </span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted small">First response due</span>
+                        <span class="small">@((summary.FirstResponseDueOn?.ToLocalTime().ToString("g")) ?? "Not set")</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted small">Resolution due</span>
+                        <span class="small">@((summary.ResolutionDueOn?.ToLocalTime().ToString("g")) ?? "Not set")</span>
+                    </div>
+                    @if (summary.FirstRespondedOn.HasValue)
+                    {
+                        <div class="d-flex justify-content-between mt-2">
+                            <span class="text-muted small">First response</span>
+                            <span class="small">@summary.FirstRespondedOn.Value.ToLocalTime().ToString("g")</span>
+                        </div>
+                    }
+                </div>
+            </div>
             <div class="card mb-3">
                 <div class="card-header">Resolution</div>
                 <div class="card-body">

@@ -1416,6 +1416,134 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task CreateReturnRequestAsync_ShouldPopulateSlaDeadlines()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var slaOptions = new CaseSlaOptions
+            {
+                DefaultFirstResponseHours = 12,
+                DefaultResolutionHours = 48
+            };
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, caseSlaOptions: slaOptions);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-sla-1", "sig-sla-1");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-sla-1", "sla1@example.com", "SLA Buyer", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-sla-1");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+            var request = await service.CreateReturnRequestAsync(
+                result.Order.Id,
+                "buyer-sla-1",
+                subOrderNumber,
+                new List<int> { 1 },
+                "Damaged",
+                ReturnRequestTypes.Return,
+                "Screen cracked");
+
+            var adminDetail = await service.GetReturnCaseForAdminAsync(request.Request!.CaseId!);
+            Assert.NotNull(adminDetail);
+            Assert.True(adminDetail!.Summary.FirstResponseDueOn.HasValue);
+            Assert.True(adminDetail.Summary.ResolutionDueOn.HasValue);
+            var responseDelta = adminDetail.Summary.FirstResponseDueOn!.Value - adminDetail.Summary.RequestedOn;
+            var resolutionDelta = adminDetail.Summary.ResolutionDueOn!.Value - adminDetail.Summary.RequestedOn;
+            Assert.True(responseDelta.TotalHours <= 12.1);
+            Assert.True(resolutionDelta.TotalHours <= 48.1);
+        }
+
+        [Fact]
+        public async Task GetSellerSlaMetricsAsync_ShouldHighlightBreaches()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var slaOptions = new CaseSlaOptions
+            {
+                DefaultFirstResponseHours = 1,
+                DefaultResolutionHours = 2
+            };
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, caseSlaOptions: slaOptions);
+            var quote = BuildQuote();
+
+            var fastState = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-sla-2a", "sig-sla-2a");
+            var fastResult = await service.EnsureOrderAsync(fastState, quote, TestAddress, "buyer-sla-2a", "sla2a@example.com", "SLA Buyer 2A", "Card", "card");
+            var fastOrderView = await service.GetOrderAsync(fastResult.Order.Id, "buyer-sla-2a");
+            var fastSubOrderNumber = Assert.Single(fastOrderView!.SubOrders).SubOrderNumber;
+            await service.UpdateSubOrderStatusAsync(fastResult.Order.Id, "seller-1", OrderStatuses.Delivered);
+            var fastCase = await service.CreateReturnRequestAsync(
+                fastResult.Order.Id,
+                "buyer-sla-2a",
+                fastSubOrderNumber,
+                new List<int> { 1 },
+                "Broken",
+                ReturnRequestTypes.Return,
+                "First case");
+            await service.ResolveReturnCaseForSellerAsync(
+                fastResult.Order.Id,
+                "seller-1",
+                fastCase.Request!.CaseId!,
+                "replacement",
+                null,
+                null,
+                "Quick resolution");
+
+            var slowState = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-sla-2b", "sig-sla-2b");
+            var slowResult = await service.EnsureOrderAsync(slowState, quote, TestAddress, "buyer-sla-2b", "sla2b@example.com", "SLA Buyer 2B", "Card", "card");
+            var slowOrderView = await service.GetOrderAsync(slowResult.Order.Id, "buyer-sla-2b");
+            var slowSubOrderNumber = Assert.Single(slowOrderView!.SubOrders).SubOrderNumber;
+            await service.UpdateSubOrderStatusAsync(slowResult.Order.Id, "seller-1", OrderStatuses.Delivered);
+            var slowCase = await service.CreateReturnRequestAsync(
+                slowResult.Order.Id,
+                "buyer-sla-2b",
+                slowSubOrderNumber,
+                new List<int> { 1 },
+                "Noisy",
+                ReturnRequestTypes.Return,
+                "Second case");
+
+            var serializerOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+            var slowRecord = await context.Orders.FirstAsync(o => o.Id == slowResult.Order.Id);
+            var slowPayload = JsonSerializer.Deserialize<OrderDetailsPayload>(slowRecord.DetailsJson, serializerOptions)!;
+            var agedRequestedOn = DateTimeOffset.UtcNow.AddHours(-5);
+            var agedReturn = slowPayload.SubOrders.First().Return! with
+            {
+                RequestedOn = agedRequestedOn,
+                History = new List<ReturnRequestHistoryEntry> { new(ReturnRequestStatuses.PendingSellerReview, "Buyer", agedRequestedOn, "Case opened") },
+                FirstResponseDueOn = null,
+                ResolutionDueOn = null,
+                FirstRespondedOn = null,
+                SlaBreached = false,
+                SlaBreachedOn = null
+            };
+            slowPayload.SubOrders[0] = slowPayload.SubOrders.First() with { Return = agedReturn };
+            slowRecord.DetailsJson = JsonSerializer.Serialize(slowPayload, serializerOptions);
+            await context.SaveChangesAsync();
+
+            await service.ResolveReturnCaseForSellerAsync(
+                slowResult.Order.Id,
+                "seller-1",
+                slowCase.Request!.CaseId!,
+                "repair",
+                null,
+                null,
+                "Delayed resolution");
+
+            var paged = await service.GetReturnCasesForAdminAsync();
+            Assert.Equal(2, paged.TotalCount);
+            var slowSummary = paged.Items.First(c => c.CaseId == slowCase.Request!.CaseId);
+            Assert.True(slowSummary.IsSlaBreached);
+
+            var metrics = await service.GetSellerSlaMetricsAsync();
+            var sellerMetrics = Assert.Single(metrics);
+            Assert.Equal(2, sellerMetrics.TotalCases);
+            Assert.Equal(2, sellerMetrics.ResolvedCases);
+            Assert.Equal(1, sellerMetrics.ResolvedWithinSla);
+            Assert.True(sellerMetrics.ResolutionSlaRate < 100);
+            Assert.True(sellerMetrics.AverageFirstResponseTime.HasValue);
+        }
+
+        [Fact]
         public async Task EscalateReturnCaseForAdminAsync_ShouldMoveCaseUnderReview_AndNotifyParties()
         {
             await using var context = CreateContext();

@@ -234,7 +234,12 @@ namespace SD.ProjectName.WebApp.Services
         string? ResolutionRefundReference = null,
         string? ResolutionRefundStatus = null,
         DateTimeOffset? ResolvedOn = null,
-        string? ResolutionActor = null);
+        string? ResolutionActor = null,
+        DateTimeOffset? FirstResponseDueOn = null,
+        DateTimeOffset? ResolutionDueOn = null,
+        DateTimeOffset? FirstRespondedOn = null,
+        bool SlaBreached = false,
+        DateTimeOffset? SlaBreachedOn = null);
 
     public record OrderStatusChange(string Status, DateTimeOffset ChangedOn, string? TrackingNumber = null, string? TrackingCarrier = null);
 
@@ -500,7 +505,11 @@ namespace SD.ProjectName.WebApp.Services
         string Type,
         string Status,
         DateTimeOffset RequestedOn,
-        DateTimeOffset LastUpdatedOn);
+        DateTimeOffset LastUpdatedOn,
+        DateTimeOffset? FirstResponseDueOn,
+        DateTimeOffset? ResolutionDueOn,
+        DateTimeOffset? FirstRespondedOn,
+        bool IsSlaBreached);
 
     public record AdminCaseDetailView(
         AdminCaseSummaryView Summary,
@@ -516,6 +525,15 @@ namespace SD.ProjectName.WebApp.Services
         List<ReturnRequestHistoryEntry> History,
         List<CaseMessageView> Messages,
         CaseResolutionView Resolution);
+
+    public record SellerSlaMetricsView(
+        string SellerId,
+        string SellerName,
+        int TotalCases,
+        int ResolvedCases,
+        int ResolvedWithinSla,
+        double ResolutionSlaRate,
+        TimeSpan? AverageFirstResponseTime);
 
     public record ReturnCaseFilterOptions
     {
@@ -675,6 +693,7 @@ namespace SD.ProjectName.WebApp.Services
         private readonly SettlementOptions _settlementOptions;
         private readonly TimeZoneInfo _settlementTimeZone;
         private readonly InvoiceOptions _invoiceOptions;
+        private readonly CaseSlaOptions _caseSlaOptions;
         private readonly CommissionCalculator _commissionCalculator;
         private readonly ShippingProviderService _shippingProviderService;
         private readonly JsonSerializerOptions _serializerOptions = new()
@@ -684,7 +703,16 @@ namespace SD.ProjectName.WebApp.Services
 
         private record SellerOrderMatch(OrderRecord Order, OrderSubOrder SubOrder, DeliveryAddress Address, string Status);
 
-        public OrderService(ApplicationDbContext dbContext, IEmailSender emailSender, ILogger<OrderService> logger, EscrowOptions? escrowOptions = null, CartOptions? cartOptions = null, SettlementOptions? settlementOptions = null, InvoiceOptions? invoiceOptions = null, ShippingProviderService? shippingProviderService = null)
+        public OrderService(
+            ApplicationDbContext dbContext,
+            IEmailSender emailSender,
+            ILogger<OrderService> logger,
+            EscrowOptions? escrowOptions = null,
+            CartOptions? cartOptions = null,
+            SettlementOptions? settlementOptions = null,
+            InvoiceOptions? invoiceOptions = null,
+            ShippingProviderService? shippingProviderService = null,
+            CaseSlaOptions? caseSlaOptions = null)
         {
             _dbContext = dbContext;
             _emailSender = emailSender;
@@ -694,6 +722,7 @@ namespace SD.ProjectName.WebApp.Services
             _settlementOptions = settlementOptions ?? new SettlementOptions();
             _settlementTimeZone = ResolveSettlementTimeZone(_settlementOptions.TimeZone);
             _invoiceOptions = invoiceOptions ?? new InvoiceOptions();
+            _caseSlaOptions = caseSlaOptions ?? new CaseSlaOptions();
             _commissionCalculator = new CommissionCalculator(_cartOptions);
             _shippingProviderService = shippingProviderService ?? new ShippingProviderService(new ShippingProviderOptions(), TimeProvider.System, NullLogger<ShippingProviderService>.Instance);
         }
@@ -1070,6 +1099,7 @@ namespace SD.ProjectName.WebApp.Services
                 normalizedDescription,
                 BuildCaseId(subOrder.SubOrderNumber, requestedOn),
                 history);
+            request = ApplySlaTracking(request, subOrder.Items, requestedOn);
             details.SubOrders[subOrderIndex] = subOrder with { Return = request };
             order.DetailsJson = JsonSerializer.Serialize(details, _serializerOptions);
 
@@ -1422,7 +1452,11 @@ namespace SD.ProjectName.WebApp.Services
                         normalizedRequest.Type,
                         ReturnRequestStatuses.Normalize(normalizedRequest.Status),
                         normalizedRequest.RequestedOn,
-                        CalculateCaseLastUpdated(normalizedRequest)));
+                        CalculateCaseLastUpdated(normalizedRequest),
+                        normalizedRequest.FirstResponseDueOn,
+                        normalizedRequest.ResolutionDueOn,
+                        normalizedRequest.FirstRespondedOn,
+                        normalizedRequest.SlaBreached || normalizedRequest.SlaBreachedOn.HasValue));
                 }
             }
 
@@ -1501,7 +1535,11 @@ namespace SD.ProjectName.WebApp.Services
                 normalizedRequest.Type,
                 ReturnRequestStatuses.Normalize(normalizedRequest.Status),
                 normalizedRequest.RequestedOn,
-                CalculateCaseLastUpdated(normalizedRequest));
+                CalculateCaseLastUpdated(normalizedRequest),
+                normalizedRequest.FirstResponseDueOn,
+                normalizedRequest.ResolutionDueOn,
+                normalizedRequest.FirstRespondedOn,
+                normalizedRequest.SlaBreached || normalizedRequest.SlaBreachedOn.HasValue);
 
             var items = BuildBuyerCaseItems(subOrder, normalizedRequest);
             var address = DeserializeAddress(order.DeliveryAddressJson);
@@ -1529,6 +1567,101 @@ namespace SD.ProjectName.WebApp.Services
                 history,
                 messages,
                 resolution);
+        }
+
+        public async Task<List<SellerSlaMetricsView>> GetSellerSlaMetricsAsync(
+            DateTimeOffset? fromDate = null,
+            DateTimeOffset? toDate = null,
+            CancellationToken cancellationToken = default)
+        {
+            var normalizedFrom = fromDate;
+            var normalizedTo = toDate;
+            if (normalizedFrom.HasValue && normalizedTo.HasValue && normalizedFrom > normalizedTo)
+            {
+                (normalizedFrom, normalizedTo) = (normalizedTo, normalizedFrom);
+            }
+
+            var orders = await _dbContext.Orders.AsNoTracking()
+                .OrderByDescending(o => o.CreatedOn)
+                .ToListAsync(cancellationToken);
+
+            var metrics = new Dictionary<string, (string SellerName, int Total, int Resolved, int ResolvedWithinSla, List<TimeSpan> Responses)>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var order in orders)
+            {
+                var details = DeserializeDetails(order.DetailsJson);
+                foreach (var subOrder in details.SubOrders.Where(s => s.Return != null))
+                {
+                    var normalizedRequest = NormalizeReturnRequest(subOrder.Return, subOrder.Items);
+                    if (normalizedRequest == null)
+                    {
+                        continue;
+                    }
+
+                    if (normalizedFrom.HasValue && normalizedRequest.RequestedOn < normalizedFrom.Value)
+                    {
+                        continue;
+                    }
+
+                    if (normalizedTo.HasValue && normalizedRequest.RequestedOn > normalizedTo.Value)
+                    {
+                        continue;
+                    }
+
+                    var sellerName = string.IsNullOrWhiteSpace(subOrder.SellerName) ? subOrder.SellerId : subOrder.SellerName;
+                    if (!metrics.TryGetValue(subOrder.SellerId, out var entry))
+                    {
+                        entry = (sellerName, 0, 0, 0, new List<TimeSpan>());
+                    }
+
+                    entry.Total += 1;
+                    if (normalizedRequest.FirstRespondedOn.HasValue && normalizedRequest.FirstRespondedOn.Value >= normalizedRequest.RequestedOn)
+                    {
+                        entry.Responses.Add(normalizedRequest.FirstRespondedOn.Value - normalizedRequest.RequestedOn);
+                    }
+
+                    if (!ReturnRequestStatuses.IsOpen(normalizedRequest.Status))
+                    {
+                        entry.Resolved += 1;
+                        var resolutionDue = normalizedRequest.ResolutionDueOn
+                            ?? (_caseSlaOptions.Enabled
+                                ? normalizedRequest.RequestedOn.AddHours(_caseSlaOptions.DefaultResolutionHours)
+                                : (DateTimeOffset?)null);
+                        var resolvedOn = normalizedRequest.ResolvedOn ?? normalizedRequest.History?.LastOrDefault()?.ChangedOn;
+                        if (resolutionDue.HasValue && resolvedOn.HasValue && resolvedOn.Value <= resolutionDue.Value)
+                        {
+                            entry.ResolvedWithinSla += 1;
+                        }
+                    }
+
+                    metrics[subOrder.SellerId] = entry;
+                }
+            }
+
+            var results = new List<SellerSlaMetricsView>();
+            foreach (var kvp in metrics)
+            {
+                var responseAverage = kvp.Value.Responses.Count == 0
+                    ? (TimeSpan?)null
+                    : TimeSpan.FromTicks((long)kvp.Value.Responses.Average(r => r.Ticks));
+                var resolutionRate = kvp.Value.Resolved == 0
+                    ? 0
+                    : (double)kvp.Value.ResolvedWithinSla / kvp.Value.Resolved * 100;
+
+                results.Add(new SellerSlaMetricsView(
+                    kvp.Key,
+                    kvp.Value.SellerName,
+                    kvp.Value.Total,
+                    kvp.Value.Resolved,
+                    kvp.Value.ResolvedWithinSla,
+                    Math.Round(resolutionRate, 1),
+                    responseAverage));
+            }
+
+            return results
+                .OrderByDescending(r => r.TotalCases)
+                .ThenBy(r => r.SellerName)
+                .ToList();
         }
 
         public async Task<ReturnRequestResult> EscalateReturnCaseForAdminAsync(
@@ -1777,6 +1910,7 @@ namespace SD.ProjectName.WebApp.Services
             };
 
             updatedRequest = AppendReturnHistory(updatedRequest, updatedRequest.Status, "Admin", historyNote, resolvedOn);
+            updatedRequest = ApplySlaTracking(updatedRequest, subOrder.Items, resolvedOn, sellerResponded: true);
             var updatedSubOrder = subOrder with { Return = updatedRequest };
             details.SubOrders[subOrderIndex] = updatedSubOrder;
 
@@ -1900,6 +2034,7 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             var updatedRequest = AppendReturnMessage(normalizedRequest, "Seller", normalizedMessage, DateTimeOffset.UtcNow);
+            updatedRequest = ApplySlaTracking(updatedRequest, subOrder.Items, DateTimeOffset.UtcNow, sellerResponded: true);
             details.SubOrders[subOrderIndex] = subOrder with { Return = updatedRequest };
             order.DetailsJson = JsonSerializer.Serialize(details, _serializerOptions);
 
@@ -2004,6 +2139,7 @@ namespace SD.ProjectName.WebApp.Services
             var now = DateTimeOffset.UtcNow;
             var updatedRequest = normalizedRequest with { Status = targetStatus };
             updatedRequest = AppendReturnHistory(updatedRequest, targetStatus, "Seller", combinedNote, now);
+            updatedRequest = ApplySlaTracking(updatedRequest, subOrder.Items, now, sellerResponded: true);
             var updatedSubOrder = subOrder with { Return = updatedRequest };
             details.SubOrders[subOrderIndex] = updatedSubOrder;
 
@@ -2207,6 +2343,7 @@ namespace SD.ProjectName.WebApp.Services
             };
 
             updatedRequest = AppendReturnHistory(updatedRequest, updatedRequest.Status, "Seller", historyNote, resolvedOn);
+            updatedRequest = ApplySlaTracking(updatedRequest, subOrder.Items, resolvedOn, sellerResponded: true);
             var updatedSubOrder = subOrder with { Return = updatedRequest };
             details.SubOrders[subOrderIndex] = updatedSubOrder;
 
@@ -4353,7 +4490,7 @@ namespace SD.ProjectName.WebApp.Services
             return "Awaiting seller decision.";
         }
 
-        private static ReturnRequest? UpdateReturnRequest(ReturnRequest? request, string targetStatus, decimal refundedAmount, List<OrderItemDetail> items)
+        private ReturnRequest? UpdateReturnRequest(ReturnRequest? request, string targetStatus, decimal refundedAmount, List<OrderItemDetail> items)
         {
             var normalized = NormalizeReturnRequest(request, items);
             if (normalized == null)
@@ -4376,7 +4513,7 @@ namespace SD.ProjectName.WebApp.Services
                 normalized = normalized with { Status = normalizedReturnStatus };
             }
 
-            return normalized;
+            return ApplySlaTracking(normalized, items, DateTimeOffset.UtcNow);
         }
 
         private static List<ReturnRequestItem> BuildReturnItems(OrderSubOrder subOrder, List<int>? productIds)
@@ -4727,7 +4864,7 @@ namespace SD.ProjectName.WebApp.Services
                 .ToList();
             var normalizedShipping = details.Shipping ?? new List<OrderShippingDetail>();
             var normalizedSubOrders = (details.SubOrders ?? new List<OrderSubOrder>())
-                .Select(NormalizeSubOrder)
+                .Select(sub => NormalizeSubOrder(sub))
                 .ToList();
             var normalizedEscrow = NormalizeEscrow(details.Escrow, normalizedSubOrders);
             var normalizedPaymentStatus = PaymentStatuses.Normalize(details.PaymentStatus);
@@ -5123,7 +5260,7 @@ namespace SD.ProjectName.WebApp.Services
             return history;
         }
 
-        private static OrderSubOrder NormalizeSubOrder(OrderSubOrder subOrder)
+        private OrderSubOrder NormalizeSubOrder(OrderSubOrder subOrder)
         {
             var status = OrderStatuses.Normalize(subOrder.Status);
             var normalizedItems = (subOrder.Items ?? new List<OrderItemDetail>())
@@ -5274,7 +5411,12 @@ namespace SD.ProjectName.WebApp.Services
             return normalizedFallback;
         }
 
-        private static ReturnRequest? NormalizeReturnRequest(ReturnRequest? request, List<OrderItemDetail> items)
+        private ReturnRequest? NormalizeReturnRequest(ReturnRequest? request, List<OrderItemDetail> items)
+        {
+            return NormalizeReturnRequest(request, items, DateTimeOffset.UtcNow);
+        }
+
+        private ReturnRequest? NormalizeReturnRequest(ReturnRequest? request, List<OrderItemDetail> items, DateTimeOffset asOf)
         {
             if (request == null)
             {
@@ -5314,8 +5456,12 @@ namespace SD.ProjectName.WebApp.Services
             var resolutionRefundStatus = string.IsNullOrWhiteSpace(request.ResolutionRefundStatus) ? null : request.ResolutionRefundStatus.Trim();
             var resolvedOn = request.ResolvedOn == DateTimeOffset.MinValue ? null : request.ResolvedOn;
             var resolutionActor = string.IsNullOrWhiteSpace(request.ResolutionActor) ? "Seller" : request.ResolutionActor.Trim();
+            var firstResponseDue = request.FirstResponseDueOn == DateTimeOffset.MinValue ? null : request.FirstResponseDueOn;
+            var resolutionDue = request.ResolutionDueOn == DateTimeOffset.MinValue ? null : request.ResolutionDueOn;
+            var firstResponded = request.FirstRespondedOn == DateTimeOffset.MinValue ? null : request.FirstRespondedOn;
+            var slaBreachedOn = request.SlaBreachedOn == DateTimeOffset.MinValue ? null : request.SlaBreachedOn;
 
-            return request with
+            var normalized = request with
             {
                 Status = normalizedStatus,
                 Type = normalizedType,
@@ -5332,8 +5478,15 @@ namespace SD.ProjectName.WebApp.Services
                 ResolutionRefundReference = resolutionRefundReference,
                 ResolutionRefundStatus = resolutionRefundStatus,
                 ResolvedOn = resolvedOn,
-                ResolutionActor = resolutionActor
+                ResolutionActor = resolutionActor,
+                FirstResponseDueOn = firstResponseDue,
+                ResolutionDueOn = resolutionDue,
+                FirstRespondedOn = firstResponded ?? ResolveFirstResponse(normalizedHistory, normalizedMessages, requestedOn),
+                SlaBreached = request.SlaBreached,
+                SlaBreachedOn = slaBreachedOn
             };
+
+            return ApplySlaTracking(normalized, items, asOf);
         }
 
         private static List<ReturnRequestHistoryEntry> NormalizeReturnHistory(List<ReturnRequestHistoryEntry>? history, string currentStatus, DateTimeOffset requestedOn)
@@ -5373,6 +5526,131 @@ namespace SD.ProjectName.WebApp.Services
                 .ToList() ?? new List<ReturnRequestMessage>();
 
             return normalized;
+        }
+
+        private static DateTimeOffset? ResolveFirstResponse(List<ReturnRequestHistoryEntry>? history, List<ReturnRequestMessage>? messages, DateTimeOffset requestedOn)
+        {
+            var candidates = new List<DateTimeOffset>();
+            if (history != null)
+            {
+                candidates.AddRange(history
+                    .Where(h => string.Equals(h.Actor, "Seller", StringComparison.OrdinalIgnoreCase))
+                    .Select(h => h.ChangedOn));
+            }
+
+            if (messages != null)
+            {
+                candidates.AddRange(messages
+                    .Where(m => string.Equals(m.Actor, "Seller", StringComparison.OrdinalIgnoreCase))
+                    .Select(m => m.SentOn));
+            }
+
+            candidates = candidates
+                .Where(d => d != DateTimeOffset.MinValue)
+                .OrderBy(d => d)
+                .ToList();
+
+            var earliest = candidates.FirstOrDefault();
+            return earliest == DateTimeOffset.MinValue ? null : earliest;
+        }
+
+        private CaseSlaRule ResolveCaseSlaRule(ReturnRequest request, List<OrderItemDetail> items)
+        {
+            var defaultRule = new CaseSlaRule
+            {
+                FirstResponseHours = Math.Max(1, _caseSlaOptions.DefaultFirstResponseHours),
+                ResolutionHours = Math.Max(1, _caseSlaOptions.DefaultResolutionHours)
+            };
+
+            var category = items.FirstOrDefault(i => !string.IsNullOrWhiteSpace(i.Category))?.Category;
+            if (!string.IsNullOrWhiteSpace(category)
+                && _caseSlaOptions.CategoryRules.TryGetValue(category, out var categoryRule))
+            {
+                return new CaseSlaRule
+                {
+                    FirstResponseHours = categoryRule.FirstResponseHours ?? defaultRule.FirstResponseHours,
+                    ResolutionHours = categoryRule.ResolutionHours ?? defaultRule.ResolutionHours
+                };
+            }
+
+            return defaultRule;
+        }
+
+        private static bool IsSellerActionPending(string status)
+        {
+            var normalized = ReturnRequestStatuses.Normalize(status);
+            return string.Equals(normalized, ReturnRequestStatuses.PendingSellerReview, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, ReturnRequestStatuses.Approved, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, ReturnRequestStatuses.SellerProposed, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private ReturnRequest ApplySlaTracking(ReturnRequest request, List<OrderItemDetail> items, DateTimeOffset asOf, bool sellerResponded = false)
+        {
+            if (request == null)
+            {
+                return request!;
+            }
+
+            if (!_caseSlaOptions.Enabled)
+            {
+                return request with
+                {
+                    FirstResponseDueOn = null,
+                    ResolutionDueOn = null,
+                    SlaBreached = false,
+                    SlaBreachedOn = null
+                };
+            }
+
+            var rule = ResolveCaseSlaRule(request, items);
+            var firstResponseDue = request.FirstResponseDueOn ?? request.RequestedOn.AddHours(rule.FirstResponseHours ?? _caseSlaOptions.DefaultFirstResponseHours);
+            var resolutionDue = request.ResolutionDueOn ?? request.RequestedOn.AddHours(rule.ResolutionHours ?? _caseSlaOptions.DefaultResolutionHours);
+            var firstRespondedOn = request.FirstRespondedOn;
+            if (!firstRespondedOn.HasValue && sellerResponded)
+            {
+                firstRespondedOn = asOf;
+            }
+
+            var slaBreached = request.SlaBreached;
+            var slaBreachedOn = request.SlaBreachedOn;
+            var sellerPending = IsSellerActionPending(request.Status);
+
+            if (!firstRespondedOn.HasValue && asOf > firstResponseDue)
+            {
+                slaBreached = true;
+                slaBreachedOn ??= asOf;
+            }
+            else if (firstRespondedOn.HasValue && firstRespondedOn.Value > firstResponseDue)
+            {
+                slaBreached = true;
+                slaBreachedOn ??= firstRespondedOn;
+            }
+
+            if (resolutionDue != default)
+            {
+                if (request.ResolvedOn.HasValue)
+                {
+                    if (request.ResolvedOn.Value > resolutionDue)
+                    {
+                        slaBreached = true;
+                        slaBreachedOn ??= request.ResolvedOn;
+                    }
+                }
+                else if (sellerPending && asOf > resolutionDue)
+                {
+                    slaBreached = true;
+                    slaBreachedOn ??= asOf;
+                }
+            }
+
+            return request with
+            {
+                FirstResponseDueOn = firstResponseDue,
+                ResolutionDueOn = resolutionDue,
+                FirstRespondedOn = firstRespondedOn,
+                SlaBreached = slaBreached,
+                SlaBreachedOn = slaBreachedOn
+            };
         }
 
         private static ReturnRequest AppendReturnHistory(ReturnRequest request, string status, string actor, string? note, DateTimeOffset changedOn)
