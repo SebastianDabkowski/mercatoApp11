@@ -156,9 +156,18 @@
                             <li class="mb-2">
                                 <div class="fw-semibold">@sub.SellerName <span class="text-muted small">(Sub-order @sub.SubOrderNumber)</span></div>
                                 <div>@sub.ShippingDetail.MethodLabel (@sub.ShippingDetail.Cost.ToString("C"))</div>
-                                @if (!string.IsNullOrWhiteSpace(sub.ShippingDetail.Description))
+                                @{
+                                    var estimate = string.IsNullOrWhiteSpace(sub.ShippingDetail.DeliveryEstimate)
+                                        ? sub.ShippingDetail.Description
+                                        : sub.ShippingDetail.DeliveryEstimate;
+                                }
+                                @if (!string.IsNullOrWhiteSpace(estimate))
                                 {
-                                    <div class="text-muted small">Estimated: @sub.ShippingDetail.Description</div>
+                                    <div class="text-muted small">Estimated: @estimate</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(sub.ShippingDetail.Description) && !string.Equals(sub.ShippingDetail.Description, estimate, StringComparison.Ordinal))
+                                {
+                                    <div class="text-muted small">@sub.ShippingDetail.Description</div>
                                 }
                                 <div class="text-muted small">Status: @sub.Status</div>
                                 @if (!string.IsNullOrWhiteSpace(sub.TrackingNumber))
@@ -185,9 +194,18 @@
                             <li class="mb-2">
                                 <div class="fw-semibold">@shipping.SellerName</div>
                                 <div>@shipping.MethodLabel (@shipping.Cost.ToString("C"))</div>
-                                @if (!string.IsNullOrWhiteSpace(shipping.Description))
+                                @{
+                                    var estimate = string.IsNullOrWhiteSpace(shipping.DeliveryEstimate)
+                                        ? shipping.Description
+                                        : shipping.DeliveryEstimate;
+                                }
+                                @if (!string.IsNullOrWhiteSpace(estimate))
                                 {
-                                    <div class="text-muted small">Estimated: @shipping.Description</div>
+                                    <div class="text-muted small">Estimated: @estimate</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(shipping.Description) && !string.Equals(shipping.Description, estimate, StringComparison.Ordinal))
+                                {
+                                    <div class="text-muted small">@shipping.Description</div>
                                 }
                             </li>
                         }

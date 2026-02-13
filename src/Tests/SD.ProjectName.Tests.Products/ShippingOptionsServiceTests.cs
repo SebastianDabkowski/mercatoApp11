@@ -98,7 +98,18 @@ namespace SD.ProjectName.Tests.Products
             {
                 ["seller-1"] = new List<SellerShippingMethod>
                 {
-                    new SellerShippingMethod { Name = "Parcel locker", Description = "Locker delivery" }
+                    new SellerShippingMethod
+                    {
+                        Name = "Parcel locker",
+                        Description = "Locker delivery",
+                        BaseCost = 12,
+                        DeliveryEstimate = "2-3 business days",
+                        IsActive = true,
+                        IsDeleted = false,
+                        StoreOwnerId = "seller-1",
+                        CreatedOn = DateTimeOffset.UtcNow,
+                        UpdatedOn = DateTimeOffset.UtcNow
+                    }
                 }
             };
 
@@ -108,6 +119,10 @@ namespace SD.ProjectName.Tests.Products
             var option = Assert.Single(sellerOption.Options);
             Assert.Equal("Parcel locker", option.Label);
             Assert.Equal("Locker delivery", option.Description);
+            Assert.Equal(12, option.Cost);
+            Assert.Equal("2-3 business days", option.DeliveryEstimate);
+            Assert.Equal(12, quote.Summary.ShippingTotal);
+            Assert.Equal(22, quote.Summary.GrandTotal);
         }
     }
 }

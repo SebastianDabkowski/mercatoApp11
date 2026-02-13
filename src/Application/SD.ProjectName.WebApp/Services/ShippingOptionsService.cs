@@ -3,7 +3,7 @@ using SD.ProjectName.WebApp.Data;
 
 namespace SD.ProjectName.WebApp.Services
 {
-    public record ShippingMethodOption(string Id, string Label, decimal Cost, string? Description, bool Recommended);
+    public record ShippingMethodOption(string Id, string Label, decimal Cost, string? Description, bool Recommended, string? DeliveryEstimate = null);
 
     public record SellerShippingOptions(string SellerId, string SellerName, List<ShippingMethodOption> Options);
 
@@ -79,33 +79,16 @@ namespace SD.ProjectName.WebApp.Services
             IReadOnlyDictionary<string, string>? sellerCountries,
             List<SellerShippingMethod>? configuredMethods)
         {
-            var methods = ResolveMethods(group);
-            if (configuredMethods != null && configuredMethods.Count > 0)
-            {
-                methods = configuredMethods
-                    .Select(m => m.Name)
-                    .Where(m => !string.IsNullOrWhiteSpace(m))
-                    .ToList();
-            }
+            var options = BuildConfiguredOptions(configuredMethods);
 
-            var sellerCountry = sellerCountries != null && sellerCountries.TryGetValue(group.SellerId, out var found) ? found : null;
-            var options = new List<ShippingMethodOption>();
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var method in methods)
+            if (options.Count == 0)
             {
-                if (string.IsNullOrWhiteSpace(method) || !seen.Add(method))
-                {
-                    continue;
-                }
-
-                var (cost, description) = CalculateCost(group, address, sellerCountry, method);
-                var customDescription = configuredMethods?.FirstOrDefault(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase))?.Description;
-                options.Add(new ShippingMethodOption(NormalizeId(method), method, cost, string.IsNullOrWhiteSpace(customDescription) ? description : customDescription, false));
+                options = BuildDefaultOptions(group, address, sellerCountries);
             }
 
             if (options.Count == 0)
             {
-                options.Add(new ShippingMethodOption("standard", "Standard", Math.Max(0, group.Shipping), "Standard delivery", true));
+                options.Add(new ShippingMethodOption("standard", "Standard", Math.Max(0, group.Shipping), "Standard delivery", true, ResolveDeliveryEstimate("Standard")));
             }
 
             var cheapest = options.OrderBy(o => o.Cost).First();
@@ -118,7 +101,61 @@ namespace SD.ProjectName.WebApp.Services
             return options;
         }
 
-        private (decimal Cost, string Description) CalculateCost(CartSellerGroup group, DeliveryAddress address, string? sellerCountry, string method)
+        private List<ShippingMethodOption> BuildConfiguredOptions(List<SellerShippingMethod>? configuredMethods)
+        {
+            var options = new List<ShippingMethodOption>();
+            if (configuredMethods == null || configuredMethods.Count == 0)
+            {
+                return options;
+            }
+
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var method in configuredMethods)
+            {
+                if (string.IsNullOrWhiteSpace(method.Name))
+                {
+                    continue;
+                }
+
+                var label = method.Name.Trim();
+                if (!seen.Add(label))
+                {
+                    continue;
+                }
+                var description = string.IsNullOrWhiteSpace(method.Description) ? ResolveDescription(label) : method.Description.Trim();
+                var estimate = string.IsNullOrWhiteSpace(method.DeliveryEstimate) ? ResolveDeliveryEstimate(label) : method.DeliveryEstimate.Trim();
+                var cost = NormalizeCost(method.BaseCost);
+                options.Add(new ShippingMethodOption(NormalizeId(label), label, cost, description, false, estimate));
+            }
+
+            return options;
+        }
+
+        private List<ShippingMethodOption> BuildDefaultOptions(
+            CartSellerGroup group,
+            DeliveryAddress address,
+            IReadOnlyDictionary<string, string>? sellerCountries)
+        {
+            var methods = ResolveMethods(group);
+            var sellerCountry = sellerCountries != null && sellerCountries.TryGetValue(group.SellerId, out var found) ? found : null;
+            var options = new List<ShippingMethodOption>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var method in methods)
+            {
+                if (string.IsNullOrWhiteSpace(method) || !seen.Add(method))
+                {
+                    continue;
+                }
+
+                var (cost, description, estimate) = CalculateCost(group, address, sellerCountry, method);
+                options.Add(new ShippingMethodOption(NormalizeId(method), method, cost, description, false, estimate));
+            }
+
+            return options;
+        }
+
+        private (decimal Cost, string Description, string? Estimate) CalculateCost(CartSellerGroup group, DeliveryAddress address, string? sellerCountry, string method)
         {
             var baseShipping = Math.Max(group.Shipping, 0);
             var quantity = Math.Max(group.Items.Sum(i => i.Quantity), 1);
@@ -135,35 +172,98 @@ namespace SD.ProjectName.WebApp.Services
 
             var normalized = method.Trim().ToLowerInvariant();
             decimal cost = baseShipping;
-            var description = "Standard delivery";
+            var description = ResolveDescription(normalized);
+            var estimate = ResolveDeliveryEstimate(normalized);
 
             if (normalized.Contains("express") || normalized.Contains("priority"))
             {
                 cost = baseShipping + Math.Max(5, quantity);
-                description = "Faster delivery with priority handling";
+                estimate = string.IsNullOrWhiteSpace(estimate) ? "1-2 business days" : estimate;
             }
             else if (normalized.Contains("pickup"))
             {
                 cost = 0;
-                description = "Collect from a pickup point";
+                estimate = "Same-day pickup";
             }
             else if (normalized.Contains("locker"))
             {
                 cost = Math.Max(0, baseShipping + Math.Max(1, quantity * 0.5m));
-                description = "Deliver to parcel locker";
+                estimate = string.IsNullOrWhiteSpace(estimate) ? "1-3 business days" : estimate;
             }
             else if (normalized.Contains("economy") || normalized.Contains("postal"))
             {
                 cost = Math.Max(0, baseShipping * 0.7m);
-                description = "Economy delivery";
+                estimate = string.IsNullOrWhiteSpace(estimate) ? "4-7 business days" : estimate;
             }
             else if (normalized.Contains("freight") || normalized.Contains("cargo"))
             {
                 cost = baseShipping + Math.Max(8, (decimal)totalWeight * 1.2m);
-                description = "Freight delivery for heavy items";
+                estimate = string.IsNullOrWhiteSpace(estimate) ? "5-10 business days" : estimate;
             }
 
-            return (Math.Round(cost, 2, MidpointRounding.AwayFromZero), description);
+            return (Math.Round(cost, 2, MidpointRounding.AwayFromZero), description, estimate);
+        }
+
+        private static string ResolveDescription(string method)
+        {
+            var normalized = string.IsNullOrWhiteSpace(method) ? string.Empty : method.Trim().ToLowerInvariant();
+            if (normalized.Contains("express") || normalized.Contains("priority"))
+            {
+                return "Faster delivery with priority handling";
+            }
+
+            if (normalized.Contains("pickup"))
+            {
+                return "Collect from a pickup point";
+            }
+
+            if (normalized.Contains("locker"))
+            {
+                return "Deliver to parcel locker";
+            }
+
+            if (normalized.Contains("economy") || normalized.Contains("postal"))
+            {
+                return "Economy delivery";
+            }
+
+            if (normalized.Contains("freight") || normalized.Contains("cargo"))
+            {
+                return "Freight delivery for heavy items";
+            }
+
+            return "Standard delivery";
+        }
+
+        private static string ResolveDeliveryEstimate(string? method)
+        {
+            var normalized = string.IsNullOrWhiteSpace(method) ? string.Empty : method.Trim().ToLowerInvariant();
+            if (normalized.Contains("express") || normalized.Contains("priority"))
+            {
+                return "1-2 business days";
+            }
+
+            if (normalized.Contains("pickup"))
+            {
+                return "Same-day pickup";
+            }
+
+            if (normalized.Contains("locker"))
+            {
+                return "1-3 business days";
+            }
+
+            if (normalized.Contains("economy") || normalized.Contains("postal"))
+            {
+                return "4-7 business days";
+            }
+
+            if (normalized.Contains("freight") || normalized.Contains("cargo"))
+            {
+                return "5-10 business days";
+            }
+
+            return "2-5 business days";
         }
 
         private List<string> ResolveMethods(CartSellerGroup group)
@@ -204,6 +304,12 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             return methods.ToList();
+        }
+
+        private static decimal NormalizeCost(decimal cost)
+        {
+            var normalized = Math.Max(0, cost);
+            return Math.Round(normalized, 2, MidpointRounding.AwayFromZero);
         }
 
         private static string ResolveSelection(IEnumerable<ShippingMethodOption> options, string? preferred)
