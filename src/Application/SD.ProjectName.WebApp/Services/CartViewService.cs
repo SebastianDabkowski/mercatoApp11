@@ -9,12 +9,14 @@ namespace SD.ProjectName.WebApp.Services
     public class CartViewService
     {
         private readonly CartService _cartService;
+        private readonly CartTotalsCalculator _totalsCalculator;
         private readonly GetProducts _getProducts;
         private readonly UserManager<ApplicationUser> _userManager;
 
-        public CartViewService(CartService cartService, GetProducts getProducts, UserManager<ApplicationUser> userManager)
+        public CartViewService(CartService cartService, CartTotalsCalculator totalsCalculator, GetProducts getProducts, UserManager<ApplicationUser> userManager)
         {
             _cartService = cartService;
+            _totalsCalculator = totalsCalculator;
             _getProducts = getProducts;
             _userManager = userManager;
         }
@@ -125,14 +127,11 @@ namespace SD.ProjectName.WebApp.Services
                 {
                     var sellerName = sellerNames.TryGetValue(group.Key, out var name) ? name : "Seller";
                     var subtotal = group.Sum(i => i.LineTotal);
-                    return new CartSellerGroup(group.Key, sellerName, subtotal, group.ToList());
+                    return new CartSellerGroup(group.Key, sellerName, subtotal, 0, subtotal, group.ToList());
                 })
                 .ToList();
 
-            var grandTotal = sellerGroups.Sum(g => g.Subtotal);
-            var totalQuantity = sellerGroups.Sum(g => g.Items.Sum(i => i.Quantity));
-
-            return new CartSummary(sellerGroups, grandTotal, totalQuantity);
+            return _totalsCalculator.Calculate(sellerGroups);
         }
 
         private async Task<Dictionary<string, string>> LoadSellerNamesAsync(IEnumerable<string> sellerIds)

@@ -66,6 +66,7 @@ builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, LoggingAuth
 builder.Services.AddSingleton<IPayoutEncryptionService, PayoutEncryptionService>();
 builder.Services.AddScoped<RecentlyViewedService>();
 builder.Services.AddScoped<CartService>();
+builder.Services.AddScoped<CartTotalsCalculator>();
 builder.Services.AddScoped<CartViewService>();
 
 builder.Services.ConfigureApplicationCookie(options =>

@@ -16,7 +16,15 @@ namespace SD.ProjectName.Tests.Products
         [Fact]
         public async Task BuildAsync_ShouldClampQuantitiesToAvailableStock()
         {
-            var cartOptions = new CartOptions { CookieName = ".Test.Cart", MaxItems = 10, CookieLifespanDays = 7 };
+            var cartOptions = new CartOptions
+            {
+                CookieName = ".Test.Cart",
+                MaxItems = 10,
+                CookieLifespanDays = 7,
+                DefaultShippingBase = 0,
+                DefaultShippingPerItem = 0,
+                PlatformCommissionRate = 0
+            };
             var cartService = new CartService(cartOptions, Mock.Of<ILogger<CartService>>());
             var product = new ProductModel
             {
@@ -41,13 +49,15 @@ namespace SD.ProjectName.Tests.Products
                 }
             });
 
-            var service = CreateService(cartService, product);
+            var service = CreateService(cartService, cartOptions, product);
 
             var summary = await service.BuildAsync(httpContext);
 
             var group = Assert.Single(summary.SellerGroups);
             var item = Assert.Single(group.Items);
             Assert.Equal(2, item.Quantity);
+            Assert.Equal(40, summary.ItemsSubtotal);
+            Assert.Equal(0, summary.ShippingTotal);
             Assert.Equal(40, summary.GrandTotal);
             Assert.Equal(2, summary.TotalQuantity);
             Assert.Equal(2, ExtractCartPayload(httpContext, cartOptions.CookieName)?.Items.Single().Quantity);
@@ -56,7 +66,15 @@ namespace SD.ProjectName.Tests.Products
         [Fact]
         public async Task BuildAsync_ShouldRemoveUnavailableVariant()
         {
-            var cartOptions = new CartOptions { CookieName = ".Test.Cart", MaxItems = 10, CookieLifespanDays = 7 };
+            var cartOptions = new CartOptions
+            {
+                CookieName = ".Test.Cart",
+                MaxItems = 10,
+                CookieLifespanDays = 7,
+                DefaultShippingBase = 0,
+                DefaultShippingPerItem = 0,
+                PlatformCommissionRate = 0
+            };
             var cartService = new CartService(cartOptions, Mock.Of<ILogger<CartService>>());
             var product = new ProductModel
             {
@@ -90,7 +108,7 @@ namespace SD.ProjectName.Tests.Products
                 }
             });
 
-            var service = CreateService(cartService, product);
+            var service = CreateService(cartService, cartOptions, product);
 
             var summary = await service.BuildAsync(httpContext);
 
@@ -98,10 +116,79 @@ namespace SD.ProjectName.Tests.Products
             Assert.Empty(ExtractCartPayload(httpContext, cartOptions.CookieName)?.Items ?? new List<CartItem>());
         }
 
-        private static CartViewService CreateService(CartService cartService, ProductModel product)
+        [Fact]
+        public async Task BuildAsync_ShouldCalculateShippingAndCommissionPerSeller()
+        {
+            var cartOptions = new CartOptions
+            {
+                CookieName = ".Test.Cart",
+                MaxItems = 10,
+                CookieLifespanDays = 7,
+                DefaultShippingBase = 0,
+                DefaultShippingPerItem = 0,
+                PlatformCommissionRate = 0.1m,
+                ShippingRules = new List<CartShippingRule>
+                {
+                    new() { SellerId = "seller-1", BaseRate = 3, PerItemRate = 1 },
+                    new() { SellerId = "seller-2", BaseRate = 2, PerItemRate = 0 }
+                }
+            };
+
+            var cartService = new CartService(cartOptions, Mock.Of<ILogger<CartService>>());
+            var productOne = new ProductModel
+            {
+                Id = 1,
+                SellerId = "seller-1",
+                Title = "Product One",
+                MerchantSku = "SKU-1",
+                Price = 20,
+                Stock = 5,
+                Category = "General",
+                WorkflowState = ProductWorkflowStates.Active
+            };
+            var productTwo = new ProductModel
+            {
+                Id = 2,
+                SellerId = "seller-2",
+                Title = "Product Two",
+                MerchantSku = "SKU-2",
+                Price = 15,
+                Stock = 5,
+                Category = "General",
+                WorkflowState = ProductWorkflowStates.Active
+            };
+
+            var httpContext = BuildContextWithCart(cartService, cartOptions.CookieName, new List<CartItem>
+            {
+                new() { ProductId = productOne.Id, SellerId = productOne.SellerId, Quantity = 2, VariantAttributes = new Dictionary<string, string>() },
+                new() { ProductId = productTwo.Id, SellerId = productTwo.SellerId, Quantity = 1, VariantAttributes = new Dictionary<string, string>() }
+            });
+
+            var service = CreateService(cartService, cartOptions, productOne, productTwo);
+
+            var summary = await service.BuildAsync(httpContext);
+
+            Assert.Equal(55, summary.ItemsSubtotal);
+            Assert.Equal(7, summary.ShippingTotal);
+            Assert.Equal(62, summary.GrandTotal);
+            Assert.Equal(3, summary.TotalQuantity);
+
+            var sellerOne = Assert.Single(summary.SellerGroups, g => g.SellerId == "seller-1");
+            Assert.Equal(5, sellerOne.Shipping);
+            Assert.Equal(45, sellerOne.Total);
+
+            var sellerTwo = Assert.Single(summary.SellerGroups, g => g.SellerId == "seller-2");
+            Assert.Equal(2, sellerTwo.Shipping);
+            Assert.Equal(17, sellerTwo.Total);
+
+            Assert.Equal(5.5m, summary.Settlement.PlatformCommissionTotal);
+            Assert.Equal(56.5m, summary.Settlement.SellerPayoutTotal);
+        }
+
+        private static CartViewService CreateService(CartService cartService, CartOptions options, params ProductModel[] products)
         {
             var repo = new Mock<IProductRepository>();
-            repo.Setup(r => r.GetByIds(It.IsAny<IEnumerable<int>>(), false)).ReturnsAsync(new List<ProductModel> { product });
+            repo.Setup(r => r.GetByIds(It.IsAny<IEnumerable<int>>(), false)).ReturnsAsync(products.ToList());
             var getProducts = new GetProducts(repo.Object);
 
             var store = new Mock<IUserStore<ApplicationUser>>();
@@ -116,10 +203,15 @@ namespace SD.ProjectName.Tests.Products
                 null!,
                 Mock.Of<ILogger<UserManager<ApplicationUser>>>());
 
-            userManager.Setup(u => u.FindByIdAsync(product.SellerId))
-                .ReturnsAsync(new ApplicationUser { Id = product.SellerId, BusinessName = "Seller" });
+            foreach (var product in products)
+            {
+                userManager.Setup(u => u.FindByIdAsync(product.SellerId))
+                    .ReturnsAsync(new ApplicationUser { Id = product.SellerId, BusinessName = "Seller" });
+            }
 
-            return new CartViewService(cartService, getProducts, userManager.Object);
+            var totalsCalculator = new CartTotalsCalculator(options);
+
+            return new CartViewService(cartService, totalsCalculator, getProducts, userManager.Object);
         }
 
         private static HttpContext BuildContextWithCart(CartService cartService, string cookieName, List<CartItem> items)
