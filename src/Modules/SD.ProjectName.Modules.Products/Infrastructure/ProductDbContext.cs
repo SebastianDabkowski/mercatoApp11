@@ -20,6 +20,8 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
         public DbSet<ProductImportJob> ProductImportJobs { get; set; }
         public DbSet<ProductExportJob> ProductExportJobs { get; set; }
         public DbSet<ProductModerationAudit> ProductModerationAudits { get; set; }
+        public DbSet<ProductPhoto> ProductPhotos { get; set; }
+        public DbSet<ProductPhotoModerationAudit> ProductPhotoModerationAudits { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -122,6 +124,33 @@ namespace SD.ProjectName.Modules.Products.Infrastructure
                 entity.Property(a => a.ToStatus).HasMaxLength(32).IsRequired();
                 entity.Property(a => a.CreatedOn).IsRequired();
                 entity.HasIndex(a => a.ProductId);
+            });
+
+            modelBuilder.Entity<ProductPhoto>(entity =>
+            {
+                entity.ToTable("ProductPhoto");
+                entity.Property(p => p.Url).HasMaxLength(500).IsRequired();
+                entity.Property(p => p.ThumbnailUrl).HasMaxLength(500);
+                entity.Property(p => p.Status).HasMaxLength(32).HasDefaultValue(ProductPhotoStatuses.Approved).IsRequired();
+                entity.Property(p => p.FlaggedBy).HasMaxLength(256);
+                entity.Property(p => p.FlaggedReason).HasMaxLength(512);
+                entity.Property(p => p.ReviewedBy).HasMaxLength(256);
+                entity.Property(p => p.ModerationNote).HasMaxLength(512);
+                entity.Property(p => p.CreatedOn).IsRequired();
+                entity.HasIndex(p => p.ProductId);
+                entity.HasIndex(p => p.Status);
+            });
+
+            modelBuilder.Entity<ProductPhotoModerationAudit>(entity =>
+            {
+                entity.ToTable("ProductPhotoModerationAudit");
+                entity.Property(a => a.Action).HasMaxLength(64).IsRequired();
+                entity.Property(a => a.Actor).HasMaxLength(256);
+                entity.Property(a => a.Reason).HasMaxLength(512);
+                entity.Property(a => a.FromStatus).HasMaxLength(32).IsRequired();
+                entity.Property(a => a.ToStatus).HasMaxLength(32).IsRequired();
+                entity.Property(a => a.CreatedOn).IsRequired();
+                entity.HasIndex(a => a.PhotoId);
             });
         }
 

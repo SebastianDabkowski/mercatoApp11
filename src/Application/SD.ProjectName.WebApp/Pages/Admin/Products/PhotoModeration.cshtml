@@ -1,0 +1,179 @@
+@page "/Admin/Products/PhotoModeration"
+@using SD.ProjectName.Modules.Products.Domain
+@model SD.ProjectName.WebApp.Pages.Admin.Products.PhotoModerationModel
+@{
+    ViewData["Title"] = "Photo moderation";
+}
+
+<h1 class="display-6">Photo moderation</h1>
+<p class="text-muted">Review flagged product photos. Approve to keep them visible or remove with a reason to notify the seller.</p>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-info">@Model.StatusMessage</div>
+}
+
+<form method="get" class="card mb-3">
+    <div class="card-body row g-3 align-items-end">
+        <div class="col-md-6">
+            <div class="fw-semibold mb-1">Statuses</div>
+            <div class="d-flex flex-wrap gap-2">
+                @foreach (var status in Model.AvailableStatuses)
+                {
+                    var normalizedId = status.Replace(" ", "-", StringComparison.OrdinalIgnoreCase);
+                    var isChecked = Model.Statuses.Any(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="status" id="status-@normalizedId" value="@status" @(isChecked ? "checked" : null) />
+                        <label class="form-check-label small text-capitalize" for="status-@normalizedId">@status</label>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="form-check mt-4">
+                <input class="form-check-input" type="checkbox" id="flagged-only" name="flagged" value="true" @(Model.FlaggedOnly ? "checked" : null) />
+                <label class="form-check-label" for="flagged-only">Flagged only</label>
+            </div>
+        </div>
+        <div class="col-md-3 text-end">
+            <button class="btn btn-primary" type="submit">Apply</button>
+            <a class="btn btn-link text-decoration-none" asp-page="PhotoModeration">Reset</a>
+        </div>
+    </div>
+</form>
+
+@if (Model.Photos.TotalCount == 0)
+{
+    <div class="text-muted">No photos match these filters.</div>
+}
+else
+{
+    <form method="post">
+        <input type="hidden" name="page" value="@Model.PageNumber" />
+        <input type="hidden" name="flagged" value="@Model.FlaggedOnly.ToString().ToLowerInvariant()" />
+        @foreach (var status in Model.Statuses)
+        {
+            <input type="hidden" name="status" value="@status" />
+        }
+
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+            <div class="flex-grow-1">
+                <label class="form-label mb-1" asp-for="ModerationNote">Moderator note (optional for approvals, required for removal)</label>
+                <input asp-for="ModerationNote" class="form-control" />
+            </div>
+            <div class="d-flex gap-2 align-items-end">
+                <button class="btn btn-success" asp-page-handler="Approve" type="submit">Approve selected</button>
+                <button class="btn btn-outline-danger" asp-page-handler="Remove" type="submit">Remove selected</button>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th scope="col">
+                            <input type="checkbox" class="form-check-input" data-select-all />
+                        </th>
+                        <th scope="col">Photo</th>
+                        <th scope="col">Product</th>
+                        <th scope="col">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var photo in Model.Photos.Items)
+                    {
+                        Model.AuditTrail.TryGetValue(photo.Id, out var audit);
+                        var statusClass = photo.Status == ProductPhotoStatuses.Approved
+                            ? "text-bg-success"
+                            : photo.Status == ProductPhotoStatuses.Removed
+                                ? "text-bg-danger"
+                                : "text-bg-warning text-dark";
+                        <tr>
+                            <td>
+                                <input type="checkbox" class="form-check-input" name="SelectedIds" value="@photo.Id" aria-label="Select photo for product @photo.ProductTitle" />
+                            </td>
+                            <td style="width: 200px;">
+                                <div class="ratio ratio-1x1" style="max-width: 140px;">
+                                    <img src="@(photo.ThumbnailUrl ?? photo.Url)" alt="Photo for @photo.ProductTitle" class="img-thumbnail object-fit-cover" />
+                                </div>
+                                <div class="small mt-1 text-muted text-break">@photo.Url</div>
+                            </td>
+                            <td>
+                                <div class="fw-semibold">
+                                    <a asp-page="/Products/Details" asp-route-id="@photo.ProductId">@photo.ProductTitle</a>
+                                </div>
+                                <div class="text-muted small">SKU @photo.MerchantSku</div>
+                                <div class="text-muted small">Seller @photo.SellerName (@photo.SellerEmail)</div>
+                                @if (!string.IsNullOrWhiteSpace(photo.FlaggedReason))
+                                {
+                                    <div class="mt-1 small">Flagged: @photo.FlaggedReason</div>
+                                }
+                                @if (audit != null && audit.Count > 0)
+                                {
+                                    <details class="small mt-2 text-muted">
+                                        <summary>Audit log (@audit.Count)</summary>
+                                        <ul class="mb-0">
+                                            @foreach (var entry in audit)
+                                            {
+                                                <li>
+                                                    <span class="fw-semibold">@entry.Action</span>
+                                                    <span>by @(!string.IsNullOrWhiteSpace(entry.Actor) ? entry.Actor : "System")</span>
+                                                    <span class="text-muted">@entry.CreatedOn.ToLocalTime().ToString("g")</span>
+                                                    @if (!string.IsNullOrWhiteSpace(entry.Reason))
+                                                    {
+                                                        <div>Reason: @entry.Reason</div>
+                                                    }
+                                                </li>
+                                            }
+                                        </ul>
+                                    </details>
+                                }
+                            </td>
+                            <td>
+                                <span class="badge @statusClass text-capitalize">@photo.Status</span>
+                                @if (!string.IsNullOrWhiteSpace(photo.ModerationNote))
+                                {
+                                    <div class="small mt-1">Note: @photo.ModerationNote</div>
+                                }
+                                @if (photo.FlaggedOn.HasValue)
+                                {
+                                    <div class="small text-muted">Flagged @photo.FlaggedOn.Value.ToLocalTime().ToString("g")</div>
+                                }
+                                @if (photo.ReviewedOn.HasValue)
+                                {
+                                    <div class="small text-muted">Reviewed @photo.ReviewedOn.Value.ToLocalTime().ToString("g")</div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </form>
+
+    <nav aria-label="Photo moderation pagination">
+        <ul class="pagination">
+            <li class="page-item @(Model.Photos.HasPreviousPage ? "" : "disabled")">
+                <a class="page-link" asp-page="PhotoModeration" asp-route-page="@(Model.PageNumber - 1)" asp-route-flagged="@Model.FlaggedOnly" asp-route-status="@Model.Statuses">Previous</a>
+            </li>
+            <li class="page-item active">
+                <span class="page-link">Page @Model.Photos.PageNumber of @Model.Photos.TotalPages</span>
+            </li>
+            <li class="page-item @(Model.Photos.HasNextPage ? "" : "disabled")">
+                <a class="page-link" asp-page="PhotoModeration" asp-route-page="@(Model.PageNumber + 1)" asp-route-flagged="@Model.FlaggedOnly" asp-route-status="@Model.Statuses">Next</a>
+            </li>
+        </ul>
+    </nav>
+}
+
+@section Scripts {
+    <script>
+        (() => {
+            const selectAll = document.querySelector('[data-select-all]');
+            if (!selectAll) return;
+            selectAll.addEventListener('change', (e) => {
+                document.querySelectorAll('input[name="SelectedIds"]').forEach(cb => cb.checked = e.target.checked);
+            });
+        })();
+    </script>
+}

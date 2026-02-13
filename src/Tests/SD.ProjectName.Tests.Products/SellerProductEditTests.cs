@@ -125,6 +125,7 @@ namespace SD.ProjectName.Tests.Products
             environment.SetupGet(e => e.WebRootPath).Returns(Path.Combine(Path.GetTempPath(), "seller-edit-tests"));
             environment.SetupGet(e => e.ContentRootPath).Returns(Path.GetTempPath());
             var imageService = new ProductImageService(environment.Object, NullLogger<ProductImageService>.Instance);
+            var photoModerationService = new ProductPhotoModerationService(CreateContext(), userManager, null);
             var httpContext = new DefaultHttpContext
             {
                 User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.NameIdentifier, "current-seller") }))
@@ -132,7 +133,7 @@ namespace SD.ProjectName.Tests.Products
             var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
             var pageContext = new PageContext(actionContext);
 
-            return new EditModel(getProducts, updateProduct, userManager, categories, logger, repository, imageService)
+            return new EditModel(getProducts, updateProduct, userManager, categories, logger, repository, imageService, photoModerationService)
             {
                 PageContext = pageContext,
                 TempData = new TempDataDictionary(httpContext, Mock.Of<ITempDataProvider>())

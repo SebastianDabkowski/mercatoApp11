@@ -24,6 +24,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
         private readonly ILogger<EditModel> _logger;
         private readonly IProductRepository _productRepository;
         private readonly ProductImageService _productImageService;
+        private readonly ProductPhotoModerationService _photoModerationService;
 
         public EditModel(
             GetProducts getProducts,
@@ -32,7 +33,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             ManageCategories categories,
             ILogger<EditModel> logger,
             IProductRepository productRepository,
-            ProductImageService productImageService)
+            ProductImageService productImageService,
+            ProductPhotoModerationService photoModerationService)
         {
             _getProducts = getProducts;
             _updateProduct = updateProduct;
@@ -41,6 +43,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             _logger = logger;
             _productRepository = productRepository;
             _productImageService = productImageService;
+            _photoModerationService = photoModerationService;
         }
 
         [BindProperty]
@@ -185,6 +188,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
             await _updateProduct.UpdateAsync(product);
             _logger.LogInformation("Product {ProductId} updated by seller {SellerId}", product.Id, user.Id);
+            await _photoModerationService.SyncFromProductAsync(product, HttpContext.RequestAborted);
 
             Input.MainImageUrl = mainImage;
             Input.GalleryImageUrls = galleryImages;
