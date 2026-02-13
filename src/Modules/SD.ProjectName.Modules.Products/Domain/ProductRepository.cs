@@ -40,6 +40,28 @@ namespace SD.ProjectName.Modules.Products.Domain
                 .ToListAsync();
         }
 
+        public async Task<List<ProductModel>> GetByIds(IEnumerable<int> ids, bool includeDrafts = false)
+        {
+            if (ids == null || !ids.Any())
+            {
+                return new List<ProductModel>();
+            }
+
+            var query = _context.Set<ProductModel>()
+                .Where(p => p.WorkflowState != ProductWorkflowStates.Archived)
+                .AsQueryable();
+
+            if (!includeDrafts)
+            {
+                query = query.Where(p => p.WorkflowState == ProductWorkflowStates.Active);
+            }
+
+            var idList = ids.Distinct().ToList();
+            return await query
+                .Where(p => idList.Contains(p.Id))
+                .ToListAsync();
+        }
+
         public async Task Add(ProductModel product)
         {
             _context.Set<ProductModel>().Add(product);

@@ -18,6 +18,12 @@
 
 <p>
     <a class="btn btn-primary" asp-page="Add">Add product</a>
+    @if (Model.Products.Any())
+    {
+        <form id="bulkForm" method="get" asp-page="BulkUpdate" class="d-inline">
+            <button type="submit" class="btn btn-outline-secondary ms-2">Bulk update price & stock</button>
+        </form>
+    }
 </p>
 
 @if (Model.Products.Any())
@@ -25,6 +31,7 @@
     <table class="table">
         <thead>
             <tr>
+                <th scope="col">Select</th>
                 <th>Title</th>
                 <th>Price</th>
                 <th>Stock</th>
@@ -37,6 +44,9 @@
             @foreach (var product in Model.Products)
             {
                 <tr>
+                    <td>
+                        <input type="checkbox" form="bulkForm" name="selectedIds" value="@product.Id" aria-label="Select @product.Title" />
+                    </td>
                     <td>@product.Title</td>
                     <td>@product.Price.ToString("C")</td>
                     <td>@product.Stock</td>
