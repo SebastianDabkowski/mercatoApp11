@@ -344,7 +344,7 @@ If behavior or responsibilities change:
 
 \- Add or update an ADR in `docs/adr` for every architectural decision and keep status current (Proposed / Accepted).
 
-\- Run an ADR validation pass before merge: validate ADRs against the current architecture, confirm Architecture.md/AGENT.md are synchronized, and create the missing ADR immediately when gaps are found.
+\- Run an ADR validation pass before merge: validate ADRs against the current architecture (validate all ADRs, not just new ones), confirm Architecture.md/AGENT.md mirror the new structure and responsibilities, and create or update any missing ADR immediately when gaps are found.
 
 
 
