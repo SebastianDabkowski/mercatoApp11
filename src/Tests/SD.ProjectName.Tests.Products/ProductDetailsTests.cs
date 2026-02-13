@@ -9,6 +9,7 @@ using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.Modules.Products.Domain.Interfaces;
 using SD.ProjectName.WebApp.Pages.Products;
+using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.Tests.Products
 {
@@ -58,12 +59,13 @@ namespace SD.ProjectName.Tests.Products
         private static DetailsModel CreateModel(IProductRepository repository)
         {
             var getProducts = new GetProducts(repository);
+            var recentlyViewed = new RecentlyViewedService(getProducts, new RecentlyViewedOptions(), Mock.Of<ILogger<RecentlyViewedService>>());
             var logger = Mock.Of<ILogger<DetailsModel>>();
             var httpContext = new DefaultHttpContext();
             var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
             var pageContext = new PageContext(actionContext);
 
-            var model = new DetailsModel(getProducts, logger)
+            var model = new DetailsModel(getProducts, recentlyViewed, logger)
             {
                 PageContext = pageContext
             };
