@@ -59,7 +59,14 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 Price = product.Price,
                 Stock = product.Stock,
                 Category = product.Category,
-                Description = product.Description
+                Description = product.Description,
+                MainImageUrl = product.MainImageUrl,
+                GalleryImageUrls = product.GalleryImageUrls,
+                WeightKg = product.WeightKg,
+                LengthCm = product.LengthCm,
+                WidthCm = product.WidthCm,
+                HeightCm = product.HeightCm,
+                ShippingMethods = product.ShippingMethods
             };
 
             return Page();
@@ -94,6 +101,13 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             product.Stock = Input.Stock;
             product.Category = Input.Category.Trim();
             product.Description = string.IsNullOrWhiteSpace(Input.Description) ? null : Input.Description.Trim();
+            product.MainImageUrl = string.IsNullOrWhiteSpace(Input.MainImageUrl) ? null : Input.MainImageUrl.Trim();
+            product.GalleryImageUrls = string.IsNullOrWhiteSpace(Input.GalleryImageUrls) ? null : Input.GalleryImageUrls.Trim();
+            product.WeightKg = Input.WeightKg;
+            product.LengthCm = Input.LengthCm;
+            product.WidthCm = Input.WidthCm;
+            product.HeightCm = Input.HeightCm;
+            product.ShippingMethods = string.IsNullOrWhiteSpace(Input.ShippingMethods) ? null : Input.ShippingMethods.Trim();
 
             await _updateProduct.UpdateAsync(product);
             _logger.LogInformation("Product {ProductId} updated by seller {SellerId}", product.Id, user.Id);
@@ -126,6 +140,35 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
             [MaxLength(1000)]
             public string? Description { get; set; }
+
+            [MaxLength(500)]
+            [Display(Name = "Main image URL")]
+            [Url(ErrorMessage = "Provide a valid image URL.")]
+            public string? MainImageUrl { get; set; }
+
+            [MaxLength(2000)]
+            [Display(Name = "Gallery image URLs (comma-separated)")]
+            public string? GalleryImageUrls { get; set; }
+
+            [Range(0, double.MaxValue)]
+            [Display(Name = "Weight (kg)")]
+            public decimal? WeightKg { get; set; }
+
+            [Range(0, double.MaxValue)]
+            [Display(Name = "Length (cm)")]
+            public decimal? LengthCm { get; set; }
+
+            [Range(0, double.MaxValue)]
+            [Display(Name = "Width (cm)")]
+            public decimal? WidthCm { get; set; }
+
+            [Range(0, double.MaxValue)]
+            [Display(Name = "Height (cm)")]
+            public decimal? HeightCm { get; set; }
+
+            [MaxLength(200)]
+            [Display(Name = "Shipping methods")]
+            public string? ShippingMethods { get; set; }
         }
     }
 }

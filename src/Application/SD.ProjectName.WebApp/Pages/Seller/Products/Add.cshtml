@@ -35,6 +35,43 @@
                 <textarea asp-for="Input.Description" class="form-control" rows="4"></textarea>
                 <span asp-validation-for="Input.Description" class="text-danger"></span>
             </div>
+            <div class="form-group">
+                <label asp-for="Input.MainImageUrl"></label>
+                <input asp-for="Input.MainImageUrl" class="form-control" />
+                <span asp-validation-for="Input.MainImageUrl" class="text-danger"></span>
+            </div>
+            <div class="form-group">
+                <label asp-for="Input.GalleryImageUrls"></label>
+                <textarea asp-for="Input.GalleryImageUrls" class="form-control" rows="2" placeholder="https://example.com/img1.jpg, https://example.com/img2.jpg"></textarea>
+                <span asp-validation-for="Input.GalleryImageUrls" class="text-danger"></span>
+            </div>
+            <div class="form-row">
+                <div class="form-group col-md-3">
+                    <label asp-for="Input.WeightKg"></label>
+                    <input asp-for="Input.WeightKg" class="form-control" />
+                    <span asp-validation-for="Input.WeightKg" class="text-danger"></span>
+                </div>
+                <div class="form-group col-md-3">
+                    <label asp-for="Input.LengthCm"></label>
+                    <input asp-for="Input.LengthCm" class="form-control" />
+                    <span asp-validation-for="Input.LengthCm" class="text-danger"></span>
+                </div>
+                <div class="form-group col-md-3">
+                    <label asp-for="Input.WidthCm"></label>
+                    <input asp-for="Input.WidthCm" class="form-control" />
+                    <span asp-validation-for="Input.WidthCm" class="text-danger"></span>
+                </div>
+                <div class="form-group col-md-3">
+                    <label asp-for="Input.HeightCm"></label>
+                    <input asp-for="Input.HeightCm" class="form-control" />
+                    <span asp-validation-for="Input.HeightCm" class="text-danger"></span>
+                </div>
+            </div>
+            <div class="form-group">
+                <label asp-for="Input.ShippingMethods"></label>
+                <input asp-for="Input.ShippingMethods" class="form-control" placeholder="Courier, Parcel locker, Pickup" />
+                <span asp-validation-for="Input.ShippingMethods" class="text-danger"></span>
+            </div>
             <button type="submit" class="btn btn-primary">Save draft</button>
             <a asp-page="List" class="btn btn-link">Back to list</a>
         </form>

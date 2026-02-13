@@ -48,6 +48,13 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 Stock = Input.Stock,
                 Category = Input.Category.Trim(),
                 Description = string.IsNullOrWhiteSpace(Input.Description) ? null : Input.Description.Trim(),
+                MainImageUrl = string.IsNullOrWhiteSpace(Input.MainImageUrl) ? null : Input.MainImageUrl.Trim(),
+                GalleryImageUrls = string.IsNullOrWhiteSpace(Input.GalleryImageUrls) ? null : Input.GalleryImageUrls.Trim(),
+                WeightKg = Input.WeightKg,
+                LengthCm = Input.LengthCm,
+                WidthCm = Input.WidthCm,
+                HeightCm = Input.HeightCm,
+                ShippingMethods = string.IsNullOrWhiteSpace(Input.ShippingMethods) ? null : Input.ShippingMethods.Trim(),
                 WorkflowState = ProductWorkflowStates.Draft,
                 SellerId = user.Id
             };
@@ -79,6 +86,35 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
             [MaxLength(1000)]
             public string? Description { get; set; }
+
+            [MaxLength(500)]
+            [Display(Name = "Main image URL")]
+            [Url(ErrorMessage = "Provide a valid image URL.")]
+            public string? MainImageUrl { get; set; }
+
+            [MaxLength(2000)]
+            [Display(Name = "Gallery image URLs (comma-separated)")]
+            public string? GalleryImageUrls { get; set; }
+
+            [Range(0, double.MaxValue)]
+            [Display(Name = "Weight (kg)")]
+            public decimal? WeightKg { get; set; }
+
+            [Range(0, double.MaxValue)]
+            [Display(Name = "Length (cm)")]
+            public decimal? LengthCm { get; set; }
+
+            [Range(0, double.MaxValue)]
+            [Display(Name = "Width (cm)")]
+            public decimal? WidthCm { get; set; }
+
+            [Range(0, double.MaxValue)]
+            [Display(Name = "Height (cm)")]
+            public decimal? HeightCm { get; set; }
+
+            [MaxLength(200)]
+            [Display(Name = "Shipping methods")]
+            public string? ShippingMethods { get; set; }
         }
     }
 }
