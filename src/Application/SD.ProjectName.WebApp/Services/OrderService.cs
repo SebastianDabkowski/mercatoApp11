@@ -100,6 +100,7 @@ namespace SD.ProjectName.WebApp.Services
 
     public static class ReturnRequestStatuses
     {
+        public const string PendingSellerReview = "Pending seller review";
         public const string Requested = "Requested";
         public const string Approved = "Approved";
         public const string Rejected = "Rejected";
@@ -107,18 +108,54 @@ namespace SD.ProjectName.WebApp.Services
 
         private static readonly IReadOnlyList<string> OrderedStatuses = new[]
         {
-            Requested, Approved, Rejected, Completed
+            PendingSellerReview, Requested, Approved, Rejected, Completed
         };
 
         public static string Normalize(string? status)
         {
             if (string.IsNullOrWhiteSpace(status))
             {
-                return Requested;
+                return PendingSellerReview;
+            }
+
+            if (status.Trim().Equals(Requested, StringComparison.OrdinalIgnoreCase))
+            {
+                return PendingSellerReview;
             }
 
             var match = OrderedStatuses.FirstOrDefault(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
             return match ?? status.Trim();
+        }
+
+        public static bool IsOpen(string? status)
+        {
+            var normalized = Normalize(status);
+            return !string.Equals(normalized, Completed, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(normalized, Rejected, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    public static class ReturnRequestTypes
+    {
+        public const string Return = "Return";
+        public const string Complaint = "Complaint";
+
+        private static readonly IReadOnlyList<string> AllowedTypes = new[] { Return, Complaint };
+
+        public static string Normalize(string? type)
+        {
+            if (string.IsNullOrWhiteSpace(type))
+            {
+                return Return;
+            }
+
+            var match = AllowedTypes.FirstOrDefault(t => string.Equals(t, type, StringComparison.OrdinalIgnoreCase));
+            return match ?? Return;
+        }
+
+        public static bool IsSupported(string? type)
+        {
+            return AllowedTypes.Any(t => string.Equals(t, type, StringComparison.OrdinalIgnoreCase));
         }
     }
 
@@ -173,7 +210,7 @@ namespace SD.ProjectName.WebApp.Services
 
     public record ReturnRequestItem(int ProductId, int Quantity);
 
-    public record ReturnRequest(string SubOrderNumber, string Status, string Reason, DateTimeOffset RequestedOn, List<ReturnRequestItem> Items);
+    public record ReturnRequest(string SubOrderNumber, string Status, string Reason, DateTimeOffset RequestedOn, List<ReturnRequestItem> Items, string Type = ReturnRequestTypes.Return, string? Description = null, string? CaseId = null);
 
     public record OrderStatusChange(string Status, DateTimeOffset ChangedOn, string? TrackingNumber = null, string? TrackingCarrier = null);
 
@@ -817,6 +854,8 @@ namespace SD.ProjectName.WebApp.Services
             string? subOrderNumber,
             List<int>? productIds,
             string? reason,
+            string? type = null,
+            string? description = null,
             CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(buyerId))
@@ -831,7 +870,17 @@ namespace SD.ProjectName.WebApp.Services
 
             if (string.IsNullOrWhiteSpace(reason))
             {
-                return new ReturnRequestResult(false, "Provide a reason for the return.");
+                return new ReturnRequestResult(false, "Provide a reason for the request.");
+            }
+
+            if (string.IsNullOrWhiteSpace(type) || !ReturnRequestTypes.IsSupported(type))
+            {
+                return new ReturnRequestResult(false, "Select return or complaint.");
+            }
+
+            if (string.IsNullOrWhiteSpace(description))
+            {
+                return new ReturnRequestResult(false, "Provide a description of the issue.");
             }
 
             var order = await _dbContext.Orders.FirstOrDefaultAsync(
@@ -853,15 +902,17 @@ namespace SD.ProjectName.WebApp.Services
             var status = OrderStatuses.Normalize(subOrder.Status);
             if (!string.Equals(status, OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase))
             {
-                return new ReturnRequestResult(false, "Returns are only available after delivery.");
+                return new ReturnRequestResult(false, "Requests are only available after delivery.");
             }
 
-            if (subOrder.Return != null)
+            if (subOrder.Return != null && ReturnRequestStatuses.IsOpen(subOrder.Return.Status))
             {
-                return new ReturnRequestResult(false, "A return has already been requested for this sub-order.");
+                return new ReturnRequestResult(false, "An open case already exists for this sub-order.");
             }
 
-            if (!IsReturnWindowOpen(subOrder, order.CreatedOn))
+            var normalizedType = ReturnRequestTypes.Normalize(type);
+            if (string.Equals(normalizedType, ReturnRequestTypes.Return, StringComparison.OrdinalIgnoreCase)
+                && !IsReturnWindowOpen(subOrder, order.CreatedOn))
             {
                 return new ReturnRequestResult(false, $"Returns are only available within {ReturnPolicies.ReturnWindowDays} days of delivery.");
             }
@@ -869,10 +920,20 @@ namespace SD.ProjectName.WebApp.Services
             var items = BuildReturnItems(subOrder, productIds);
             if (items.Count == 0)
             {
-                return new ReturnRequestResult(false, "Select at least one item to return.");
+                return new ReturnRequestResult(false, "Select at least one item.");
             }
 
-            var request = new ReturnRequest(subOrder.SubOrderNumber, ReturnRequestStatuses.Requested, reason.Trim(), DateTimeOffset.UtcNow, items);
+            var requestedOn = DateTimeOffset.UtcNow;
+            var normalizedDescription = description.Trim();
+            var request = new ReturnRequest(
+                subOrder.SubOrderNumber,
+                ReturnRequestStatuses.PendingSellerReview,
+                reason.Trim(),
+                requestedOn,
+                items,
+                normalizedType,
+                normalizedDescription,
+                BuildCaseId(subOrder.SubOrderNumber, requestedOn));
             details.SubOrders[subOrderIndex] = subOrder with { Return = request };
             order.DetailsJson = JsonSerializer.Serialize(details, _serializerOptions);
 
@@ -2669,6 +2730,13 @@ namespace SD.ProjectName.WebApp.Services
             return _commissionCalculator.Round(Math.Max(0, reduced));
         }
 
+        private static string BuildCaseId(string subOrderNumber, DateTimeOffset requestedOn)
+        {
+            var safeNumber = string.IsNullOrWhiteSpace(subOrderNumber) ? "ORDER" : subOrderNumber.Replace(" ", string.Empty);
+            var timestamp = requestedOn == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : requestedOn;
+            return $"CASE-{safeNumber}-{timestamp.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture)}";
+        }
+
         private static List<ReturnRequestItem> BuildReturnItems(OrderSubOrder subOrder, List<int>? productIds)
         {
             var normalizedIds = productIds?
@@ -3520,7 +3588,10 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             var normalizedStatus = ReturnRequestStatuses.Normalize(request.Status);
+            var normalizedType = ReturnRequestTypes.Normalize(request.Type);
             var normalizedReason = request.Reason?.Trim() ?? string.Empty;
+            var normalizedDescription = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+            var requestedOn = request.RequestedOn == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : request.RequestedOn;
             var normalizedItems = request.Items ?? new List<ReturnRequestItem>();
             if (normalizedItems.Count == 0)
             {
@@ -3543,8 +3614,12 @@ namespace SD.ProjectName.WebApp.Services
             return request with
             {
                 Status = normalizedStatus,
+                Type = normalizedType,
                 Reason = normalizedReason,
-                Items = normalizedItems
+                Description = normalizedDescription,
+                Items = normalizedItems,
+                CaseId = string.IsNullOrWhiteSpace(request.CaseId) ? BuildCaseId(request.SubOrderNumber, requestedOn) : request.CaseId.Trim(),
+                RequestedOn = requestedOn
             };
         }
 

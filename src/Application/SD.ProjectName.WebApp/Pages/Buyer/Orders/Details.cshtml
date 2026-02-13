@@ -195,21 +195,42 @@ else
                                         return $"{i.Quantity} x {label}";
                                     });
                                     <div class="alert alert-info py-2 px-3 mb-3">
-                                        <div class="fw-semibold mb-1">Return @sub.Return.Status</div>
+                                        <div class="fw-semibold mb-1">@sub.Return.Type request @sub.Return.Status</div>
+                                        @if (!string.IsNullOrWhiteSpace(sub.Return.CaseId))
+                                        {
+                                            <div class="text-muted small mb-1">Case ID: @sub.Return.CaseId</div>
+                                        }
                                         <div class="text-muted small mb-1">Requested @sub.Return.RequestedOn.ToLocalTime().ToString("g")</div>
                                         <div class="small mb-1">Reason: @sub.Return.Reason</div>
+                                        @if (!string.IsNullOrWhiteSpace(sub.Return.Description))
+                                        {
+                                            <div class="small mb-1">Description: @sub.Return.Description</div>
+                                        }
                                         <div class="small mb-0">Items: @string.Join(", ", returnItems)</div>
                                     </div>
                                 }
                                 else if (Model.CanRequestReturn(sub))
                                 {
                                     <div class="border rounded p-3 mb-3 bg-light">
-                                        <div class="fw-semibold mb-2">Request a return</div>
-                                        <div class="text-muted small mb-2">Return requests are available within @Model.ReturnWindowDays days of delivery.</div>
+                                        <div class="fw-semibold mb-2">Request support</div>
+                                        <div class="text-muted small mb-2">Submit a return or complaint for delivered items. Returns are available within @Model.ReturnWindowDays days of delivery.</div>
                                         <form method="post" asp-page-handler="Return" asp-route-orderId="@order.Id">
                                             <input type="hidden" name="ReturnSubOrder" value="@sub.SubOrderNumber" />
                                             <div class="mb-2">
-                                                <div class="form-text">Select items to return (leave unchecked to return the entire sub-order).</div>
+                                                <label class="form-label" for="return-type-@sub.SubOrderNumber">Request type</label>
+                                                @{
+                                                    var selectedType = string.Equals(Model.ReturnSubOrder, sub.SubOrderNumber, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(Model.ReturnType)
+                                                        ? Model.ReturnType
+                                                        : ReturnRequestTypes.Return;
+                                                }
+                                                <select class="form-select form-select-sm" id="return-type-@sub.SubOrderNumber" name="ReturnType">
+                                                    <option value="@ReturnRequestTypes.Return" selected="@(string.Equals(selectedType, ReturnRequestTypes.Return, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Return</option>
+                                                    <option value="@ReturnRequestTypes.Complaint" selected="@(string.Equals(selectedType, ReturnRequestTypes.Complaint, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Complaint</option>
+                                                </select>
+                                                <div class="form-text">Returns limited to @Model.ReturnWindowDays days after delivery; complaints can be filed for any delivered order.</div>
+                                            </div>
+                                            <div class="mb-2">
+                                                <div class="form-text">Select items for this case (leave unchecked to include the entire sub-order).</div>
                                                 @foreach (var item in sub.Items)
                                                 {
                                                     var checkboxId = $"return-{sub.SubOrderNumber}-{item.ProductId}";
@@ -229,13 +250,20 @@ else
                                                 }
                                                 <textarea class="form-control" id="return-reason-@sub.SubOrderNumber" name="ReturnReason" rows="3">@existingReason</textarea>
                                             </div>
-                                            <button type="submit" class="btn btn-sm btn-outline-primary">Submit return request</button>
+                                            <div class="mb-3">
+                                                <label class="form-label" for="return-description-@sub.SubOrderNumber">Description</label>
+                                                @{
+                                                    var existingDescription = string.Equals(Model.ReturnSubOrder, sub.SubOrderNumber, StringComparison.OrdinalIgnoreCase) ? Model.ReturnDescription : string.Empty;
+                                                }
+                                                <textarea class="form-control" id="return-description-@sub.SubOrderNumber" name="ReturnDescription" rows="3">@existingDescription</textarea>
+                                            </div>
+                                            <button type="submit" class="btn btn-sm btn-outline-primary">Submit request</button>
                                         </form>
                                     </div>
                                 }
                                 else if (string.Equals(OrderStatuses.Normalize(sub.Status), OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase))
                                 {
-                                    <div class="text-muted small mb-3">Return window closed (@Model.ReturnWindowDays days after delivery).</div>
+                                    <div class="text-muted small mb-3">Support case not available for this sub-order.</div>
                                 }
                                 <div class="table-responsive">
                                     <table class="table align-middle mb-0">
@@ -390,14 +418,21 @@ else
             <div class="card mb-3">
                 <div class="card-header">Returns & support</div>
                 <div class="card-body">
-                    <div class="mb-2">You can request a return for delivered items within @Model.ReturnWindowDays days of delivery.</div>
+                    <div class="mb-2">You can submit a return or complaint for delivered items. Returns are available within @Model.ReturnWindowDays days of delivery.</div>
                     @if (order.SubOrders != null && order.SubOrders.Any(s => s.Return != null))
                     {
-                        <div class="small mb-0">Return requests in progress: @string.Join(", ", order.SubOrders.Where(s => s.Return != null).Select(s => $"{s.SubOrderNumber} - {s.Return!.Status}"))</div>
+                        var caseSummaries = order.SubOrders
+                            .Where(s => s.Return != null)
+                            .Select(s =>
+                            {
+                                var caseId = string.IsNullOrWhiteSpace(s.Return!.CaseId) ? "case" : s.Return.CaseId;
+                                return $"{s.SubOrderNumber} • {s.Return!.Type} • {s.Return!.Status} ({caseId})";
+                            });
+                        <div class="small mb-0">Cases: @string.Join("; ", caseSummaries)</div>
                     }
                     else
                     {
-                        <div class="text-muted small mb-0">Use the \"Request a return\" option under an eligible sub-order above.</div>
+                        <div class="text-muted small mb-0">Use the \"Request support\" option under a delivered sub-order above.</div>
                     }
                 </div>
             </div>

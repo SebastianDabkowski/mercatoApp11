@@ -234,9 +234,17 @@ else
                             return $"{i.Quantity} x {label}";
                         });
                         <div class="alert alert-info py-2 px-3">
-                            <div class="fw-semibold mb-1">Return @Model.Order.ReturnRequest.Status</div>
+                            <div class="fw-semibold mb-1">@Model.Order.ReturnRequest.Type request @Model.Order.ReturnRequest.Status</div>
+                            @if (!string.IsNullOrWhiteSpace(Model.Order.ReturnRequest.CaseId))
+                            {
+                                <div class="text-muted small mb-1">Case ID: @Model.Order.ReturnRequest.CaseId</div>
+                            }
                             <div class="text-muted small mb-1">Requested @Model.Order.ReturnRequest.RequestedOn.ToLocalTime().ToString("g")</div>
                             <div class="small mb-1">Reason: @Model.Order.ReturnRequest.Reason</div>
+                            @if (!string.IsNullOrWhiteSpace(Model.Order.ReturnRequest.Description))
+                            {
+                                <div class="small mb-1">Description: @Model.Order.ReturnRequest.Description</div>
+                            }
                             <div class="small mb-0">Items: @string.Join(", ", returnItems)</div>
                         </div>
                     }

@@ -989,16 +989,61 @@ namespace SD.ProjectName.Tests.Products
 
             await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
 
-            var request = await service.CreateReturnRequestAsync(result.Order.Id, "buyer-ret-1", subOrderNumber, new List<int> { 1 }, "Item damaged");
+            var request = await service.CreateReturnRequestAsync(result.Order.Id, "buyer-ret-1", subOrderNumber, new List<int> { 1 }, "Item damaged", ReturnRequestTypes.Return, "Corner dented");
             Assert.True(request.Success);
 
             var refreshed = await service.GetOrderAsync(result.Order.Id, "buyer-ret-1");
             var subOrder = Assert.Single(refreshed!.SubOrders);
             Assert.NotNull(subOrder.Return);
-            Assert.Equal(ReturnRequestStatuses.Requested, subOrder.Return!.Status);
+            Assert.Equal(ReturnRequestStatuses.PendingSellerReview, subOrder.Return!.Status);
+            Assert.Equal(ReturnRequestTypes.Return, subOrder.Return.Type);
+            Assert.False(string.IsNullOrWhiteSpace(subOrder.Return.CaseId));
             Assert.Equal("Item damaged", subOrder.Return.Reason);
+            Assert.Equal("Corner dented", subOrder.Return.Description);
             Assert.Single(subOrder.Return.Items);
             Assert.Equal(1, subOrder.Return.Items.First().ProductId);
+        }
+
+        [Fact]
+        public async Task CreateReturnRequestAsync_ShouldCreateComplaintOutsideReturnWindow()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-complaint-1", "sig-complaint-1");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-complaint-1", "complaint@example.com", "Complaint Buyer", "Card", "card");
+            var orderView = await service.GetOrderAsync(result.Order.Id, "buyer-complaint-1");
+            var subOrderNumber = Assert.Single(orderView!.SubOrders).SubOrderNumber;
+
+            await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered);
+
+            var record = context.Orders.Single(o => o.Id == result.Order.Id);
+            var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+            var details = JsonSerializer.Deserialize<OrderDetailsPayload>(record.DetailsJson, options)!;
+            var outdated = DateTimeOffset.UtcNow.Subtract(TimeSpan.FromDays(ReturnPolicies.ReturnWindowDays + 2));
+            details = details with { SubOrders = details.SubOrders.Select(s => s with { DeliveredOn = outdated }).ToList() };
+            record.DetailsJson = JsonSerializer.Serialize(details, options);
+            await context.SaveChangesAsync();
+
+            var request = await service.CreateReturnRequestAsync(
+                result.Order.Id,
+                "buyer-complaint-1",
+                subOrderNumber,
+                new List<int> { 1 },
+                "Item defective",
+                ReturnRequestTypes.Complaint,
+                "Screen cracked");
+
+            Assert.True(request.Success);
+
+            var refreshed = await service.GetOrderAsync(result.Order.Id, "buyer-complaint-1");
+            var subOrder = Assert.Single(refreshed!.SubOrders);
+            Assert.NotNull(subOrder.Return);
+            Assert.Equal(ReturnRequestTypes.Complaint, subOrder.Return!.Type);
+            Assert.Equal(ReturnRequestStatuses.PendingSellerReview, subOrder.Return.Status);
+            Assert.Equal("Screen cracked", subOrder.Return.Description);
         }
 
         [Fact]
@@ -1022,7 +1067,7 @@ namespace SD.ProjectName.Tests.Products
             record.DetailsJson = JsonSerializer.Serialize(details, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
             await context.SaveChangesAsync();
 
-            var request = await service.CreateReturnRequestAsync(result.Order.Id, "buyer-ret-2", subOrderNumber, new List<int> { 1 }, "Too late");
+            var request = await service.CreateReturnRequestAsync(result.Order.Id, "buyer-ret-2", subOrderNumber, new List<int> { 1 }, "Too late", ReturnRequestTypes.Return, "Outside window");
             Assert.False(request.Success);
         }
 
