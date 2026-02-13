@@ -25,6 +25,23 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task GetList_ShouldHideSuspendedFromPublicListings()
+        {
+            await using var context = CreateContext();
+            context.Products.AddRange(
+                new ProductModel { Title = "Active", Price = 10, Stock = 1, Category = "Cat", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Suspended", Price = 5, Stock = 2, Category = "Cat", WorkflowState = ProductWorkflowStates.Suspended, SellerId = "seller-1" });
+            await context.SaveChangesAsync();
+
+            var repository = new ProductRepository(context);
+
+            var results = await repository.GetList();
+
+            Assert.Single(results);
+            Assert.DoesNotContain(results, p => p.WorkflowState == ProductWorkflowStates.Suspended);
+        }
+
+        [Fact]
         public async Task GetById_ShouldReturnNull_WhenArchived()
         {
             await using var context = CreateContext();
