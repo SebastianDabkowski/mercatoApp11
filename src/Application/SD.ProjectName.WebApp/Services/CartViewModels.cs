@@ -24,7 +24,7 @@ namespace SD.ProjectName.WebApp.Services
 
     public record CartSellerSettlement(string SellerId, decimal Subtotal, decimal Shipping, decimal Commission, decimal Payout);
 
-    public record CartSellerGroup(string SellerId, string SellerName, decimal Subtotal, decimal Shipping, decimal Total, List<CartDisplayItem> Items);
+    public record CartSellerGroup(string SellerId, string SellerName, decimal Subtotal, decimal Shipping, decimal Total, List<CartDisplayItem> Items, string SellerType = "");
 
     public record CartDisplayItem(
         ProductModel Product,

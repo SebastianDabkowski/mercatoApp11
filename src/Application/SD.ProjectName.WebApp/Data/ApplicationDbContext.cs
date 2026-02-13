@@ -20,6 +20,8 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<ProductReviewAudit> ProductReviewAudits => Set<ProductReviewAudit>();
         public DbSet<ProductReviewReport> ProductReviewReports => Set<ProductReviewReport>();
         public DbSet<ProductQuestion> ProductQuestions => Set<ProductQuestion>();
+        public DbSet<CommissionRule> CommissionRules => Set<CommissionRule>();
+        public DbSet<CommissionRuleAudit> CommissionRuleAudits => Set<CommissionRuleAudit>();
         public DbSet<AnalyticsEvent> AnalyticsEvents => Set<AnalyticsEvent>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)

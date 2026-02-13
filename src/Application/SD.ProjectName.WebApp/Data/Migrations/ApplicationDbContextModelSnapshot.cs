@@ -1156,6 +1156,108 @@ namespace SD.ProjectName.WebApp.Data.Migrations
                     b.ToTable("SellerReputations");
                 });
 
+            modelBuilder.Entity("SD.ProjectName.WebApp.Services.CommissionRule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("CreatedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("CreatedOn")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("EffectiveFrom")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("EffectiveTo")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal>("FixedFee")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasDefaultValue("");
+
+                    b.Property<decimal>("Rate")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("SellerType")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("UpdatedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset?>("UpdatedOn")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SellerType", "Category", "EffectiveFrom");
+
+                    b.ToTable("CommissionRules");
+                });
+
+            modelBuilder.Entity("SD.ProjectName.WebApp.Services.CommissionRuleAudit", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("Updated");
+
+                    b.Property<string>("ChangedBy")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ChangedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("ChangedOn")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("RuleId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RuleId");
+
+                    b.ToTable("CommissionRuleAudits");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
@@ -1203,6 +1305,15 @@ namespace SD.ProjectName.WebApp.Data.Migrations
                     b.HasOne("SD.ProjectName.WebApp.Identity.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SD.ProjectName.WebApp.Services.CommissionRuleAudit", b =>
+                {
+                    b.HasOne("SD.ProjectName.WebApp.Services.CommissionRule", null)
+                        .WithMany()
+                        .HasForeignKey("RuleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

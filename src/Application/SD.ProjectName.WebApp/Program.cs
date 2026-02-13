@@ -149,6 +149,8 @@ builder.Services.AddScoped<RecentlyViewedService>();
 builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<CartTotalsCalculator>();
 builder.Services.AddScoped<CartViewService>();
+builder.Services.AddScoped<CommissionRuleService>();
+builder.Services.AddScoped<ICommissionRuleResolver>(sp => sp.GetRequiredService<CommissionRuleService>());
 builder.Services.AddScoped<PromoCodeService>();
 builder.Services.AddScoped<IUserCartService, UserCartService>();
 builder.Services.AddScoped<CheckoutStateService>();

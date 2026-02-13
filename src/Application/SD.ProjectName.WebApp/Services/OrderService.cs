@@ -496,7 +496,7 @@ namespace SD.ProjectName.WebApp.Services
         DateTimeOffset SentOn,
         bool IsHidden = false);
 
-    public record OrderItemDetail(int ProductId, string Name, string Variant, int Quantity, decimal UnitPrice, decimal LineTotal, string SellerId, string SellerName, string Status = OrderStatuses.Paid, string Category = "", decimal? CommissionRate = null);
+    public record OrderItemDetail(int ProductId, string Name, string Variant, int Quantity, decimal UnitPrice, decimal LineTotal, string SellerId, string SellerName, string Status = OrderStatuses.Paid, string Category = "", decimal? CommissionRate = null, int? CommissionRuleId = null, decimal CommissionFixedFee = 0);
 
     public record OrderShippingDetail(string SellerId, string SellerName, string MethodId, string MethodLabel, decimal Cost, string? Description, string? DeliveryEstimate = null, string? ProviderId = null, string? ProviderServiceCode = null);
 
@@ -1115,6 +1115,7 @@ namespace SD.ProjectName.WebApp.Services
         private readonly InvoiceOptions _invoiceOptions;
         private readonly CaseSlaOptions _caseSlaOptions;
         private readonly CommissionCalculator _commissionCalculator;
+        private readonly ICommissionRuleResolver? _commissionRuleResolver;
         private readonly ShippingProviderService _shippingProviderService;
         private readonly EmailOptions _emailOptions;
         private readonly NotificationService? _notificationService;
@@ -1145,7 +1146,8 @@ namespace SD.ProjectName.WebApp.Services
             CaseSlaOptions? caseSlaOptions = null,
             EmailOptions? emailOptions = null,
             NotificationService? notificationService = null,
-            IAnalyticsTracker? analyticsTracker = null)
+            IAnalyticsTracker? analyticsTracker = null,
+            ICommissionRuleResolver? commissionRuleResolver = null)
         {
             _dbContext = dbContext;
             _emailSender = emailSender;
@@ -1156,7 +1158,8 @@ namespace SD.ProjectName.WebApp.Services
             _settlementTimeZone = ResolveSettlementTimeZone(_settlementOptions.TimeZone);
             _invoiceOptions = invoiceOptions ?? new InvoiceOptions();
             _caseSlaOptions = caseSlaOptions ?? new CaseSlaOptions();
-            _commissionCalculator = new CommissionCalculator(_cartOptions);
+            _commissionRuleResolver = commissionRuleResolver;
+            _commissionCalculator = new CommissionCalculator(_cartOptions, commissionRuleResolver);
             _shippingProviderService = shippingProviderService ?? new ShippingProviderService(new ShippingProviderOptions(), TimeProvider.System, NullLogger<ShippingProviderService>.Instance);
             _emailOptions = emailOptions ?? new EmailOptions();
             _notificationService = notificationService;
@@ -6066,6 +6069,8 @@ namespace SD.ProjectName.WebApp.Services
             var items = new List<OrderItemDetail>();
             var shipping = new List<OrderShippingDetail>();
             var subOrders = new List<OrderSubOrder>();
+            var sellerTypes = LoadSellerTypes(quote.Summary.SellerGroups.Select(g => g.SellerId));
+            var now = DateTimeOffset.UtcNow;
 
             var sellerTotals = quote.Summary.SellerGroups
                 .Select(g => Math.Max(0, g.Subtotal + g.Shipping))
@@ -6078,9 +6083,13 @@ namespace SD.ProjectName.WebApp.Services
             {
                 sellerIndex++;
                 var groupItems = new List<OrderItemDetail>();
+                var appliedFeeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var sellerType = sellerTypes.TryGetValue(group.SellerId, out var type) ? type : null;
                 foreach (var item in group.Items)
                 {
-                    var rate = _commissionCalculator.ResolveRate(group.SellerId, item.Product.Category);
+                    var resolution = _commissionCalculator.ResolveCommission(group.SellerId, item.Product.Category, sellerType, now);
+                    var feeKey = string.IsNullOrWhiteSpace(resolution.Key) ? $"seller-{group.SellerId}-default" : resolution.Key;
+                    var fixedFee = appliedFeeKeys.Add(feeKey) ? resolution.FixedFee : 0;
                     var detail = new OrderItemDetail(
                         item.Product.Id,
                         item.Product.Title,
@@ -6092,7 +6101,9 @@ namespace SD.ProjectName.WebApp.Services
                         group.SellerName,
                         initialStatus,
                         item.Product.Category,
-                        rate);
+                        resolution.Rate,
+                        resolution.RuleId,
+                        fixedFee);
                     items.Add(detail);
                     groupItems.Add(detail);
                 }
@@ -6146,6 +6157,31 @@ namespace SD.ProjectName.WebApp.Services
                 paymentMessage,
                 Math.Max(0, paymentRefundedAmount),
                 new List<OrderMessage>());
+        }
+
+        private Dictionary<string, string> LoadSellerTypes(IEnumerable<string> sellerIds)
+        {
+            var ids = sellerIds
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (ids.Count == 0)
+            {
+                return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            var sellers = _dbContext.Users
+                .Where(u => ids.Contains(u.Id))
+                .Select(u => new { u.Id, u.SellerType })
+                .ToList();
+
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var seller in sellers)
+            {
+                map[seller.Id] = seller.SellerType;
+            }
+
+            return map;
         }
 
         private static OrderShippingDetail ResolveShippingDetail(ShippingQuote quote, string sellerId, string sellerName, decimal fallbackCost)
