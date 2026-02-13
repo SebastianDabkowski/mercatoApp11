@@ -71,6 +71,7 @@
         <form id="categoryFilters" method="get" asp-page="/Products/Category">
             <input type="hidden" name="includeSubcategories" value="@Model.IncludeSubcategories" />
             <input type="hidden" name="sort" value="@Model.Sort" />
+            <input type="hidden" name="page" value="1" />
             <div class="row g-3">
                 <div class="col-12 col-md-6 col-lg-3">
                     <label class="form-label" for="categorySelect">Category</label>
@@ -135,6 +136,7 @@
             <input type="hidden" name="sellerId" value="@Model.SellerId" />
             <input type="hidden" name="minPrice" value="@Model.MinPrice" />
             <input type="hidden" name="maxPrice" value="@Model.MaxPrice" />
+            <input type="hidden" name="page" value="1" />
             <label class="form-label mb-0" for="categorySortSelect">Sort</label>
             <select id="categorySortSelect" name="sort" class="form-select form-select-sm" onchange="this.form.submit()">
                 @foreach (var option in Model.SortOptions)
@@ -151,6 +153,13 @@
 
 @if (Model.Products.Any())
 {
+    var start = Model.TotalResults == 0 ? 0 : ((Model.PageNumber - 1) * Model.PageSize) + 1;
+    var end = Math.Min(Model.PageNumber * Model.PageSize, Model.TotalResults);
+    <div class="d-flex align-items-center justify-content-between mb-2">
+        <div class="text-muted small">
+            Showing @start-@end of @Model.TotalResults product@(Model.TotalResults == 1 ? string.Empty : "s")
+        </div>
+    </div>
     <div class="table-responsive">
         <table class="table table-striped">
             <thead>
@@ -175,6 +184,61 @@
                 }
             </tbody>
         </table>
+    </div>
+    <div class="d-flex align-items-center justify-content-between mt-3">
+        <div class="text-muted small">
+            Showing @((Model.TotalResults == 0 ? 0 : ((Model.PageNumber - 1) * Model.PageSize) + 1))-@Math.Min(Model.PageNumber * Model.PageSize, Model.TotalResults) of @Model.TotalResults product@(Model.TotalResults == 1 ? string.Empty : "s")
+        </div>
+        @if (Model.TotalPages > 1)
+        {
+            <nav aria-label="Category product pages">
+                <ul class="pagination mb-0">
+                    <li class="page-item @(Model.PageNumber == 1 ? "disabled" : string.Empty)">
+                        <a class="page-link"
+                           asp-page="/Products/Category"
+                           asp-route-page="@(Model.PageNumber - 1)"
+                           asp-route-id="@Model.CurrentCategory?.Id"
+                           asp-route-includeSubcategories="@Model.IncludeSubcategories"
+                           asp-route-condition="@Model.Condition"
+                           asp-route-sellerId="@Model.SellerId"
+                           asp-route-minPrice="@Model.MinPrice"
+                           asp-route-maxPrice="@Model.MaxPrice"
+                           asp-route-sort="@Model.Sort">Previous</a>
+                    </li>
+                    @for (var pageNumber = 1; pageNumber <= Model.TotalPages; pageNumber++)
+                    {
+                        <li class="page-item @(pageNumber == Model.PageNumber ? "active" : string.Empty)">
+                            <a class="page-link"
+                               asp-page="/Products/Category"
+                               asp-route-page="@pageNumber"
+                               asp-route-id="@Model.CurrentCategory?.Id"
+                               asp-route-includeSubcategories="@Model.IncludeSubcategories"
+                               asp-route-condition="@Model.Condition"
+                               asp-route-sellerId="@Model.SellerId"
+                               asp-route-minPrice="@Model.MinPrice"
+                               asp-route-maxPrice="@Model.MaxPrice"
+                               asp-route-sort="@Model.Sort">@pageNumber</a>
+                        </li>
+                    }
+                    <li class="page-item @(Model.PageNumber >= Model.TotalPages ? "disabled" : string.Empty)">
+                        <a class="page-link"
+                           asp-page="/Products/Category"
+                           asp-route-page="@(Model.PageNumber + 1)"
+                           asp-route-id="@Model.CurrentCategory?.Id"
+                           asp-route-includeSubcategories="@Model.IncludeSubcategories"
+                           asp-route-condition="@Model.Condition"
+                           asp-route-sellerId="@Model.SellerId"
+                           asp-route-minPrice="@Model.MinPrice"
+                           asp-route-maxPrice="@Model.MaxPrice"
+                           asp-route-sort="@Model.Sort">Next</a>
+                    </li>
+                </ul>
+            </nav>
+        }
+        else
+        {
+            <span class="text-muted small">All results are displayed.</span>
+        }
     </div>
 }
 else
