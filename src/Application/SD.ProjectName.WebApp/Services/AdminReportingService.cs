@@ -39,6 +39,23 @@ namespace SD.ProjectName.WebApp.Services
 
     public record DashboardMetricsResult(DashboardKpiSummary Summary, IReadOnlyList<DashboardDetailItem> Details);
 
+    public record UserAnalyticsSummary(
+        int NewBuyers,
+        int NewSellers,
+        int ActiveUsers,
+        int OrderingUsers,
+        int LoginUsers,
+        bool HasData);
+
+    public record DailyUserAnalyticsPoint(
+        DateTime Date,
+        int NewBuyers,
+        int NewSellers,
+        int OrderingUsers,
+        int LoginUsers);
+
+    public record UserAnalyticsResult(UserAnalyticsSummary Summary, IReadOnlyList<DailyUserAnalyticsPoint> Series);
+
     public record AdminOrderReportFilterOptions
     {
         public DateTimeOffset? FromDate { get; init; }
@@ -179,6 +196,82 @@ namespace SD.ProjectName.WebApp.Services
             return new DashboardMetricsResult(summary, detailItems);
         }
 
+        public async Task<UserAnalyticsResult> GetUserAnalyticsAsync(
+            DateTimeOffset from,
+            DateTimeOffset to,
+            CancellationToken cancellationToken = default)
+        {
+            var normalizedFrom = from <= to ? from : to;
+            var normalizedTo = to >= from ? to : from;
+
+            var registrationQuery = _applicationDbContext.Users.AsNoTracking()
+                .Where(u => u.TermsAcceptedOn.HasValue &&
+                            u.TermsAcceptedOn.Value >= normalizedFrom &&
+                            u.TermsAcceptedOn.Value <= normalizedTo);
+
+            var newBuyers = await registrationQuery.CountAsync(u => u.AccountType == AccountTypes.Buyer, cancellationToken);
+            var newSellers = await registrationQuery.CountAsync(u => u.AccountType == AccountTypes.Seller, cancellationToken);
+
+            var loginQuery = _applicationDbContext.LoginAudits.AsNoTracking()
+                .Where(l => l.IsSuccess &&
+                            l.UserId != null &&
+                            l.OccurredOn >= normalizedFrom &&
+                            l.OccurredOn <= normalizedTo);
+
+            var loginUsers = await loginQuery
+                .Select(l => l.UserId!)
+                .Distinct()
+                .CountAsync(cancellationToken);
+
+            var orderQuery = _applicationDbContext.Orders.AsNoTracking()
+                .Where(o => o.CreatedOn >= normalizedFrom && o.CreatedOn <= normalizedTo)
+                .Where(o => !string.Equals(o.Status, OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase) &&
+                            !string.Equals(o.Status, OrderStatuses.Failed, StringComparison.OrdinalIgnoreCase))
+                .Where(o => o.BuyerId != null);
+
+            var orderingUsers = await orderQuery
+                .Select(o => o.BuyerId!)
+                .Distinct()
+                .CountAsync(cancellationToken);
+
+            var activeUsers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var loginUserIds = await loginQuery
+                .Select(l => l.UserId!)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+            foreach (var id in loginUserIds)
+            {
+                activeUsers.Add(id);
+            }
+
+            var buyerIds = await orderQuery
+                .Select(o => o.BuyerId!)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+            foreach (var id in buyerIds)
+            {
+                activeUsers.Add(id);
+            }
+
+            var series = await BuildUserAnalyticsSeriesAsync(
+                normalizedFrom,
+                normalizedTo,
+                registrationQuery,
+                loginQuery,
+                orderQuery,
+                cancellationToken);
+
+            var summary = new UserAnalyticsSummary(
+                newBuyers,
+                newSellers,
+                activeUsers.Count,
+                orderingUsers,
+                loginUsers,
+                activeUsers.Count > 0 || newBuyers > 0 || newSellers > 0 || loginUsers > 0 || orderingUsers > 0);
+
+            return new UserAnalyticsResult(summary, series);
+        }
+
         public async Task<AdminOrderReportResult> GetOrderReportAsync(
             AdminOrderReportFilterOptions? filters,
             int pageNumber = 1,
@@ -260,6 +353,90 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             return new AdminOrderExportResult(Encoding.UTF8.GetBytes(builder.ToString()), ordered.Count, rows.Count, truncated);
+        }
+
+        private async Task<IReadOnlyList<DailyUserAnalyticsPoint>> BuildUserAnalyticsSeriesAsync(
+            DateTimeOffset from,
+            DateTimeOffset to,
+            IQueryable<ApplicationUser> registrationQuery,
+            IQueryable<LoginAudit> loginQuery,
+            IQueryable<OrderRecord> orderQuery,
+            CancellationToken cancellationToken)
+        {
+            var start = from.Date;
+            var end = to.Date;
+            if (start > end)
+            {
+                (start, end) = (end, start);
+            }
+
+            var series = new Dictionary<DateTime, (int NewBuyers, int NewSellers, int OrderingUsers, int LoginUsers)>();
+            for (var current = start; current <= end; current = current.AddDays(1))
+            {
+                series[current] = (0, 0, 0, 0);
+            }
+
+            var registrationBuckets = await registrationQuery
+                .GroupBy(u => u.TermsAcceptedOn!.Value.Date)
+                .Select(g => new
+                {
+                    Date = g.Key,
+                    Buyers = g.Count(u => u.AccountType == AccountTypes.Buyer),
+                    Sellers = g.Count(u => u.AccountType == AccountTypes.Seller)
+                })
+                .ToListAsync(cancellationToken);
+
+            foreach (var bucket in registrationBuckets)
+            {
+                if (series.TryGetValue(bucket.Date, out var existing))
+                {
+                    series[bucket.Date] = (existing.NewBuyers + bucket.Buyers, existing.NewSellers + bucket.Sellers, existing.OrderingUsers, existing.LoginUsers);
+                }
+            }
+
+            var loginBuckets = await loginQuery
+                .GroupBy(l => l.OccurredOn.Date)
+                .Select(g => new
+                {
+                    Date = g.Key,
+                    Users = g.Select(l => l.UserId!).Distinct().Count()
+                })
+                .ToListAsync(cancellationToken);
+
+            foreach (var bucket in loginBuckets)
+            {
+                if (series.TryGetValue(bucket.Date, out var existing))
+                {
+                    series[bucket.Date] = (existing.NewBuyers, existing.NewSellers, existing.OrderingUsers, existing.LoginUsers + bucket.Users);
+                }
+            }
+
+            var orderBuckets = await orderQuery
+                .GroupBy(o => o.CreatedOn.Date)
+                .Select(g => new
+                {
+                    Date = g.Key,
+                    Buyers = g.Select(o => o.BuyerId!).Distinct().Count()
+                })
+                .ToListAsync(cancellationToken);
+
+            foreach (var bucket in orderBuckets)
+            {
+                if (series.TryGetValue(bucket.Date, out var existing))
+                {
+                    series[bucket.Date] = (existing.NewBuyers, existing.NewSellers, existing.OrderingUsers + bucket.Buyers, existing.LoginUsers);
+                }
+            }
+
+            return series
+                .OrderBy(kvp => kvp.Key)
+                .Select(kvp => new DailyUserAnalyticsPoint(
+                    kvp.Key,
+                    kvp.Value.NewBuyers,
+                    kvp.Value.NewSellers,
+                    kvp.Value.OrderingUsers,
+                    kvp.Value.LoginUsers))
+                .ToList();
         }
 
         private async Task<List<OrderRecord>> LoadOrdersForReportAsync(

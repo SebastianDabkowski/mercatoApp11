@@ -1,0 +1,180 @@
+@page
+@using Microsoft.AspNetCore.Authorization
+@using SD.ProjectName.WebApp.Identity
+@using SD.ProjectName.WebApp.Services
+@attribute [Authorize(Roles = AccountTypes.Admin)]
+@model SD.ProjectName.WebApp.Pages.Admin.UserAnalyticsModel
+@{
+    ViewData["Title"] = "User analytics";
+    var summary = Model.Analytics.Summary;
+    var maxSeriesValue = Model.Analytics.Series.Count == 0
+        ? 1
+        : Math.Max(1, Model.Analytics.Series.Max(s => s.LoginUsers + s.OrderingUsers + s.NewBuyers + s.NewSellers));
+}
+
+<h1 class="display-6">User analytics</h1>
+<p class="lead">Track registration growth and user activity for buyers and sellers.</p>
+
+<div class="alert alert-info">
+    Metrics are aggregated and anonymised; individual user-level data is never displayed.
+</div>
+
+<div class="card my-3">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-start gap-3">
+        <div>
+            <div class="fw-semibold">Selected period</div>
+            <div class="text-muted small">
+                @Model.RangeStart.ToString("yyyy-MM-dd") to @Model.RangeEnd.ToString("yyyy-MM-dd")
+            </div>
+        </div>
+        <div class="d-flex flex-column gap-2 align-items-end">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Date range presets">
+                <a class="btn btn-outline-primary @(Model.Preset == DashboardRangePresets.Today ? "active" : string.Empty)"
+                   asp-page="/Admin/UserAnalytics"
+                   asp-route-Preset="@DashboardRangePresets.Today">
+                    Today
+                </a>
+                <a class="btn btn-outline-primary @(Model.Preset == DashboardRangePresets.Last7 ? "active" : string.Empty)"
+                   asp-page="/Admin/UserAnalytics"
+                   asp-route-Preset="@DashboardRangePresets.Last7">
+                    Last 7 days
+                </a>
+                <a class="btn btn-outline-primary @(Model.Preset == DashboardRangePresets.Last30 ? "active" : string.Empty)"
+                   asp-page="/Admin/UserAnalytics"
+                   asp-route-Preset="@DashboardRangePresets.Last30">
+                    Last 30 days
+                </a>
+            </div>
+            <form class="row g-2 align-items-end" method="get">
+                <input type="hidden" name="Preset" value="@DashboardRangePresets.Custom" />
+                <div class="col-auto">
+                    <label class="form-label form-label-sm fw-semibold" for="fromDate">From</label>
+                    <input id="fromDate" class="form-control form-control-sm" type="date" name="FromDate" value="@(Model.FromDate?.ToString("yyyy-MM-dd"))" />
+                </div>
+                <div class="col-auto">
+                    <label class="form-label form-label-sm fw-semibold" for="toDate">To</label>
+                    <input id="toDate" class="form-control form-control-sm" type="date" name="ToDate" value="@(Model.ToDate?.ToString("yyyy-MM-dd"))" />
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+                    <a class="btn btn-sm btn-link text-decoration-none" asp-page="/Admin/UserAnalytics">Reset</a>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="card-body">
+        @if (!summary.HasData)
+        {
+            <div class="alert alert-warning">
+                We have insufficient data for this period. Metrics below show zero activity until new events arrive.
+            </div>
+        }
+        <div class="row g-3">
+            <div class="col-12 col-md-6 col-xl-3">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="text-muted small">New buyers</div>
+                        <div class="fs-3 fw-semibold">@summary.NewBuyers</div>
+                        <div class="text-muted small">Registrations in range</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="text-muted small">New sellers</div>
+                        <div class="fs-3 fw-semibold">@summary.NewSellers</div>
+                        <div class="text-muted small">Registrations in range</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="text-muted small">Active users</div>
+                        <div class="fs-3 fw-semibold">@summary.ActiveUsers</div>
+                        <div class="text-muted small">Logged in or placed an order</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="text-muted small">Placed an order</div>
+                        <div class="fs-3 fw-semibold">@summary.OrderingUsers</div>
+                        <div class="text-muted small">Unique users with orders</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="text-muted small">Logged in</div>
+                        <div class="fs-3 fw-semibold">@summary.LoginUsers</div>
+                        <div class="text-muted small">Unique successful logins</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card my-3">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center">
+        <span class="fw-semibold">Activity breakdown</span>
+        <span class="text-muted small">Daily registrations, logins and order activity</span>
+    </div>
+    <div class="card-body">
+        @if (Model.Analytics.Series.Count == 0)
+        {
+            <div class="text-muted small">No activity captured for the selected period.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th scope="col">Date</th>
+                            <th scope="col">New buyers</th>
+                            <th scope="col">New sellers</th>
+                            <th scope="col">Logged in</th>
+                            <th scope="col">Placed order</th>
+                            <th scope="col">Trend</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var point in Model.Analytics.Series)
+                        {
+                            var dailyTotal = point.NewBuyers + point.NewSellers + point.LoginUsers + point.OrderingUsers;
+                            var width = maxSeriesValue == 0 ? 0 : Math.Round(dailyTotal * 100M / maxSeriesValue, 1);
+                            var loginWidth = maxSeriesValue == 0 ? 0 : Math.Round(point.LoginUsers * 100M / maxSeriesValue, 1);
+                            var orderWidth = maxSeriesValue == 0 ? 0 : Math.Round(point.OrderingUsers * 100M / maxSeriesValue, 1);
+                            var registrationWidth = maxSeriesValue == 0 ? 0 : Math.Round((point.NewBuyers + point.NewSellers) * 100M / maxSeriesValue, 1);
+                            <tr>
+                                <td class="text-muted small">@point.Date.ToString("yyyy-MM-dd")</td>
+                                <td>@point.NewBuyers</td>
+                                <td>@point.NewSellers</td>
+                                <td>@point.LoginUsers</td>
+                                <td>@point.OrderingUsers</td>
+                                <td style="width: 220px;">
+                                    <div class="progress" style="height: 8px;">
+                                        <div class="progress-bar bg-primary" style="width:@(loginWidth)%"></div>
+                                        <div class="progress-bar bg-success" style="width:@(orderWidth)%"></div>
+                                        <div class="progress-bar bg-info" style="width:@(registrationWidth)%"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="d-flex gap-3 align-items-center text-muted small">
+                <span class="badge bg-primary">&nbsp;</span> Logins
+                <span class="badge bg-success">&nbsp;</span> Orders placed
+                <span class="badge bg-info">&nbsp;</span> Registrations
+                <span class="ms-auto">Active user = at least one login or order in period</span>
+            </div>
+        }
+    </div>
+</div>
