@@ -85,7 +85,7 @@
                                         </div>
                                     </td>
                                     <td>
-                                        @(Model.Currencies[i].LatestRate.HasValue ? Model.Currencies[i].LatestRate.Value.ToString("F4") : "—")
+                                        @(Model.Currencies[i].LatestRate?.ToString("F4") ?? "—")
                                     </td>
                                     <td class="text-nowrap">
                                         @(Model.Currencies[i].RateUpdatedOn?.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")

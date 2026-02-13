@@ -153,17 +153,17 @@ namespace SD.ProjectName.WebApp.Services
                 normalizedCurrencies.Add(currency with { Code = code });
             }
 
-            if (input.NewCurrency != null && !string.IsNullOrWhiteSpace(input.NewCurrency.Value.Code))
+            if (input.NewCurrency != null && !string.IsNullOrWhiteSpace(input.NewCurrency.Code))
             {
-                var newCode = NormalizeCode(input.NewCurrency.Value.Code);
+                var newCode = NormalizeCode(input.NewCurrency.Code);
                 if (!string.IsNullOrWhiteSpace(newCode))
                 {
                     normalizedCurrencies.Add(new CurrencyUpdateInput(
                         null,
                         newCode,
-                        input.NewCurrency.Value.Name,
-                        input.NewCurrency.Value.EnabledForDisplay,
-                        input.NewCurrency.Value.EnabledForTransactions));
+                        input.NewCurrency.Name,
+                        input.NewCurrency.EnabledForDisplay,
+                        input.NewCurrency.EnabledForTransactions));
                 }
             }
 
