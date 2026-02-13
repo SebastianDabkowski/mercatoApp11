@@ -412,6 +412,63 @@ namespace SD.ProjectName.WebApp.Services
 
     public record SellerMonthlySettlementDetail(SellerMonthlySettlementSummary Summary, List<SellerMonthlySettlementLine> Orders);
 
+    public static class InvoiceStatuses
+    {
+        public const string Issued = "Issued";
+        public const string Pending = "Pending";
+        public const string Paid = "Paid";
+        public const string Blocked = "Blocked";
+        public const string Draft = "Draft";
+
+        private static readonly IReadOnlyList<string> OrderedStatuses = new[]
+        {
+            Draft, Issued, Pending, Paid, Blocked
+        };
+
+        public static string Normalize(string? status)
+        {
+            if (string.IsNullOrWhiteSpace(status))
+            {
+                return Issued;
+            }
+
+            var match = OrderedStatuses.FirstOrDefault(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+            return match ?? status.Trim();
+        }
+    }
+
+    public record CommissionInvoiceLine(string OrderNumber, string SubOrderNumber, DateTimeOffset PayoutOn, decimal CommissionAmount, string PayoutStatus, bool IsCorrection);
+
+    public record CommissionInvoiceSummaryView(
+        string InvoiceNumber,
+        int Year,
+        int Month,
+        DateTimeOffset PeriodStart,
+        DateTimeOffset PeriodEnd,
+        DateTimeOffset IssuedOn,
+        decimal NetAmount,
+        decimal TaxAmount,
+        decimal TotalAmount,
+        string Status,
+        bool HasCorrections,
+        bool IsCreditNote,
+        string Currency,
+        decimal TaxRate);
+
+    public record CommissionInvoiceDocument(
+        CommissionInvoiceSummaryView Summary,
+        string SellerId,
+        string SellerName,
+        string? SellerTaxId,
+        string? SellerAddress,
+        string IssuerName,
+        string IssuerTaxId,
+        string IssuerAddress,
+        string TaxLabel,
+        List<CommissionInvoiceLine> Lines);
+
+    public record CommissionInvoicePdf(byte[] Content, string FileName);
+
     public record SellerFilterOption(string Id, string Name);
 
     public class OrderService
@@ -423,13 +480,14 @@ namespace SD.ProjectName.WebApp.Services
         private readonly CartOptions _cartOptions;
         private readonly SettlementOptions _settlementOptions;
         private readonly TimeZoneInfo _settlementTimeZone;
+        private readonly InvoiceOptions _invoiceOptions;
         private readonly CommissionCalculator _commissionCalculator;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        public OrderService(ApplicationDbContext dbContext, IEmailSender emailSender, ILogger<OrderService> logger, EscrowOptions? escrowOptions = null, CartOptions? cartOptions = null, SettlementOptions? settlementOptions = null)
+        public OrderService(ApplicationDbContext dbContext, IEmailSender emailSender, ILogger<OrderService> logger, EscrowOptions? escrowOptions = null, CartOptions? cartOptions = null, SettlementOptions? settlementOptions = null, InvoiceOptions? invoiceOptions = null)
         {
             _dbContext = dbContext;
             _emailSender = emailSender;
@@ -438,6 +496,7 @@ namespace SD.ProjectName.WebApp.Services
             _cartOptions = cartOptions ?? new CartOptions();
             _settlementOptions = settlementOptions ?? new SettlementOptions();
             _settlementTimeZone = ResolveSettlementTimeZone(_settlementOptions.TimeZone);
+            _invoiceOptions = invoiceOptions ?? new InvoiceOptions();
             _commissionCalculator = new CommissionCalculator(_cartOptions);
         }
 
@@ -1246,6 +1305,151 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             return Encoding.UTF8.GetBytes(summaryBuilder.ToString());
+        }
+
+        public async Task<List<CommissionInvoiceSummaryView>> GetCommissionInvoicesForSellerAsync(
+            string sellerId,
+            int historyMonths = 12,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return new List<CommissionInvoiceSummaryView>();
+            }
+
+            var months = Math.Clamp(historyMonths, 1, Math.Max(1, _invoiceOptions.HistoryMonths));
+            var anchor = DateTimeOffset.UtcNow;
+            var invoices = new List<CommissionInvoiceSummaryView>();
+
+            for (var i = 0; i < months; i++)
+            {
+                var cursor = anchor.AddMonths(-i);
+                var summary = (await GetMonthlySettlementsAsync(cursor.Year, cursor.Month, sellerId, cancellationToken)).FirstOrDefault();
+                if (summary == null || (summary.OrderCount == 0 && summary.AdjustmentCount == 0))
+                {
+                    continue;
+                }
+
+                var detail = await GetMonthlySettlementDetailAsync(cursor.Year, cursor.Month, sellerId, cancellationToken);
+                if (detail == null)
+                {
+                    continue;
+                }
+
+                var invoiceNumber = await ResolveInvoiceNumberAsync(cursor.Year, cursor.Month, sellerId, cancellationToken);
+                var status = ResolveInvoiceStatus(detail);
+                var net = RoundCurrency(summary.CommissionTotal);
+                var tax = RoundCurrency(net * _invoiceOptions.TaxRate);
+                var total = RoundCurrency(net + tax);
+
+                invoices.Add(new CommissionInvoiceSummaryView(
+                    invoiceNumber,
+                    cursor.Year,
+                    cursor.Month,
+                    detail.Summary.PeriodStart,
+                    detail.Summary.PeriodEnd,
+                    detail.Summary.PeriodEnd,
+                    net,
+                    tax,
+                    total,
+                    status,
+                    summary.AdjustmentCount > 0,
+                    net < 0,
+                    _invoiceOptions.Currency,
+                    _invoiceOptions.TaxRate));
+            }
+
+            return invoices
+                .OrderByDescending(i => i.Year)
+                .ThenByDescending(i => i.Month)
+                .ToList();
+        }
+
+        public async Task<CommissionInvoiceDocument?> GetCommissionInvoiceAsync(
+            string invoiceNumber,
+            string sellerId,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(invoiceNumber) || string.IsNullOrWhiteSpace(sellerId))
+            {
+                return null;
+            }
+
+            if (!TryParseInvoiceNumber(invoiceNumber, out var year, out var month))
+            {
+                return null;
+            }
+
+            var detail = await GetMonthlySettlementDetailAsync(year, month, sellerId, cancellationToken);
+            if (detail == null || (detail.Summary.OrderCount == 0 && detail.Summary.AdjustmentCount == 0))
+            {
+                return null;
+            }
+
+            var normalizedNumber = await ResolveInvoiceNumberAsync(year, month, sellerId, cancellationToken);
+            var seller = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == sellerId, cancellationToken);
+            var sellerName = !string.IsNullOrWhiteSpace(detail.Summary.SellerName)
+                ? detail.Summary.SellerName
+                : seller?.BusinessName ?? seller?.FullName ?? sellerId;
+
+            var net = RoundCurrency(detail.Summary.CommissionTotal);
+            var tax = RoundCurrency(net * _invoiceOptions.TaxRate);
+            var total = RoundCurrency(net + tax);
+            var status = ResolveInvoiceStatus(detail);
+
+            var summaryView = new CommissionInvoiceSummaryView(
+                normalizedNumber,
+                year,
+                month,
+                detail.Summary.PeriodStart,
+                detail.Summary.PeriodEnd,
+                detail.Summary.PeriodEnd,
+                net,
+                tax,
+                total,
+                status,
+                detail.Summary.AdjustmentCount > 0,
+                net < 0,
+                _invoiceOptions.Currency,
+                _invoiceOptions.TaxRate);
+
+            var lines = detail.Orders
+                .OrderByDescending(o => o.PayoutOn)
+                .Select(o => new CommissionInvoiceLine(
+                    o.OrderNumber,
+                    o.SubOrderNumber,
+                    o.PayoutOn,
+                    o.CommissionTotal,
+                    o.PayoutStatus,
+                    o.IsAdjustment))
+                .ToList();
+
+            return new CommissionInvoiceDocument(
+                summaryView,
+                sellerId,
+                sellerName,
+                seller?.TaxId,
+                seller?.Address,
+                _invoiceOptions.IssuerName,
+                _invoiceOptions.IssuerTaxId,
+                _invoiceOptions.IssuerAddress,
+                _invoiceOptions.TaxLabel,
+                lines);
+        }
+
+        public async Task<CommissionInvoicePdf?> GetCommissionInvoicePdfAsync(
+            string invoiceNumber,
+            string sellerId,
+            CancellationToken cancellationToken = default)
+        {
+            var document = await GetCommissionInvoiceAsync(invoiceNumber, sellerId, cancellationToken);
+            if (document == null)
+            {
+                return null;
+            }
+
+            var bytes = RenderInvoicePdf(document);
+            return new CommissionInvoicePdf(bytes, $"{document.Summary.InvoiceNumber}.pdf");
         }
 
         public async Task<List<SellerFilterOption>> GetSellerFiltersForBuyerAsync(string buyerId, CancellationToken cancellationToken = default)
@@ -2333,6 +2537,195 @@ namespace SD.ProjectName.WebApp.Services
                 return string.Equals(status, OrderStatuses.New, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(status, OrderStatuses.Failed, StringComparison.OrdinalIgnoreCase);
             });
+        }
+
+        private async Task<string> ResolveInvoiceNumberAsync(int year, int month, string sellerId, CancellationToken cancellationToken)
+        {
+            var summaries = await GetMonthlySettlementsAsync(year, month, null, cancellationToken);
+            var ordered = summaries
+                .OrderBy(s => s.SellerId, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(s => s.SellerName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var index = ordered.FindIndex(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
+            var sequence = index >= 0 ? index + 1 : ordered.Count + 1;
+            return $"{_invoiceOptions.Series}-{year}{month:00}-{sequence:0000}";
+        }
+
+        private static bool TryParseInvoiceNumber(string invoiceNumber, out int year, out int month)
+        {
+            year = 0;
+            month = 0;
+            if (string.IsNullOrWhiteSpace(invoiceNumber))
+            {
+                return false;
+            }
+
+            var parts = invoiceNumber.Split('-', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2)
+            {
+                return false;
+            }
+
+            var payload = parts[1];
+            if (payload.Length < 6)
+            {
+                return false;
+            }
+
+            if (!int.TryParse(payload[..4], out year))
+            {
+                return false;
+            }
+
+            if (!int.TryParse(payload.Substring(4, 2), out month))
+            {
+                return false;
+            }
+
+            return month >= 1 && month <= 12;
+        }
+
+        private static string ResolveInvoiceStatus(SellerMonthlySettlementDetail detail)
+        {
+            if (detail.Orders.Count == 0)
+            {
+                return InvoiceStatuses.Draft;
+            }
+
+            var statuses = detail.Orders.Select(o => PayoutStatuses.Normalize(o.PayoutStatus)).ToList();
+            if (statuses.All(s => string.Equals(s, PayoutStatuses.Paid, StringComparison.OrdinalIgnoreCase)))
+            {
+                return InvoiceStatuses.Paid;
+            }
+
+            if (statuses.Any(s => string.Equals(s, PayoutStatuses.Failed, StringComparison.OrdinalIgnoreCase)))
+            {
+                return InvoiceStatuses.Blocked;
+            }
+
+            if (statuses.Any(s => string.Equals(s, PayoutStatuses.Processing, StringComparison.OrdinalIgnoreCase)))
+            {
+                return InvoiceStatuses.Pending;
+            }
+
+            return InvoiceStatuses.Issued;
+        }
+
+        private static decimal RoundCurrency(decimal amount) =>
+            Math.Round(amount, 2, MidpointRounding.AwayFromZero);
+
+        private byte[] RenderInvoicePdf(CommissionInvoiceDocument document)
+        {
+            var objects = new List<string>
+            {
+                "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+                "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
+                "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>"
+            };
+
+            var content = BuildInvoiceContent(document);
+            var contentBytes = Encoding.ASCII.GetBytes(content);
+            objects.Add($"4 0 obj << /Length {contentBytes.Length} >> stream\n{content}\nendstream endobj");
+            objects.Add("5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj");
+
+            using var stream = new MemoryStream();
+            var offsets = new List<long> { 0 };
+
+            void WriteLine(string line)
+            {
+                var bytes = Encoding.ASCII.GetBytes(line + "\n");
+                stream.Write(bytes, 0, bytes.Length);
+            }
+
+            WriteLine("%PDF-1.4");
+
+            foreach (var obj in objects)
+            {
+                offsets.Add(stream.Position);
+                WriteLine(obj);
+            }
+
+            var xrefPosition = stream.Position;
+            WriteLine("xref");
+            WriteLine($"0 {objects.Count + 1}");
+            WriteLine("0000000000 65535 f ");
+            foreach (var offset in offsets.Skip(1))
+            {
+                WriteLine($"{offset:0000000000} 00000 n ");
+            }
+
+            WriteLine($"trailer << /Size {objects.Count + 1} /Root 1 0 R >>");
+            WriteLine("startxref");
+            WriteLine(xrefPosition.ToString(CultureInfo.InvariantCulture));
+            WriteLine("%%EOF");
+
+            return stream.ToArray();
+        }
+
+        private string BuildInvoiceContent(CommissionInvoiceDocument document)
+        {
+            var lines = BuildInvoiceTextLines(document);
+            var builder = new StringBuilder();
+            builder.AppendLine("BT");
+            builder.AppendLine("/F1 12 Tf");
+            var y = 760;
+            foreach (var line in lines)
+            {
+                builder.AppendLine($"1 0 0 1 72 {y} Tm");
+                builder.AppendLine($"({EscapePdfText(line)}) Tj");
+                y -= 16;
+            }
+
+            builder.AppendLine("ET");
+            return builder.ToString();
+        }
+
+        private List<string> BuildInvoiceTextLines(CommissionInvoiceDocument document)
+        {
+            var lines = new List<string>
+            {
+                $"{document.IssuerName} commission invoice",
+                $"Invoice: {document.Summary.InvoiceNumber}",
+                $"Issued: {document.Summary.IssuedOn:yyyy-MM-dd}",
+                $"Period: {document.Summary.PeriodStart:yyyy-MM-dd} to {document.Summary.PeriodEnd:yyyy-MM-dd}",
+                $"Status: {document.Summary.Status}",
+                $"Seller: {document.SellerName}",
+                $"Seller tax id: {(string.IsNullOrWhiteSpace(document.SellerTaxId) ? "N/A" : document.SellerTaxId)}",
+                $"Seller address: {(string.IsNullOrWhiteSpace(document.SellerAddress) ? "N/A" : document.SellerAddress)}",
+                $"Issuer tax id: {document.IssuerTaxId}",
+                $"Issuer address: {document.IssuerAddress}",
+                $"Net commission: {document.Summary.NetAmount.ToString("F2", CultureInfo.InvariantCulture)} {document.Summary.Currency}",
+                $"{document.TaxLabel} {(document.Summary.TaxRate * 100).ToString("F0", CultureInfo.InvariantCulture)}%: {document.Summary.TaxAmount.ToString("F2", CultureInfo.InvariantCulture)} {document.Summary.Currency}",
+                $"Total due: {document.Summary.TotalAmount.ToString("F2", CultureInfo.InvariantCulture)} {document.Summary.Currency}"
+            };
+
+            if (document.Summary.HasCorrections)
+            {
+                lines.Add("Contains corrections or credit notes for prior periods.");
+            }
+
+            lines.Add("Lines:");
+            foreach (var line in document.Lines)
+            {
+                var correction = line.IsCorrection ? " (Correction)" : string.Empty;
+                lines.Add($"{line.OrderNumber}/{line.SubOrderNumber} - {line.PayoutOn:yyyy-MM-dd} - {line.CommissionAmount.ToString("F2", CultureInfo.InvariantCulture)} {document.Summary.Currency} - {line.PayoutStatus}{correction}");
+            }
+
+            return lines;
+        }
+
+        private static string EscapePdfText(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return string.Empty;
+            }
+
+            return text
+                .Replace("\\", "\\\\")
+                .Replace("(", "\\(")
+                .Replace(")", "\\)");
         }
 
         private TimeZoneInfo ResolveSettlementTimeZone(string? timeZone)

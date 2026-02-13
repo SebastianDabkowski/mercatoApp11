@@ -78,6 +78,11 @@ builder.Services.AddOptions<SettlementOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<SettlementOptions>(sp => sp.GetRequiredService<IOptions<SettlementOptions>>().Value);
+builder.Services.AddOptions<InvoiceOptions>()
+    .Bind(builder.Configuration.GetSection(InvoiceOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<InvoiceOptions>(sp => sp.GetRequiredService<IOptions<InvoiceOptions>>().Value);
 builder.Services.AddOptions<PaymentProviderOptions>()
     .Bind(builder.Configuration.GetSection(PaymentProviderOptions.SectionName))
     .ValidateDataAnnotations()

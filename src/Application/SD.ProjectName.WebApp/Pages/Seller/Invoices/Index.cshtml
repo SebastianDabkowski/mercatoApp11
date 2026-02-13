@@ -1,0 +1,97 @@
+@page
+@using SD.ProjectName.WebApp.Services
+@model SD.ProjectName.WebApp.Pages.Seller.Invoices.IndexModel
+@{
+    ViewData["Title"] = "Commission invoices";
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div>
+        <h1 class="mb-1">Commission invoices</h1>
+        <p class="text-muted mb-0">Monthly commission documents with corrections, credit notes, and PDF downloads.</p>
+    </div>
+</div>
+
+<div class="card mt-3 mb-3">
+    <div class="card-body">
+        <form method="get" class="row gy-3 align-items-end">
+            <div class="col-12 col-sm-4 col-lg-3">
+                <label class="form-label" for="monthsInput">Months to display</label>
+                <input id="monthsInput" name="Months" type="number" min="1" max="@Model.MaxMonths" value="@Model.Months" class="form-control" />
+                <div class="form-text">Shows most recent months with settlements.</div>
+            </div>
+            <div class="col-12 col-sm-4 col-lg-2">
+                <button type="submit" class="btn btn-primary w-100">Apply</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@if (Model.Invoices.Count == 0)
+{
+    <div class="alert alert-info">
+        Commission invoices will appear after your first settlement period closes.
+    </div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">Invoice</th>
+                    <th scope="col">Period</th>
+                    <th scope="col">Issued</th>
+                    <th scope="col">Status</th>
+                    <th scope="col" class="text-end">Net</th>
+                    <th scope="col" class="text-end">@Model.TaxLabel</th>
+                    <th scope="col" class="text-end">Total</th>
+                    <th scope="col">Notes</th>
+                    <th scope="col" class="text-end"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var invoice in Model.Invoices)
+                {
+                    var statusClass = "badge bg-secondary";
+                    if (string.Equals(invoice.Status, InvoiceStatuses.Paid, StringComparison.OrdinalIgnoreCase))
+                    {
+                        statusClass = "badge bg-success";
+                    }
+                    else if (string.Equals(invoice.Status, InvoiceStatuses.Pending, StringComparison.OrdinalIgnoreCase))
+                    {
+                        statusClass = "badge bg-warning text-dark";
+                    }
+                    else if (string.Equals(invoice.Status, InvoiceStatuses.Blocked, StringComparison.OrdinalIgnoreCase))
+                    {
+                        statusClass = "badge bg-danger";
+                    }
+                    <tr>
+                        <td class="fw-semibold">@invoice.InvoiceNumber</td>
+                        <td>@invoice.PeriodStart.ToLocalTime():d – @invoice.PeriodEnd.ToLocalTime():d</td>
+                        <td class="text-muted">@invoice.IssuedOn.ToLocalTime():g</td>
+                        <td><span class="@statusClass">@invoice.Status</span></td>
+                        <td class="text-end">@($"{invoice.NetAmount:N2} {invoice.Currency}")</td>
+                        <td class="text-end">@($"{invoice.TaxAmount:N2} {invoice.Currency}")</td>
+                        <td class="text-end fw-semibold">@($"{invoice.TotalAmount:N2} {invoice.Currency}")</td>
+                        <td>
+                            @if (invoice.HasCorrections)
+                            {
+                                <span class="badge bg-info text-dark">Correction</span>
+                            }
+                            @if (invoice.IsCreditNote)
+                            {
+                                <span class="badge bg-secondary">Credit note</span>
+                            }
+                        </td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary"
+                               asp-page-handler="Download"
+                               asp-route-invoiceNumber="@invoice.InvoiceNumber">Download PDF</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

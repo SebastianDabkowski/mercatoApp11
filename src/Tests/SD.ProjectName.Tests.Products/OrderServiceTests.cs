@@ -537,6 +537,88 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task GetCommissionInvoicesForSellerAsync_ShouldExposeMonthlyInvoiceAndPdf()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var settlementOptions = new SettlementOptions { CloseDay = 1, TimeZone = "UTC" };
+            var invoiceOptions = new InvoiceOptions { Series = "INV", TaxRate = 0.2m, HistoryMonths = 3 };
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance, null, null, settlementOptions, invoiceOptions);
+            var serializerOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+            var windowEnd = new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero);
+
+            var januaryState = new CheckoutState("profile", TestAddress, windowEnd.AddDays(-10), new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-inv-jan", "sig-inv-jan");
+            var januaryOrder = await service.EnsureOrderAsync(januaryState, BuildQuote(), TestAddress, "buyer-inv-jan", "invjan@example.com", "Invoice Jan", "Card", "card", OrderStatuses.Paid, PaymentStatuses.Paid);
+            var januaryRecord = context.Orders.Single(o => o.Id == januaryOrder.Order.Id);
+            var januaryDetails = JsonSerializer.Deserialize<OrderDetailsPayload>(januaryRecord.DetailsJson, serializerOptions)!;
+            var januaryAllocation = Assert.Single(januaryDetails.Escrow);
+            januaryAllocation = januaryAllocation with
+            {
+                PayoutStatus = PayoutStatuses.Paid,
+                ReleasedToSeller = januaryAllocation.SellerPayoutAmount,
+                PayoutEligible = true,
+                Ledger = januaryAllocation.Ledger
+                    .Select(l => l with { RecordedOn = windowEnd.AddDays(-5) })
+                    .Append(new EscrowLedgerEntry(januaryAllocation.SubOrderNumber, januaryAllocation.SellerId, EscrowEntryTypes.PayoutEligible, januaryAllocation.SellerPayoutAmount, "Settlement ready", windowEnd.AddDays(-5)))
+                    .ToList()
+            };
+            januaryDetails = januaryDetails with { Escrow = new List<EscrowAllocation> { januaryAllocation } };
+            januaryRecord.DetailsJson = JsonSerializer.Serialize(januaryDetails, serializerOptions);
+            januaryRecord.CreatedOn = windowEnd.AddDays(-12);
+
+            var decemberState = new CheckoutState("profile", TestAddress, windowEnd.AddMonths(-1).AddDays(-10), new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-inv-dec", "sig-inv-dec");
+            var decemberOrder = await service.EnsureOrderAsync(decemberState, BuildQuote(), TestAddress, "buyer-inv-dec", "invdec@example.com", "Invoice Dec", "Card", "card", OrderStatuses.Paid, PaymentStatuses.Paid);
+            var decemberRecord = context.Orders.Single(o => o.Id == decemberOrder.Order.Id);
+            var decemberDetails = JsonSerializer.Deserialize<OrderDetailsPayload>(decemberRecord.DetailsJson, serializerOptions)!;
+            var decemberAllocation = Assert.Single(decemberDetails.Escrow);
+            decemberAllocation = decemberAllocation with
+            {
+                PayoutStatus = PayoutStatuses.Processing,
+                PayoutEligible = true,
+                Ledger = decemberAllocation.Ledger
+                    .Select(l => l with { RecordedOn = windowEnd.AddDays(-3) })
+                    .Append(new EscrowLedgerEntry(decemberAllocation.SubOrderNumber, decemberAllocation.SellerId, EscrowEntryTypes.PayoutEligible, decemberAllocation.SellerPayoutAmount, "Settlement adjustment", windowEnd.AddDays(-3)))
+                    .ToList()
+            };
+            decemberDetails = decemberDetails with { Escrow = new List<EscrowAllocation> { decemberAllocation } };
+            decemberRecord.DetailsJson = JsonSerializer.Serialize(decemberDetails, serializerOptions);
+            decemberRecord.CreatedOn = windowEnd.AddMonths(-1).AddDays(-12);
+
+            var februaryState = new CheckoutState("profile", TestAddress, windowEnd.AddDays(5), new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-inv-feb", "sig-inv-feb");
+            var februaryOrder = await service.EnsureOrderAsync(februaryState, BuildQuote(), TestAddress, "buyer-inv-feb", "invfeb@example.com", "Invoice Feb", "Card", "card", OrderStatuses.Paid, PaymentStatuses.Paid);
+            var februaryRecord = context.Orders.Single(o => o.Id == februaryOrder.Order.Id);
+            var februaryDetails = JsonSerializer.Deserialize<OrderDetailsPayload>(februaryRecord.DetailsJson, serializerOptions)!;
+            var februaryAllocation = Assert.Single(februaryDetails.Escrow);
+            februaryAllocation = februaryAllocation with
+            {
+                PayoutEligible = true,
+                Ledger = februaryAllocation.Ledger
+                    .Select(l => l with { RecordedOn = windowEnd.AddDays(2) })
+                    .Append(new EscrowLedgerEntry(februaryAllocation.SubOrderNumber, februaryAllocation.SellerId, EscrowEntryTypes.PayoutEligible, februaryAllocation.SellerPayoutAmount, "Next window", windowEnd.AddDays(2)))
+                    .ToList()
+            };
+            februaryDetails = februaryDetails with { Escrow = new List<EscrowAllocation> { februaryAllocation } };
+            februaryRecord.DetailsJson = JsonSerializer.Serialize(februaryDetails, serializerOptions);
+            februaryRecord.CreatedOn = windowEnd.AddDays(2);
+
+            await context.SaveChangesAsync();
+
+            var invoices = await service.GetCommissionInvoicesForSellerAsync("seller-1", 2);
+            var invoice = Assert.Single(invoices);
+            var expectedPrefix = $"{invoiceOptions.Series}-{DateTimeOffset.UtcNow:yyyyMM}-";
+            Assert.StartsWith(expectedPrefix, invoice.InvoiceNumber);
+            Assert.True(invoice.HasCorrections);
+            Assert.Equal(invoice.NetAmount + invoice.TaxAmount, invoice.TotalAmount);
+            Assert.Equal(InvoiceStatuses.Pending, invoice.Status);
+            Assert.True(invoice.TaxAmount > 0);
+
+            var pdf = await service.GetCommissionInvoicePdfAsync(invoice.InvoiceNumber, "seller-1");
+            Assert.NotNull(pdf);
+            Assert.StartsWith("%PDF", Encoding.ASCII.GetString(pdf!.Content.Take(4).ToArray()));
+        }
+
+        [Fact]
         public async Task UpdateSubOrderStatusAsync_ShouldUpdateSelectedItemsWithoutAffectingOthers()
         {
             await using var context = CreateContext();
