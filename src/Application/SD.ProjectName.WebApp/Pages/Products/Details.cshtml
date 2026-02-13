@@ -1,0 +1,29 @@
+﻿@page "/Products/Details/{id:int}"
+@model SD.ProjectName.WebApp.Pages.Products.DetailsModel
+@{
+    ViewData["Title"] = Model.Product?.Title ?? "Product unavailable";
+}
+
+@if (Model.Product == null)
+{
+    <div class="alert alert-warning" role="alert">
+        @Model.StatusMessage ?? "This product is unavailable."
+    </div>
+}
+else
+{
+    <h1>@Model.Product.Title</h1>
+    <dl class="row">
+        <dt class="col-sm-2">Price</dt>
+        <dd class="col-sm-10">@Model.Product.Price.ToString("C")</dd>
+        <dt class="col-sm-2">Category</dt>
+        <dd class="col-sm-10">@Model.Product.Category</dd>
+        <dt class="col-sm-2">Stock</dt>
+        <dd class="col-sm-10">@Model.Product.Stock</dd>
+        @if (!string.IsNullOrWhiteSpace(Model.Product.Description))
+        {
+            <dt class="col-sm-2">Description</dt>
+            <dd class="col-sm-10">@Model.Product.Description</dd>
+        }
+    </dl>
+}

@@ -4,5 +4,6 @@
     {
         public const string Draft = "draft";
         public const string Active = "active";
+        public const string Archived = "archived";
     }
 }
