@@ -46,17 +46,36 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
             return await LoadAsync(orderId, buyerId);
         }
 
-        public string? BuildTrackingLink(string? trackingNumber)
+        public string? BuildTrackingLink(string? trackingNumber, string? trackingCarrier)
         {
             if (string.IsNullOrWhiteSpace(trackingNumber))
             {
                 return null;
             }
 
-            return Uri.TryCreate(trackingNumber.Trim(), UriKind.Absolute, out var uri)
-                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
-                ? uri.ToString()
-                : null;
+            var trimmed = trackingNumber.Trim();
+            if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
+                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+            {
+                return uri.ToString();
+            }
+
+            if (string.IsNullOrWhiteSpace(trackingCarrier))
+            {
+                return null;
+            }
+
+            var carrier = trackingCarrier.Trim().ToLowerInvariant();
+            var encodedTracking = Uri.EscapeDataString(trimmed);
+
+            return carrier switch
+            {
+                "ups" or "ups ground" => $"https://www.ups.com/track?tracknum={encodedTracking}",
+                "fedex" or "fed ex" => $"https://www.fedex.com/fedextrack/?trknbr={encodedTracking}",
+                "usps" or "postal service" or "united states postal service" => $"https://tools.usps.com/go/TrackConfirmAction?qtc_tLabels1={encodedTracking}",
+                "dhl" or "dhl express" => $"https://www.dhl.com/en/express/tracking.html?AWB={encodedTracking}",
+                _ => null
+            };
         }
 
         public bool CanRequestReturn(OrderSubOrder subOrder)

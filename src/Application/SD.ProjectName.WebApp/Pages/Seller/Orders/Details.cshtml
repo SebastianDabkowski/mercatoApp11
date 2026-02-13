@@ -203,46 +203,40 @@ else
                             <div class="small mb-0">Items: @string.Join(", ", returnItems)</div>
                         </div>
                     }
-                    @if (Model.NextStatuses.Count == 0)
-                    {
-                        <div class="text-muted small">No further status changes are allowed.</div>
-                    }
-                    else
-                    {
-                        <form id="status-form" method="post" asp-page-handler="Status" asp-route-orderId="@Model.Order.Id">
-                            <div asp-validation-summary="ModelOnly" class="text-danger small"></div>
-                            <div class="mb-2">
-                                <label class="form-label form-label-sm" asp-for="NewStatus">Next status</label>
-                                <select asp-for="NewStatus" class="form-select form-select-sm">
-                                    <option value="">Select...</option>
-                                    @if (Model.Order.Status.Equals("Shipped", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        <option value="@Model.Order.Status">Shipped (update tracking)</option>
-                                    }
-                                    @foreach (var status in Model.NextStatuses)
-                                    {
-                                        <option value="@status">@status</option>
-                                    }
-                                </select>
-                                <span asp-validation-for="NewStatus" class="text-danger small"></span>
-                                <div class="form-text">Select items in the table to apply the status; leave unchecked to update all items.</div>
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label form-label-sm" asp-for="TrackingNumber">Tracking (optional)</label>
-                                <input asp-for="TrackingNumber" class="form-control form-control-sm" />
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label form-label-sm" asp-for="TrackingCarrier">Carrier (optional)</label>
-                                <input asp-for="TrackingCarrier" class="form-control form-control-sm" />
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label form-label-sm" asp-for="RefundedAmount">Refunded amount</label>
-                                <input asp-for="RefundedAmount" class="form-control form-control-sm" type="number" step="0.01" min="0" />
-                                <div class="form-text">Provide when setting status to Refunded.</div>
-                            </div>
-                            <button type="submit" class="btn btn-sm btn-primary">Update status</button>
-                        </form>
-                    }
+                    <form id="status-form" method="post" asp-page-handler="Status" asp-route-orderId="@Model.Order.Id">
+                        <div asp-validation-summary="ModelOnly" class="text-danger small"></div>
+                        <div class="mb-2">
+                            <label class="form-label form-label-sm" asp-for="NewStatus">Next status</label>
+                            <select asp-for="NewStatus" class="form-select form-select-sm">
+                                <option value="">Select...</option>
+                                <option value="@Model.Order.Status">Keep current status (@Model.Order.Status) to update tracking</option>
+                                @foreach (var status in Model.NextStatuses)
+                                {
+                                    <option value="@status">@status</option>
+                                }
+                            </select>
+                            <span asp-validation-for="NewStatus" class="text-danger small"></span>
+                            <div class="form-text">Select items in the table to apply the status; leave unchecked to update all items.</div>
+                            @if (Model.NextStatuses.Count == 0)
+                            {
+                                <div class="text-muted small mt-1">Status changes are locked; choose the current status to save tracking updates.</div>
+                            }
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label form-label-sm" asp-for="TrackingNumber">Tracking (optional)</label>
+                            <input asp-for="TrackingNumber" class="form-control form-control-sm" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label form-label-sm" asp-for="TrackingCarrier">Carrier (optional)</label>
+                            <input asp-for="TrackingCarrier" class="form-control form-control-sm" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label form-label-sm" asp-for="RefundedAmount">Refunded amount</label>
+                            <input asp-for="RefundedAmount" class="form-control form-control-sm" type="number" step="0.01" min="0" />
+                            <div class="form-text">Provide when setting status to Refunded.</div>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-primary">Update status</button>
+                    </form>
                 </div>
             </div>
             <div class="card mb-3">
