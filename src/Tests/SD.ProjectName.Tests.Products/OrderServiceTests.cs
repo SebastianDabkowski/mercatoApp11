@@ -28,6 +28,7 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal(1, context.Orders.Count());
             Assert.Equal(quote.Summary.GrandTotal, result.Order.GrandTotal);
             Assert.Equal(quote.Summary.TotalQuantity, result.Order.TotalQuantity);
+            Assert.Equal(OrderStatuses.Paid, result.Order.Status);
 
             var view = await service.GetOrderAsync(result.Order.Id, "buyer-1");
             Assert.NotNull(view);
@@ -36,6 +37,8 @@ namespace SD.ProjectName.Tests.Products
             Assert.Single(view.SubOrders);
             Assert.Equal(view.GrandTotal, view.SubOrders.First().GrandTotal);
             Assert.Equal(view.SubOrders.First().TotalQuantity, view.TotalQuantity);
+            Assert.Equal(OrderStatuses.Paid, view.Status);
+            Assert.All(view.SubOrders, s => Assert.Equal(OrderStatuses.Paid, s.Status));
 
             emailSender.Verify(e => e.SendEmailAsync("buyer@example.com", It.Is<string>(s => s.Contains(result.Order.OrderNumber)), It.IsAny<string>()), Times.Once);
         }
@@ -80,10 +83,12 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal("express", firstSeller.ShippingDetail.MethodId);
             Assert.Equal(7, firstSeller.Shipping);
             Assert.True(firstSeller.Items.All(i => i.SellerId == "seller-1"));
+            Assert.Equal(OrderStatuses.Paid, firstSeller.Status);
             var secondSeller = view.SubOrders.First(s => s.SellerId == "seller-2");
             Assert.Equal("standard", secondSeller.ShippingDetail.MethodId);
             Assert.Equal(5, secondSeller.Shipping);
             Assert.True(secondSeller.Items.All(i => i.SellerId == "seller-2"));
+            Assert.Equal(OrderStatuses.Paid, secondSeller.Status);
         }
 
         [Fact]
@@ -103,10 +108,64 @@ namespace SD.ProjectName.Tests.Products
             Assert.Equal("seller-2", sellerOrder!.Shipping.SellerId);
             Assert.True(sellerOrder.Items.All(i => i.SellerId == "seller-2"));
             Assert.Equal(sellerOrder.ShippingTotal + sellerOrder.ItemsSubtotal - sellerOrder.DiscountTotal, sellerOrder.GrandTotal);
+            Assert.Equal(OrderStatuses.Paid, sellerOrder.Status);
 
             var sellerSummaries = await service.GetSummariesForSellerAsync("seller-2");
             Assert.Single(sellerSummaries);
             Assert.Equal(result.Order.Id, sellerSummaries[0].Id);
+            Assert.Equal(OrderStatuses.Paid, sellerSummaries[0].Status);
+        }
+
+        [Fact]
+        public async Task UpdateSubOrderStatusAsync_ShouldEnforceTransitions_AndPersist()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-10", "sig-10");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-10", "buyer10@example.com", "Buyer Ten", "Card", "card");
+            Assert.Equal(OrderStatuses.Paid, result.Order.Status);
+
+            var preparing = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Preparing, null, null);
+            Assert.True(preparing.Success);
+            Assert.Equal(OrderStatuses.Preparing, preparing.UpdatedSubOrder!.Status);
+            Assert.Equal(OrderStatuses.Preparing, preparing.OrderStatus);
+
+            var shipped = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Shipped, "TRACK123", null);
+            Assert.True(shipped.Success);
+            Assert.Equal("TRACK123", shipped.UpdatedSubOrder!.TrackingNumber);
+            Assert.Equal(OrderStatuses.Shipped, shipped.OrderStatus);
+
+            var delivered = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Delivered, "TRACK123", null);
+            Assert.True(delivered.Success);
+            Assert.Equal(OrderStatuses.Delivered, delivered.UpdatedSubOrder!.Status);
+            Assert.Equal(OrderStatuses.Delivered, delivered.OrderStatus);
+
+            var sellerOrder = await service.GetSellerOrderAsync(result.Order.Id, "seller-1");
+            Assert.NotNull(sellerOrder);
+            Assert.Equal(OrderStatuses.Delivered, sellerOrder!.Status);
+            Assert.Equal("TRACK123", sellerOrder.TrackingNumber);
+        }
+
+        [Fact]
+        public async Task UpdateSubOrderStatusAsync_ShouldRejectInvalidTransition()
+        {
+            await using var context = CreateContext();
+            var emailSender = new Mock<IEmailSender>();
+            var service = new OrderService(context, emailSender.Object, NullLogger<OrderService>.Instance);
+            var quote = BuildQuote();
+            var state = new CheckoutState("profile", TestAddress, DateTimeOffset.UtcNow, new Dictionary<string, string> { ["seller-1"] = "standard" }, "card", CheckoutPaymentStatus.Confirmed, "ref-11", "sig-11");
+
+            var result = await service.EnsureOrderAsync(state, quote, TestAddress, "buyer-11", "buyer11@example.com", "Buyer Eleven", "Card", "card");
+
+            var rejection = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Preparing);
+            Assert.True(rejection.Success);
+
+            var invalid = await service.UpdateSubOrderStatusAsync(result.Order.Id, "seller-1", OrderStatuses.Paid);
+            Assert.False(invalid.Success);
+            Assert.NotNull(invalid.Error);
         }
 
         private static ShippingQuote BuildQuote()

@@ -13,6 +13,15 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
         private readonly OrderService _orderService;
         private readonly UserManager<ApplicationUser> _userManager;
 
+        [BindProperty]
+        public string? NewStatus { get; set; }
+
+        [BindProperty]
+        public string? TrackingNumber { get; set; }
+
+        [BindProperty]
+        public decimal? RefundedAmount { get; set; }
+
         public DetailsModel(OrderService orderService, UserManager<ApplicationUser> userManager)
         {
             _orderService = orderService;
@@ -20,8 +29,45 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
         }
 
         public SellerOrderView? Order { get; private set; }
+        public List<string> NextStatuses { get; private set; } = new();
 
         public async Task<IActionResult> OnGetAsync(int orderId)
+        {
+            return await LoadAsync(orderId);
+        }
+
+        public async Task<IActionResult> OnPostStatusAsync(int orderId)
+        {
+            var sellerId = _userManager.GetUserId(User);
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return Challenge();
+            }
+
+            if (string.IsNullOrWhiteSpace(NewStatus))
+            {
+                ModelState.AddModelError(nameof(NewStatus), "Select a status to update.");
+                return await LoadAsync(orderId);
+            }
+
+            var result = await _orderService.UpdateSubOrderStatusAsync(
+                orderId,
+                sellerId,
+                NewStatus!,
+                TrackingNumber,
+                RefundedAmount,
+                HttpContext.RequestAborted);
+
+            if (!result.Success)
+            {
+                ModelState.AddModelError(string.Empty, result.Error ?? "Unable to update status.");
+                return await LoadAsync(orderId);
+            }
+
+            return RedirectToPage(new { orderId });
+        }
+
+        private async Task<IActionResult> LoadAsync(int orderId)
         {
             var sellerId = _userManager.GetUserId(User);
             if (string.IsNullOrWhiteSpace(sellerId))
@@ -36,6 +82,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
             }
 
             Order = order;
+            NextStatuses = OrderStatuses.NextStatuses(order.Status);
             return Page();
         }
     }

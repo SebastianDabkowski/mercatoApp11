@@ -10,7 +10,82 @@ namespace SD.ProjectName.WebApp.Services
 {
     public static class OrderStatuses
     {
-        public const string Confirmed = "Confirmed";
+        public const string New = "New";
+        public const string Paid = "Paid";
+        public const string Preparing = "Preparing";
+        public const string Shipped = "Shipped";
+        public const string Delivered = "Delivered";
+        public const string Cancelled = "Cancelled";
+        public const string Refunded = "Refunded";
+
+        private static readonly Dictionary<string, HashSet<string>> AllowedTransitions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [New] = new HashSet<string>(new[] { Paid, Cancelled }, StringComparer.OrdinalIgnoreCase),
+            [Paid] = new HashSet<string>(new[] { Preparing, Shipped, Delivered, Cancelled, Refunded }, StringComparer.OrdinalIgnoreCase),
+            [Preparing] = new HashSet<string>(new[] { Shipped, Cancelled, Refunded }, StringComparer.OrdinalIgnoreCase),
+            [Shipped] = new HashSet<string>(new[] { Delivered, Refunded }, StringComparer.OrdinalIgnoreCase),
+            [Delivered] = new HashSet<string>(new[] { Refunded }, StringComparer.OrdinalIgnoreCase),
+            [Cancelled] = new HashSet<string>(Array.Empty<string>(), StringComparer.OrdinalIgnoreCase),
+            [Refunded] = new HashSet<string>(Array.Empty<string>(), StringComparer.OrdinalIgnoreCase)
+        };
+
+        private static readonly IReadOnlyList<string> OrderedStatuses = new[]
+        {
+            New, Paid, Preparing, Shipped, Delivered, Cancelled, Refunded
+        };
+
+        public static IReadOnlyList<string> All => OrderedStatuses;
+
+        public static string Normalize(string? status)
+        {
+            if (string.IsNullOrWhiteSpace(status))
+            {
+                return Paid;
+            }
+
+            if (status.Trim().Equals("Confirmed", StringComparison.OrdinalIgnoreCase))
+            {
+                return Paid;
+            }
+
+            var match = OrderedStatuses.FirstOrDefault(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+            return match ?? status.Trim();
+        }
+
+        public static bool CanTransition(string current, string target)
+        {
+            var normalizedCurrent = Normalize(current);
+            var normalizedTarget = Normalize(target);
+
+            if (string.Equals(normalizedCurrent, normalizedTarget, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return AllowedTransitions.TryGetValue(normalizedCurrent, out var allowed)
+                && allowed.Contains(normalizedTarget);
+        }
+
+        public static List<string> NextStatuses(string current)
+        {
+            var normalized = Normalize(current);
+            return AllowedTransitions.TryGetValue(normalized, out var allowed)
+                ? allowed.OrderBy(IndexOf).ToList()
+                : new List<string>();
+        }
+
+        private static int IndexOf(string status)
+        {
+            for (var i = 0; i < OrderedStatuses.Count; i++)
+            {
+                if (string.Equals(OrderedStatuses[i], status, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return int.MaxValue;
+        }
     }
 
     public class OrderRecord
@@ -19,7 +94,7 @@ namespace SD.ProjectName.WebApp.Services
 
         public string OrderNumber { get; set; } = string.Empty;
 
-        public string Status { get; set; } = OrderStatuses.Confirmed;
+        public string Status { get; set; } = OrderStatuses.New;
 
         public string? BuyerId { get; set; }
 
@@ -54,7 +129,20 @@ namespace SD.ProjectName.WebApp.Services
 
     public record OrderShippingDetail(string SellerId, string SellerName, string MethodId, string MethodLabel, decimal Cost, string? Description);
 
-    public record OrderSubOrder(string SubOrderNumber, string SellerId, string SellerName, decimal ItemsSubtotal, decimal Shipping, decimal DiscountTotal, decimal GrandTotal, int TotalQuantity, List<OrderItemDetail> Items, OrderShippingDetail ShippingDetail);
+    public record OrderSubOrder(
+        string SubOrderNumber,
+        string SellerId,
+        string SellerName,
+        decimal ItemsSubtotal,
+        decimal Shipping,
+        decimal DiscountTotal,
+        decimal GrandTotal,
+        int TotalQuantity,
+        List<OrderItemDetail> Items,
+        OrderShippingDetail ShippingDetail,
+        string Status,
+        string? TrackingNumber = null,
+        decimal RefundedAmount = 0);
 
     public record OrderDetailsPayload(List<OrderItemDetail> Items, List<OrderShippingDetail> Shipping, int TotalQuantity, decimal DiscountTotal = 0, string? PromoCode = null, List<OrderSubOrder> SubOrders = null!);
 
@@ -85,6 +173,8 @@ namespace SD.ProjectName.WebApp.Services
         string OrderNumber,
         string SubOrderNumber,
         string Status,
+        string? TrackingNumber,
+        decimal RefundedAmount,
         DateTimeOffset CreatedOn,
         string PaymentMethodLabel,
         string? PaymentReference,
@@ -98,6 +188,8 @@ namespace SD.ProjectName.WebApp.Services
         OrderShippingDetail Shipping);
 
     public record OrderCreationResult(OrderRecord Order, bool Created);
+
+    public record SubOrderStatusUpdateResult(bool Success, string? Error, OrderSubOrder? UpdatedSubOrder = null, string? OrderStatus = null);
 
     public class OrderService
     {
@@ -154,7 +246,7 @@ namespace SD.ProjectName.WebApp.Services
             var order = new OrderRecord
             {
                 OrderNumber = orderNumber,
-                Status = OrderStatuses.Confirmed,
+                Status = CalculateOrderStatus(details.SubOrders, OrderStatuses.Paid),
                 BuyerId = buyerId,
                 BuyerEmail = buyerEmail ?? string.Empty,
                 BuyerName = buyerName ?? string.Empty,
@@ -194,6 +286,7 @@ namespace SD.ProjectName.WebApp.Services
 
             var address = DeserializeAddress(order.DeliveryAddressJson);
             var details = DeserializeDetails(order.DetailsJson);
+            var orderStatus = CalculateOrderStatus(details.SubOrders, order.Status);
             var discountTotal = details.DiscountTotal > 0
                 ? details.DiscountTotal
                 : Math.Max(0, order.ItemsSubtotal + order.ShippingTotal - order.GrandTotal);
@@ -202,7 +295,7 @@ namespace SD.ProjectName.WebApp.Services
             return new OrderView(
                 order.Id,
                 order.OrderNumber,
-                order.Status,
+                orderStatus,
                 order.CreatedOn,
                 string.IsNullOrWhiteSpace(order.PaymentMethodLabel) ? order.PaymentMethodId : order.PaymentMethodLabel,
                 order.PaymentReference,
@@ -250,7 +343,7 @@ namespace SD.ProjectName.WebApp.Services
                     order.OrderNumber,
                     match.SubOrderNumber,
                     order.CreatedOn,
-                    order.Status,
+                    match.Status,
                     match.GrandTotal,
                     match.TotalQuantity,
                     match.SellerName));
@@ -281,7 +374,9 @@ namespace SD.ProjectName.WebApp.Services
                 order.Id,
                 order.OrderNumber,
                 subOrder.SubOrderNumber,
-                order.Status,
+                subOrder.Status,
+                subOrder.TrackingNumber,
+                subOrder.RefundedAmount,
                 order.CreatedOn,
                 string.IsNullOrWhiteSpace(order.PaymentMethodLabel) ? order.PaymentMethodId : order.PaymentMethodLabel,
                 order.PaymentReference,
@@ -293,6 +388,70 @@ namespace SD.ProjectName.WebApp.Services
                 address,
                 subOrder.Items,
                 subOrder.ShippingDetail);
+        }
+
+        public async Task<SubOrderStatusUpdateResult> UpdateSubOrderStatusAsync(
+            int orderId,
+            string sellerId,
+            string newStatus,
+            string? trackingNumber = null,
+            decimal? refundedAmount = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return new SubOrderStatusUpdateResult(false, "Seller is required.");
+            }
+
+            var normalizedStatus = OrderStatuses.Normalize(newStatus);
+            if (string.IsNullOrWhiteSpace(normalizedStatus))
+            {
+                return new SubOrderStatusUpdateResult(false, "Status is required.");
+            }
+
+            var sellerToken = $"\"sellerId\":\"{sellerId}\"";
+            var order = await _dbContext.Orders.FirstOrDefaultAsync(
+                o => o.Id == orderId && o.DetailsJson.Contains(sellerToken),
+                cancellationToken);
+            if (order == null)
+            {
+                return new SubOrderStatusUpdateResult(false, "Order not found.");
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            var subOrder = details.SubOrders.FirstOrDefault(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
+            if (subOrder == null)
+            {
+                return new SubOrderStatusUpdateResult(false, "Sub-order not found.");
+            }
+
+            if (!OrderStatuses.CanTransition(subOrder.Status, normalizedStatus))
+            {
+                return new SubOrderStatusUpdateResult(false, $"Cannot change status from {subOrder.Status} to {normalizedStatus}.");
+            }
+
+            var updatedSubOrder = subOrder with
+            {
+                Status = normalizedStatus,
+                TrackingNumber = string.IsNullOrWhiteSpace(trackingNumber) ? subOrder.TrackingNumber : trackingNumber.Trim(),
+                RefundedAmount = string.Equals(normalizedStatus, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase)
+                    ? Math.Max(0, refundedAmount ?? subOrder.GrandTotal)
+                    : subOrder.RefundedAmount
+            };
+
+            var subOrderIndex = details.SubOrders.FindIndex(s => string.Equals(s.SellerId, sellerId, StringComparison.OrdinalIgnoreCase));
+            if (subOrderIndex < 0)
+            {
+                return new SubOrderStatusUpdateResult(false, "Sub-order not found.");
+            }
+
+            details.SubOrders[subOrderIndex] = updatedSubOrder;
+
+            order.Status = CalculateOrderStatus(details.SubOrders, order.Status);
+            order.DetailsJson = JsonSerializer.Serialize(details, _serializerOptions);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            return new SubOrderStatusUpdateResult(true, null, updatedSubOrder, order.Status);
         }
 
         private OrderDetailsPayload BuildDetailsPayload(string orderNumber, ShippingQuote quote)
@@ -345,7 +504,8 @@ namespace SD.ProjectName.WebApp.Services
                     Math.Max(0, baseTotal - discountShare),
                     groupItems.Sum(i => i.Quantity),
                     groupItems,
-                    ship));
+                    ship,
+                    OrderStatuses.Paid));
             }
 
             return new OrderDetailsPayload(items, shipping, quote.Summary.TotalQuantity, quote.Summary.DiscountTotal, quote.Summary.AppliedPromoCode, subOrders);
@@ -482,7 +642,9 @@ namespace SD.ProjectName.WebApp.Services
         {
             var normalizedItems = details.Items ?? new List<OrderItemDetail>();
             var normalizedShipping = details.Shipping ?? new List<OrderShippingDetail>();
-            var normalizedSubOrders = details.SubOrders ?? new List<OrderSubOrder>();
+            var normalizedSubOrders = (details.SubOrders ?? new List<OrderSubOrder>())
+                .Select(NormalizeSubOrder)
+                .ToList();
 
             return details with
             {
@@ -490,6 +652,82 @@ namespace SD.ProjectName.WebApp.Services
                 Shipping = normalizedShipping,
                 SubOrders = normalizedSubOrders
             };
+        }
+
+        private static OrderSubOrder NormalizeSubOrder(OrderSubOrder subOrder)
+        {
+            var items = subOrder.Items ?? new List<OrderItemDetail>();
+            var status = OrderStatuses.Normalize(subOrder.Status);
+            var tracking = string.IsNullOrWhiteSpace(subOrder.TrackingNumber) ? null : subOrder.TrackingNumber.Trim();
+            var refunded = Math.Max(0, subOrder.RefundedAmount);
+
+            return subOrder with
+            {
+                Items = items,
+                Status = string.IsNullOrWhiteSpace(status) ? OrderStatuses.Paid : status,
+                TrackingNumber = tracking,
+                RefundedAmount = refunded
+            };
+        }
+
+        private static string CalculateOrderStatus(IEnumerable<OrderSubOrder> subOrders, string? fallbackStatus = null)
+        {
+            var statuses = subOrders?
+                .Select(s => OrderStatuses.Normalize(s.Status))
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToList() ?? new List<string>();
+
+            if (statuses.Count == 0)
+            {
+                return string.IsNullOrWhiteSpace(fallbackStatus) ? OrderStatuses.New : OrderStatuses.Normalize(fallbackStatus);
+            }
+
+            if (statuses.All(s => string.Equals(s, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Refunded;
+            }
+
+            if (statuses.All(s => string.Equals(s, OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Cancelled;
+            }
+
+            if (statuses.Any(s => string.Equals(s, OrderStatuses.Cancelled, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Cancelled;
+            }
+
+            if (statuses.Any(s => string.Equals(s, OrderStatuses.Refunded, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Refunded;
+            }
+
+            if (statuses.All(s => string.Equals(s, OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Delivered;
+            }
+
+            if (statuses.Any(s => string.Equals(s, OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Delivered;
+            }
+
+            if (statuses.Any(s => string.Equals(s, OrderStatuses.Shipped, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Shipped;
+            }
+
+            if (statuses.Any(s => string.Equals(s, OrderStatuses.Preparing, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Preparing;
+            }
+
+            if (statuses.Any(s => string.Equals(s, OrderStatuses.Paid, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OrderStatuses.Paid;
+            }
+
+            return string.IsNullOrWhiteSpace(fallbackStatus) ? OrderStatuses.New : OrderStatuses.Normalize(fallbackStatus);
         }
 
         private static string GenerateOrderNumber()
