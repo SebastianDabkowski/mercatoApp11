@@ -253,6 +253,21 @@ namespace SD.ProjectName.WebApp.Services
         public string Status { get; set; } = ReviewStatuses.Pending;
     }
 
+    public class SellerRating
+    {
+        public int Id { get; set; }
+
+        public int OrderId { get; set; }
+
+        public string SellerId { get; set; } = string.Empty;
+
+        public string BuyerId { get; set; } = string.Empty;
+
+        public int Rating { get; set; }
+
+        public DateTimeOffset CreatedOn { get; set; }
+    }
+
     public record OrderItemDetail(int ProductId, string Name, string Variant, int Quantity, decimal UnitPrice, decimal LineTotal, string SellerId, string SellerName, string Status = OrderStatuses.Paid, string Category = "", decimal? CommissionRate = null);
 
     public record OrderShippingDetail(string SellerId, string SellerName, string MethodId, string MethodLabel, decimal Cost, string? Description, string? DeliveryEstimate = null, string? ProviderId = null, string? ProviderServiceCode = null);
@@ -394,6 +409,8 @@ namespace SD.ProjectName.WebApp.Services
         List<OrderShippingDetail> Shipping,
         List<OrderSubOrder> SubOrders,
         List<EscrowAllocation> Escrow);
+
+    public record SellerRatingResult(bool Success, string? Error = null, SellerRating? Rating = null, double? AverageRating = null);
 
     public record ProductReviewView(int ProductId, int Rating, string Comment, string BuyerName, DateTimeOffset CreatedOn);
     public record ProductReviewsPage(
@@ -1012,6 +1029,83 @@ namespace SD.ProjectName.WebApp.Services
                 details.Escrow ?? new List<EscrowAllocation>());
         }
 
+        public async Task<SellerRatingResult> SubmitSellerRatingAsync(
+            int orderId,
+            string sellerId,
+            string? buyerId,
+            int rating,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(buyerId))
+            {
+                return new SellerRatingResult(false, "Buyer is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return new SellerRatingResult(false, "Seller is required.");
+            }
+
+            if (rating < 1 || rating > 5)
+            {
+                return new SellerRatingResult(false, "Rating must be between 1 and 5.");
+            }
+
+            var normalizedSellerId = sellerId.Trim();
+            var order = await _dbContext.Orders.FirstOrDefaultAsync(
+                o => o.Id == orderId && o.BuyerId == buyerId,
+                cancellationToken);
+            if (order == null)
+            {
+                return new SellerRatingResult(false, "Order not found.");
+            }
+
+            var details = DeserializeDetails(order.DetailsJson);
+            var orderStatus = OrderStatuses.Normalize(CalculateOrderStatus(details.SubOrders, order.Status));
+            if (!string.Equals(orderStatus, OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase))
+            {
+                return new SellerRatingResult(false, "Ratings are available after delivery.");
+            }
+
+            var subOrder = details.SubOrders.FirstOrDefault(s => string.Equals(s.SellerId, normalizedSellerId, StringComparison.OrdinalIgnoreCase));
+            if (subOrder == null)
+            {
+                return new SellerRatingResult(false, "Seller not found in this order.");
+            }
+
+            if (!string.Equals(OrderStatuses.Normalize(subOrder.Status), OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase))
+            {
+                return new SellerRatingResult(false, "Ratings are available after delivery.");
+            }
+
+            var existing = await _dbContext.SellerRatings.FirstOrDefaultAsync(
+                r => r.OrderId == orderId && r.SellerId == normalizedSellerId && r.BuyerId == buyerId,
+                cancellationToken);
+            if (existing != null)
+            {
+                return new SellerRatingResult(false, "You already rated this seller for this order.");
+            }
+
+            var ratingRecord = new SellerRating
+            {
+                OrderId = order.Id,
+                SellerId = normalizedSellerId,
+                BuyerId = buyerId,
+                Rating = rating,
+                CreatedOn = DateTimeOffset.UtcNow
+            };
+
+            _dbContext.SellerRatings.Add(ratingRecord);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            var average = await _dbContext.SellerRatings.AsNoTracking()
+                .Where(r => r.SellerId == normalizedSellerId)
+                .Select(r => (double?)r.Rating)
+                .AverageAsync(cancellationToken);
+
+            return new SellerRatingResult(true, null, ratingRecord, average);
+        }
+
         public async Task<ProductReviewResult> SubmitProductReviewAsync(
             int orderId,
             int productId,
@@ -1179,6 +1273,36 @@ namespace SD.ProjectName.WebApp.Services
                 "lowest" or "rating_asc" => "lowest",
                 _ => "newest"
             };
+        }
+
+        public async Task<Dictionary<string, int>> GetSellerRatingsForOrderAsync(int orderId, string buyerId, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(buyerId))
+            {
+                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            var ratings = await _dbContext.SellerRatings.AsNoTracking()
+                .Where(r => r.OrderId == orderId && r.BuyerId == buyerId)
+                .ToListAsync(cancellationToken);
+
+            return ratings.ToDictionary(r => r.SellerId, r => r.Rating, StringComparer.OrdinalIgnoreCase);
+        }
+
+        public async Task<double?> GetSellerRatingScoreAsync(string sellerId, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(sellerId))
+            {
+                return null;
+            }
+
+            var normalizedSellerId = sellerId.Trim();
+            var average = await _dbContext.SellerRatings.AsNoTracking()
+                .Where(r => r.SellerId == normalizedSellerId)
+                .Select(r => (double?)r.Rating)
+                .AverageAsync(cancellationToken);
+
+            return average.HasValue ? Math.Round(average.Value, 1) : null;
         }
 
         public async Task<PaymentStatusUpdateResult> UpdatePaymentStatusAsync(

@@ -38,6 +38,12 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
         [BindProperty]
         public string? ReviewContent { get; set; }
 
+        [BindProperty]
+        public string? SellerRatingSellerId { get; set; }
+
+        [BindProperty]
+        public int SellerRatingValue { get; set; } = 5;
+
         [TempData]
         public string? StatusMessage { get; set; }
 
@@ -50,6 +56,7 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
         public OrderView? Order { get; private set; }
         public int ReturnWindowDays => ReturnPolicies.ReturnWindowDays;
         public bool CanSubmitReview => Order != null && string.Equals(OrderStatuses.Normalize(Order.Status), OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase);
+        public Dictionary<string, int> SellerRatings { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
 
         public async Task<IActionResult> OnGetAsync(int orderId)
         {
@@ -242,12 +249,79 @@ namespace SD.ProjectName.WebApp.Pages.Buyer.Orders
             return RedirectToPage(new { orderId });
         }
 
+        public async Task<IActionResult> OnPostSellerRatingAsync(int orderId)
+        {
+            var buyerId = _userManager.GetUserId(User);
+            if (string.IsNullOrWhiteSpace(buyerId))
+            {
+                return Challenge();
+            }
+
+            var loadResult = await LoadAsync(orderId, buyerId);
+            if (loadResult is not PageResult)
+            {
+                return loadResult;
+            }
+
+            if (!CanSubmitReview)
+            {
+                ModelState.AddModelError(string.Empty, "Ratings are available after delivery.");
+            }
+
+            if (string.IsNullOrWhiteSpace(SellerRatingSellerId) || Order?.SubOrders.All(s => !string.Equals(s.SellerId, SellerRatingSellerId, StringComparison.OrdinalIgnoreCase)) != false)
+            {
+                ModelState.AddModelError(nameof(SellerRatingSellerId), "Select a seller from this order.");
+            }
+            else if (SellerRatings.ContainsKey(SellerRatingSellerId))
+            {
+                ModelState.AddModelError(nameof(SellerRatingSellerId), "You already rated this seller.");
+            }
+
+            if (SellerRatingValue < 1 || SellerRatingValue > 5)
+            {
+                ModelState.AddModelError(nameof(SellerRatingValue), "Rating must be between 1 and 5.");
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return Page();
+            }
+
+            var result = await _orderService.SubmitSellerRatingAsync(
+                orderId,
+                SellerRatingSellerId!,
+                buyerId,
+                SellerRatingValue,
+                HttpContext.RequestAborted);
+
+            if (!result.Success)
+            {
+                ModelState.AddModelError(string.Empty, result.Error ?? "Unable to submit rating.");
+                return Page();
+            }
+
+            StatusMessage = "Seller rating submitted. Thank you for your feedback!";
+            return RedirectToPage(new { orderId });
+        }
+
         private async Task<IActionResult> LoadAsync(int orderId, string buyerId)
         {
             Order = await _orderService.GetOrderAsync(orderId, buyerId, HttpContext.RequestAborted);
             if (Order == null)
             {
                 return NotFound();
+            }
+
+            SellerRatings = await _orderService.GetSellerRatingsForOrderAsync(orderId, buyerId, HttpContext.RequestAborted);
+
+            if (string.IsNullOrWhiteSpace(SellerRatingSellerId))
+            {
+                var nextSeller = Order.SubOrders
+                    .Where(s => string.Equals(OrderStatuses.Normalize(s.Status), OrderStatuses.Delivered, StringComparison.OrdinalIgnoreCase))
+                    .Select(s => s.SellerId)
+                    .FirstOrDefault(id => !string.IsNullOrWhiteSpace(id) && !SellerRatings.ContainsKey(id));
+
+                SellerRatingSellerId = nextSeller;
             }
 
             if (string.IsNullOrWhiteSpace(ReturnSubOrder))
