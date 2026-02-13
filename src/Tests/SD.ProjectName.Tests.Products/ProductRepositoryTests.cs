@@ -112,6 +112,46 @@ namespace SD.ProjectName.Tests.Products
             Assert.All(results, p => Assert.Contains(p.CategoryId!.Value, new[] { 1, 2 }));
         }
 
+        [Fact]
+        public async Task SearchActiveProducts_ShouldMatchTitleAndDescription_AndExcludeInactive()
+        {
+            await using var context = CreateContext();
+            context.Products.AddRange(
+                new ProductModel { Title = "Red Shoe", Description = "Comfortable walking shoe", MerchantSku = "SKU-H1", Price = 12, Stock = 5, Category = "Footwear", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Blue Hat", Description = "With red accent", MerchantSku = "SKU-H2", Price = 8, Stock = 3, Category = "Accessories", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" },
+                new ProductModel { Title = "Suspended Item", Description = "Red but hidden", MerchantSku = "SKU-H3", Price = 5, Stock = 1, Category = "Accessories", WorkflowState = ProductWorkflowStates.Suspended, SellerId = "seller-1" },
+                new ProductModel { Title = "Draft Item", Description = "Red draft", MerchantSku = "SKU-H4", Price = 5, Stock = 1, Category = "Accessories", WorkflowState = ProductWorkflowStates.Draft, SellerId = "seller-1" },
+                new ProductModel { Title = "Archived Item", Description = "Red archived", MerchantSku = "SKU-H5", Price = 5, Stock = 1, Category = "Accessories", WorkflowState = ProductWorkflowStates.Archived, SellerId = "seller-1" }
+            );
+            await context.SaveChangesAsync();
+
+            var repository = new ProductRepository(context);
+
+            var results = await repository.SearchActiveProducts("  Red  ");
+
+            Assert.Equal(2, results.Count);
+            Assert.All(results, p => Assert.Equal(ProductWorkflowStates.Active, p.WorkflowState));
+            Assert.Contains(results, p => p.Title == "Red Shoe");
+            Assert.Contains(results, p => p.Title == "Blue Hat");
+        }
+
+        [Fact]
+        public async Task SearchActiveProducts_ShouldReturnEmpty_ForBlankOrNonMatching()
+        {
+            await using var context = CreateContext();
+            context.Products.Add(new ProductModel { Title = "Green Jacket", Description = "Warm and cozy", MerchantSku = "SKU-I1", Price = 20, Stock = 4, Category = "Outerwear", WorkflowState = ProductWorkflowStates.Active, SellerId = "seller-1" });
+            await context.SaveChangesAsync();
+
+            var repository = new ProductRepository(context);
+
+            var empty = await repository.SearchActiveProducts("   ");
+            var longQuery = new string('x', 500);
+            var longResults = await repository.SearchActiveProducts(longQuery);
+
+            Assert.Empty(empty);
+            Assert.Empty(longResults);
+        }
+
         private static ProductDbContext CreateContext()
         {
             var options = new DbContextOptionsBuilder<ProductDbContext>()

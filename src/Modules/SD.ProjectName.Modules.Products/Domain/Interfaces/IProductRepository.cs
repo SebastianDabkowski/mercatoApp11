@@ -24,5 +24,7 @@ namespace SD.ProjectName.Modules.Products.Domain.Interfaces
         Task<ProductModel?> GetBySku(string sellerId, string merchantSku, bool includeDrafts = false);
 
         Task<List<ProductModel>> GetListFiltered(string sellerId, bool includeDrafts, string? search = null, string? workflowState = null, CancellationToken cancellationToken = default);
+
+        Task<List<ProductModel>> SearchActiveProducts(string search, CancellationToken cancellationToken = default);
     }
 }
