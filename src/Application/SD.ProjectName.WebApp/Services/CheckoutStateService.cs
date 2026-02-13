@@ -22,23 +22,26 @@ namespace SD.ProjectName.WebApp.Services
             new()
             {
                 Id = "card",
-                Label = "Credit or debit card",
-                Provider = "MockPay",
-                RequiresRedirect = true
+                Label = "Card",
+                Provider = "SecurePay",
+                RequiresRedirect = true,
+                Enabled = true
             },
             new()
             {
-                Id = "wallet",
-                Label = "Wallet",
-                Provider = "MockPay",
-                RequiresRedirect = false
+                Id = "bank_transfer",
+                Label = "Bank transfer",
+                Provider = "SecurePay",
+                RequiresRedirect = true,
+                Enabled = true
             },
             new()
             {
-                Id = "cod",
-                Label = "Cash on delivery",
-                Provider = "Manual",
-                RequiresRedirect = false
+                Id = "blik",
+                Label = "BLIK",
+                Provider = "SecurePay",
+                RequiresRedirect = false,
+                Enabled = true
             }
         };
     }
@@ -67,6 +70,8 @@ namespace SD.ProjectName.WebApp.Services
         public string Provider { get; set; } = string.Empty;
 
         public bool RequiresRedirect { get; set; }
+
+        public bool Enabled { get; set; } = true;
     }
 
     public enum CheckoutPaymentStatus
