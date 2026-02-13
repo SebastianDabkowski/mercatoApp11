@@ -1,0 +1,48 @@
+@page "/Cart"
+@model SD.ProjectName.WebApp.Pages.CartModel
+@{
+    ViewData["Title"] = "Your cart";
+}
+
+<h1>Your cart</h1>
+
+@if (!Model.SellerGroups.Any())
+{
+    <div class="alert alert-info">Your cart is empty.</div>
+}
+else
+{
+    @foreach (var group in Model.SellerGroups)
+    {
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div class="fw-semibold">Seller: @group.SellerName</div>
+                <span class="text-muted small">@group.Items.Count item(s)</span>
+            </div>
+            <ul class="list-group list-group-flush">
+                @foreach (var item in group.Items)
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-start flex-wrap">
+                        <div class="me-3">
+                            <div class="fw-semibold">@item.Product.Title</div>
+                            <div class="text-muted small">SKU: @item.Product.MerchantSku</div>
+                            @if (!string.IsNullOrWhiteSpace(item.VariantLabel))
+                            {
+                                <div class="text-muted small">Variant: @item.VariantLabel</div>
+                            }
+                            <div class="text-muted small">Quantity: @item.Quantity</div>
+                            @if (!item.IsAvailable)
+                            {
+                                <div class="badge bg-warning text-dark mt-2">Unavailable</div>
+                            }
+                        </div>
+                        <div class="text-end ms-auto">
+                            <div>@item.UnitPrice.ToString("C")</div>
+                            <div class="text-muted small">Line total: @item.LineTotal.ToString("C")</div>
+                        </div>
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+}

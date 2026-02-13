@@ -53,6 +53,11 @@ builder.Services.AddOptions<RecentlyViewedOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<RecentlyViewedOptions>(sp => sp.GetRequiredService<IOptions<RecentlyViewedOptions>>().Value);
+builder.Services.AddOptions<CartOptions>()
+    .Bind(builder.Configuration.GetSection(CartOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<CartOptions>(sp => sp.GetRequiredService<IOptions<CartOptions>>().Value);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<ISessionTokenService, DistributedSessionTokenService>();
 builder.Services.AddScoped<ILoginAuditService, LoginAuditService>();
@@ -60,6 +65,7 @@ builder.Services.AddScoped<SessionCookieEvents>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, LoggingAuthorizationMiddlewareResultHandler>();
 builder.Services.AddSingleton<IPayoutEncryptionService, PayoutEncryptionService>();
 builder.Services.AddScoped<RecentlyViewedService>();
+builder.Services.AddScoped<CartService>();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {
