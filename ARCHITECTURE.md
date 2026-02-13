@@ -118,6 +118,10 @@ Keep this list updated whenever ADRs are added or changed so this document mirro
 - Ensure unit tests cover new paths.
 
 ## Documentation Sync Rules
+- DocSync acceptance mapping (Given/When/Then):
+  - Given a change in system architecture, when the architecture is updated, then `ARCHITECTURE.md` is regenerated to reflect the new structure.
+  - Given a new or modified agent, when responsibilities change, then `AGENT.md` is regenerated to match the updated ownership and duties.
+  - Given existing ADR documents, when validation runs, then DocSync validates them against the current architecture and creates any missing ADR entries before merge.
 - DocSync acceptance gates: architecture deltas regenerate `ARCHITECTURE.md`, agent responsibility deltas regenerate `AGENT.md`, and ADR validation auto-creates any missing ADRs before merge.
 - Architecture changes must trigger DocSync to regenerate `ARCHITECTURE.md` so it mirrors the current structure.
 - Agent additions or responsibility updates must trigger DocSync to refresh `AGENT.md` in the same change.

@@ -253,6 +253,14 @@ Acts as the enforcement gate that regenerates `ARCHITECTURE.md`/`AGENT.md` after
 
 \- Acceptance gates: architecture deltas regenerate `ARCHITECTURE.md`, agent responsibility changes regenerate `AGENT.md`, and ADR validation backfills any missing ADRs before merge.
 
+\- DocSync acceptance mapping (Given/When/Then):
+
+\- Given a change in system architecture, when doc-sync runs, then `ARCHITECTURE.md` is regenerated to reflect the new structure.
+
+\- Given a new or modified agent, when responsibilities change, then `AGENT.md` is regenerated to match the updated ownership.
+
+\- Given existing ADRs, when validation runs, then doc-sync validates them against the current architecture and creates any missing ADR records immediately.
+
 
 
 \*\*Rules\*\*
