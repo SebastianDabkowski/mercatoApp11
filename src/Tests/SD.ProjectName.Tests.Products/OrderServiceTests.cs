@@ -110,6 +110,10 @@ namespace SD.ProjectName.Tests.Products
             Assert.True(sellerOrder.Items.All(i => i.SellerId == "seller-2"));
             Assert.Equal(sellerOrder.ShippingTotal + sellerOrder.ItemsSubtotal - sellerOrder.DiscountTotal, sellerOrder.GrandTotal);
             Assert.Equal(OrderStatuses.Paid, sellerOrder.Status);
+            Assert.Equal("Buyer Four", sellerOrder.BuyerName);
+            Assert.Equal("buyer4@example.com", sellerOrder.BuyerEmail);
+            Assert.Equal(TestAddress.Phone, sellerOrder.BuyerPhone);
+            Assert.Equal(OrderStatuses.Paid, sellerOrder.PaymentStatus);
 
             var sellerSummaries = await service.GetSummariesForSellerAsync("seller-2");
             Assert.Equal(1, sellerSummaries.TotalCount);

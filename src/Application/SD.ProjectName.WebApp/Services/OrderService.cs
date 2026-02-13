@@ -198,7 +198,11 @@ namespace SD.ProjectName.WebApp.Services
         int TotalQuantity,
         DeliveryAddress Address,
         List<OrderItemDetail> Items,
-        OrderShippingDetail Shipping);
+        OrderShippingDetail Shipping,
+        string BuyerName,
+        string BuyerEmail,
+        string? BuyerPhone,
+        string PaymentStatus);
 
     public record OrderCreationResult(OrderRecord Order, bool Created);
 
@@ -617,6 +621,11 @@ namespace SD.ProjectName.WebApp.Services
                 .ToList();
         }
 
+        public Task<bool> OrderExistsAsync(int id, CancellationToken cancellationToken = default)
+        {
+            return _dbContext.Orders.AsNoTracking().AnyAsync(o => o.Id == id, cancellationToken);
+        }
+
         public async Task<SellerOrderView?> GetSellerOrderAsync(int id, string sellerId, CancellationToken cancellationToken = default)
         {
             var sellerToken = $"\"sellerId\":\"{sellerId}\"";
@@ -652,7 +661,11 @@ namespace SD.ProjectName.WebApp.Services
                 subOrder.TotalQuantity,
                 address,
                 subOrder.Items,
-                subOrder.ShippingDetail);
+                subOrder.ShippingDetail,
+                order.BuyerName,
+                order.BuyerEmail,
+                address.Phone,
+                OrderStatuses.Normalize(order.Status));
         }
 
         public async Task<SubOrderStatusUpdateResult> UpdateSubOrderStatusAsync(
