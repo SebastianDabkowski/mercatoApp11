@@ -194,6 +194,35 @@ else
             <span class="text-muted ms-2">Select a variant to see availability.</span>
         }
     </div>
+    @if (Model.Reviews.Any())
+    {
+        <div class="card mt-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Customer reviews</span>
+                @if (Model.AverageRating.HasValue)
+                {
+                    <span class="badge bg-success">Average @Model.AverageRating.Value.ToString("0.0")/5</span>
+                }
+            </div>
+            <div class="card-body">
+                @foreach (var review in Model.Reviews)
+                {
+                    <div class="border-bottom pb-3 mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <div class="fw-semibold">@review.BuyerName</div>
+                            <div class="text-muted small">@review.CreatedOn.ToLocalTime().ToString("g")</div>
+                        </div>
+                        <div class="mb-2">Rating: @review.Rating/5</div>
+                        <div>@review.Comment</div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-light border mt-4">No reviews yet. Buyers can leave feedback after their orders are delivered.</div>
+    }
 }
 
 @if (Model.RecentlyViewedProducts.Any())

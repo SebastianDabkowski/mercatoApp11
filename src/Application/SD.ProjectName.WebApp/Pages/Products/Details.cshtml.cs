@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -18,13 +19,15 @@ namespace SD.ProjectName.WebApp.Pages.Products
         private readonly GetProducts _getProducts;
         private readonly RecentlyViewedService _recentlyViewed;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly OrderService _orderService;
         private readonly ILogger<DetailsModel> _logger;
 
-        public DetailsModel(GetProducts getProducts, RecentlyViewedService recentlyViewed, UserManager<ApplicationUser> userManager, ILogger<DetailsModel> logger)
+        public DetailsModel(GetProducts getProducts, RecentlyViewedService recentlyViewed, UserManager<ApplicationUser> userManager, OrderService orderService, ILogger<DetailsModel> logger)
         {
             _getProducts = getProducts;
             _recentlyViewed = recentlyViewed;
             _userManager = userManager;
+            _orderService = orderService;
             _logger = logger;
         }
 
@@ -34,6 +37,8 @@ namespace SD.ProjectName.WebApp.Pages.Products
         public string? SellerDisplayName { get; private set; }
         public string? SellerSlug { get; private set; }
         public bool HasSellerLink => !string.IsNullOrWhiteSpace(SellerSlug) && !string.IsNullOrWhiteSpace(SellerDisplayName);
+        public IReadOnlyList<ProductReviewView> Reviews { get; private set; } = Array.Empty<ProductReviewView>();
+        public double? AverageRating { get; private set; }
 
         [TempData]
         public string? StatusMessage { get; set; }
@@ -54,6 +59,11 @@ namespace SD.ProjectName.WebApp.Pages.Products
             await LoadSellerMetadata(Product.SellerId);
             _recentlyViewed.RememberProduct(HttpContext, Product.Id);
             RecentlyViewedProducts = await _recentlyViewed.GetProductsAsync(HttpContext, Product.Id);
+            Reviews = await _orderService.GetPublishedReviewsAsync(Product.Id, 20, HttpContext.RequestAborted);
+            if (Reviews.Any())
+            {
+                AverageRating = Math.Round(Reviews.Average(r => r.Rating), 1);
+            }
 
             return Page();
         }
