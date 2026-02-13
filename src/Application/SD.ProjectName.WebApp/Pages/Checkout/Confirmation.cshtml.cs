@@ -16,6 +16,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         private readonly CheckoutOptions _checkoutOptions;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly OrderService _orderService;
+        private readonly SellerShippingMethodService _sellerShippingMethodService;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -38,7 +39,8 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             ShippingOptionsService shippingOptionsService,
             CheckoutOptions checkoutOptions,
             UserManager<ApplicationUser> userManager,
-            OrderService orderService)
+            OrderService orderService,
+            SellerShippingMethodService sellerShippingMethodService)
         {
             _cartViewService = cartViewService;
             _userCartService = userCartService;
@@ -47,6 +49,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             _checkoutOptions = checkoutOptions;
             _userManager = userManager;
             _orderService = orderService;
+            _sellerShippingMethodService = sellerShippingMethodService;
         }
 
         public async Task<IActionResult> OnGetAsync(int? orderId = null)
@@ -98,7 +101,8 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             else
             {
                 var sellerCountries = await LoadSellerCountriesAsync(summary.SellerGroups.Select(g => g.SellerId));
-                var quote = _shippingOptionsService.BuildQuote(summary, state.Address, sellerCountries, state.ShippingSelections);
+                var sellerMethods = await _sellerShippingMethodService.GetAvailableForSellersAsync(summary.SellerGroups.Select(g => g.SellerId), state.Address.Country, HttpContext.RequestAborted);
+                var quote = _shippingOptionsService.BuildQuote(summary, state.Address, sellerCountries, state.ShippingSelections, sellerMethods);
                 Summary = quote.Summary;
             }
 

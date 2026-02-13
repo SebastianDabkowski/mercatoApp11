@@ -108,6 +108,7 @@ builder.Services.AddScoped<IUserCartService, UserCartService>();
 builder.Services.AddScoped<CheckoutStateService>();
 builder.Services.AddScoped<ShippingOptionsService>();
 builder.Services.AddScoped<ShippingAddressService>();
+builder.Services.AddScoped<SellerShippingMethodService>();
 builder.Services.AddScoped<OrderService>();
 builder.Services.AddSingleton<PaymentProviderService>();
 

@@ -6,6 +6,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using SD.ProjectName.WebApp.Data;
 using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Services;
 
@@ -23,6 +24,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         private readonly CartService _cartService;
         private readonly PromoCodeService _promoCodeService;
         private readonly PaymentProviderService _paymentProvider;
+        private readonly SellerShippingMethodService _sellerShippingMethodService;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -49,7 +51,8 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             OrderService orderService,
             CartService cartService,
             PromoCodeService promoCodeService,
-            PaymentProviderService paymentProvider)
+            PaymentProviderService paymentProvider,
+            SellerShippingMethodService sellerShippingMethodService)
         {
             _cartViewService = cartViewService;
             _userCartService = userCartService;
@@ -61,6 +64,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             _cartService = cartService;
             _promoCodeService = promoCodeService;
             _paymentProvider = paymentProvider;
+            _sellerShippingMethodService = sellerShippingMethodService;
         }
 
         public async Task<IActionResult> OnGetAsync(string? providerToken = null, string? method = null)
@@ -85,7 +89,8 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             }
 
             var sellerCountries = await LoadSellerCountriesAsync(summary.SellerGroups.Select(g => g.SellerId));
-            var quote = _shippingOptionsService.BuildQuote(summary, state.Address, sellerCountries, state.ShippingSelections);
+            var sellerMethods = await LoadSellerMethodsAsync(summary.SellerGroups.Select(g => g.SellerId), state.Address.Country);
+            var quote = _shippingOptionsService.BuildQuote(summary, state.Address, sellerCountries, state.ShippingSelections, sellerMethods);
             Summary = quote.Summary;
             Input.CartSignature = ComputeQuoteSignature(quote);
 
@@ -140,7 +145,8 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             }
 
             var sellerCountries = await LoadSellerCountriesAsync(summary.SellerGroups.Select(g => g.SellerId));
-            var quote = _shippingOptionsService.BuildQuote(summary, state.Address, sellerCountries, state.ShippingSelections);
+            var sellerMethods = await LoadSellerMethodsAsync(summary.SellerGroups.Select(g => g.SellerId), state.Address.Country);
+            var quote = _shippingOptionsService.BuildQuote(summary, state.Address, sellerCountries, state.ShippingSelections, sellerMethods);
             Summary = quote.Summary;
             var previousSignature = Input.CartSignature;
             var signature = ComputeQuoteSignature(quote);
@@ -313,6 +319,11 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
                 PaymentStatusMapper.BuildBuyerMessage(PaymentStatuses.Failed),
                 0,
                 cancellationToken: HttpContext.RequestAborted);
+        }
+
+        private async Task<Dictionary<string, List<SellerShippingMethod>>> LoadSellerMethodsAsync(IEnumerable<string> sellerIds, string? buyerCountry)
+        {
+            return await _sellerShippingMethodService.GetAvailableForSellersAsync(sellerIds, buyerCountry, HttpContext.RequestAborted);
         }
 
         private async Task<Dictionary<string, string>> LoadSellerCountriesAsync(IEnumerable<string> sellerIds)

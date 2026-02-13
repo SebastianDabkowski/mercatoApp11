@@ -1,4 +1,5 @@
 using SD.ProjectName.Modules.Products.Domain;
+using SD.ProjectName.WebApp.Data;
 
 namespace SD.ProjectName.WebApp.Services
 {
@@ -21,7 +22,8 @@ namespace SD.ProjectName.WebApp.Services
             CartSummary summary,
             DeliveryAddress address,
             IReadOnlyDictionary<string, string>? sellerCountries = null,
-            IDictionary<string, string>? selectedMethods = null)
+            IDictionary<string, string>? selectedMethods = null,
+            IReadOnlyDictionary<string, List<SellerShippingMethod>>? sellerShippingMethods = null)
         {
             if (summary == null)
             {
@@ -40,7 +42,10 @@ namespace SD.ProjectName.WebApp.Services
 
             foreach (var group in summary.SellerGroups)
             {
-                var options = BuildOptionsForSeller(group, address, sellerCountries);
+                var configuredMethods = sellerShippingMethods != null && sellerShippingMethods.TryGetValue(group.SellerId, out var storeMethods)
+                    ? storeMethods
+                    : null;
+                var options = BuildOptionsForSeller(group, address, sellerCountries, configuredMethods);
                 var selectionId = ResolveSelection(options, selected.TryGetValue(group.SellerId, out var stored) ? stored : null);
                 selected[group.SellerId] = selectionId;
 
@@ -68,15 +73,34 @@ namespace SD.ProjectName.WebApp.Services
             return new ShippingQuote(updatedSummary, sellerOptions, selected);
         }
 
-        private List<ShippingMethodOption> BuildOptionsForSeller(CartSellerGroup group, DeliveryAddress address, IReadOnlyDictionary<string, string>? sellerCountries)
+        private List<ShippingMethodOption> BuildOptionsForSeller(
+            CartSellerGroup group,
+            DeliveryAddress address,
+            IReadOnlyDictionary<string, string>? sellerCountries,
+            List<SellerShippingMethod>? configuredMethods)
         {
             var methods = ResolveMethods(group);
+            if (configuredMethods != null && configuredMethods.Count > 0)
+            {
+                methods = configuredMethods
+                    .Select(m => m.Name)
+                    .Where(m => !string.IsNullOrWhiteSpace(m))
+                    .ToList();
+            }
+
             var sellerCountry = sellerCountries != null && sellerCountries.TryGetValue(group.SellerId, out var found) ? found : null;
             var options = new List<ShippingMethodOption>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var method in methods)
             {
+                if (string.IsNullOrWhiteSpace(method) || !seen.Add(method))
+                {
+                    continue;
+                }
+
                 var (cost, description) = CalculateCost(group, address, sellerCountry, method);
-                options.Add(new ShippingMethodOption(NormalizeId(method), method, cost, description, false));
+                var customDescription = configuredMethods?.FirstOrDefault(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase))?.Description;
+                options.Add(new ShippingMethodOption(NormalizeId(method), method, cost, string.IsNullOrWhiteSpace(customDescription) ? description : customDescription, false));
             }
 
             if (options.Count == 0)

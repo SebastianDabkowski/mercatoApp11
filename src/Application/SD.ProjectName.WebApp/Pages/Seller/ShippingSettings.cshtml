@@ -1,0 +1,129 @@
+@page
+@using Microsoft.AspNetCore.Authorization
+@using SD.ProjectName.WebApp.Identity
+@attribute [Authorize(Roles = AccountTypes.Seller)]
+@model SD.ProjectName.WebApp.Pages.Seller.ShippingSettingsModel
+@{
+    ViewData["Title"] = "Shipping settings";
+}
+
+<h1 class="display-6">Shipping settings</h1>
+<p class="lead">Configure the delivery options buyers can choose at checkout.</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h2 class="h5 mb-3">@(Model.Input.Id.HasValue ? "Edit shipping method" : "Add shipping method")</h2>
+        <form method="post" asp-page-handler="Save" class="row g-3">
+            <input type="hidden" asp-for="Input.Id" />
+            <div class="col-md-6">
+                <label asp-for="Input.Name" class="form-label"></label>
+                <input asp-for="Input.Name" class="form-control" />
+                <span asp-validation-for="Input.Name" class="text-danger"></span>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="Input.Availability" class="form-label"></label>
+                <input asp-for="Input.Availability" class="form-control" placeholder="e.g. US, CA or Europe" />
+                <span class="form-text">Leave blank to make the method available everywhere.</span>
+                <span asp-validation-for="Input.Availability" class="text-danger"></span>
+            </div>
+            <div class="col-12">
+                <label asp-for="Input.Description" class="form-label"></label>
+                <textarea asp-for="Input.Description" class="form-control" rows="2" placeholder="Instructions for buyers (optional)"></textarea>
+                <span asp-validation-for="Input.Description" class="text-danger"></span>
+            </div>
+            <div class="col-12 d-flex align-items-center gap-2">
+                <input asp-for="Input.IsActive" class="form-check-input mt-0" />
+                <label asp-for="Input.IsActive" class="form-check-label"></label>
+            </div>
+            <div class="col-12 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">@(Model.Input.Id.HasValue ? "Save changes" : "Add method")</button>
+                @if (Model.Input.Id.HasValue)
+                {
+                    <a asp-page="./ShippingSettings" class="btn btn-outline-secondary">Cancel</a>
+                }
+            </div>
+            <div class="col-12">
+                <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center">
+            <h2 class="h5 mb-0">Shipping methods</h2>
+            <span class="text-muted small">@Model.Methods.Count method(s)</span>
+        </div>
+
+        @if (!Model.Methods.Any())
+        {
+            <p class="text-muted mt-3 mb-0">No shipping methods yet. Add one to make it available at checkout.</p>
+        }
+        else
+        {
+            <div class="table-responsive mt-3">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Availability</th>
+                            <th>Status</th>
+                            <th>Updated</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var method in Model.Methods)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold">@method.Name</div>
+                                    @if (!string.IsNullOrWhiteSpace(method.Description))
+                                    {
+                                        <div class="text-muted small">@method.Description</div>
+                                    }
+                                </td>
+                                <td>@(string.IsNullOrWhiteSpace(method.Availability) ? "All regions" : method.Availability)</td>
+                                <td>
+                                    @if (method.IsDeleted)
+                                    {
+                                        <span class="badge text-bg-secondary">Deleted</span>
+                                    }
+                                    else if (method.IsActive)
+                                    {
+                                        <span class="badge text-bg-success">Active</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge text-bg-warning text-dark">Disabled</span>
+                                    }
+                                </td>
+                                <td>@method.UpdatedOn.ToLocalTime().ToString("g")</td>
+                                <td class="text-end">
+                                    @if (!method.IsDeleted)
+                                    {
+                                        <a asp-page="./ShippingSettings" asp-route-id="@method.Id" class="btn btn-outline-secondary btn-sm">Edit</a>
+                                        <form method="post" asp-page-handler="Delete" class="d-inline ms-2" onsubmit="return confirm('Remove this method from checkout?');">
+                                            <input type="hidden" name="id" value="@method.Id" />
+                                            <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                                        </form>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
