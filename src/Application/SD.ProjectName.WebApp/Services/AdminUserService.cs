@@ -210,7 +210,6 @@ namespace SD.ProjectName.WebApp.Services
             var audits = await _dbContext.UserAdminAudits.AsNoTracking()
                 .Where(a => a.UserId == userId)
                 .OrderByDescending(a => a.CreatedOn)
-                .Take(20)
                 .Select(a => new AdminUserAuditEntry(
                     a.Action,
                     string.IsNullOrWhiteSpace(a.ActorName) ? "System" : a.ActorName!,

@@ -106,15 +106,16 @@ namespace SD.ProjectName.WebApp.Services
                 UserId = user.Id,
                 ActorUserId = actorUserId,
                 ActorName = actor,
-                Action = "Unblocked",
+                Action = "Reactivated",
+                Reason = "Account reactivated",
                 CreatedOn = now
             });
 
             await _applicationDbContext.SaveChangesAsync(cancellationToken);
             await SetSellerBlockedStateAsync(user.Id, false, cancellationToken);
 
-            _logger.LogInformation("User {UserId} unblocked by {Actor}.", user.Id, actor);
-            return new AdminUserActionResult(true, "Account unblocked.");
+            _logger.LogInformation("User {UserId} reactivated by {Actor}.", user.Id, actor);
+            return new AdminUserActionResult(true, "Account reactivated.");
         }
 
         private static string? NormalizeReason(string? reason)

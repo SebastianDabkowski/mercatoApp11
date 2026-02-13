@@ -138,7 +138,7 @@
         <div asp-validation-summary="ModelOnly" class="text-danger"></div>
         @if (user.LockoutEnabled && user.LockoutEnd.HasValue && user.LockoutEnd.Value >= DateTimeOffset.UtcNow)
         {
-            <form method="post" asp-page-handler="Unblock" asp-route-id="@user.Id" class="d-flex flex-column gap-2">
+            <form method="post" asp-page-handler="Unblock" asp-route-id="@user.Id" class="d-flex flex-column gap-2" onsubmit="return confirm('Reactivate this account and restore access?');">
                 <div>
                     <div class="fw-semibold">This account is blocked.</div>
                     <div class="text-muted small">
@@ -153,7 +153,7 @@
                         <div class="text-muted small">Reason: @user.BlockReason</div>
                     }
                 </div>
-                <button class="btn btn-success align-self-start" type="submit">Unblock account</button>
+                <button class="btn btn-success align-self-start" type="submit">Reactivate account</button>
             </form>
         }
         else
@@ -208,7 +208,7 @@
 </div>
 
 <div class="card mt-3">
-    <div class="card-header fw-semibold">Admin audit log</div>
+    <div class="card-header fw-semibold">Account history</div>
     <div class="card-body">
         @if (user.AuditTrail.Count == 0)
         {
