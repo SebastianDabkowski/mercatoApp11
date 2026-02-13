@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.IO;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -8,11 +10,13 @@ using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.Modules.Products.Domain.Interfaces;
 using SD.ProjectName.Modules.Products.Infrastructure;
+using SD.ProjectName.WebApp.Services;
 using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Pages.Seller.Products;
 
@@ -117,6 +121,10 @@ namespace SD.ProjectName.Tests.Products
         private static EditModel CreateModel(GetProducts getProducts, UpdateProduct updateProduct, UserManager<ApplicationUser> userManager, ManageCategories categories, IProductRepository repository)
         {
             var logger = Mock.Of<ILogger<EditModel>>();
+            var environment = new Mock<IWebHostEnvironment>();
+            environment.SetupGet(e => e.WebRootPath).Returns(Path.Combine(Path.GetTempPath(), "seller-edit-tests"));
+            environment.SetupGet(e => e.ContentRootPath).Returns(Path.GetTempPath());
+            var imageService = new ProductImageService(environment.Object, NullLogger<ProductImageService>.Instance);
             var httpContext = new DefaultHttpContext
             {
                 User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.NameIdentifier, "current-seller") }))
@@ -124,7 +132,7 @@ namespace SD.ProjectName.Tests.Products
             var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
             var pageContext = new PageContext(actionContext);
 
-            return new EditModel(getProducts, updateProduct, userManager, categories, logger, repository)
+            return new EditModel(getProducts, updateProduct, userManager, categories, logger, repository, imageService)
             {
                 PageContext = pageContext,
                 TempData = new TempDataDictionary(httpContext, Mock.Of<ITempDataProvider>())

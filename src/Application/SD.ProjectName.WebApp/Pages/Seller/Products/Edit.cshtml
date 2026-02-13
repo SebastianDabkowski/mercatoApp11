@@ -8,7 +8,7 @@
 
 <div class="row">
     <div class="col-md-6">
-        <form method="post">
+        <form method="post" enctype="multipart/form-data">
             <input asp-for="Input.Id" type="hidden" />
             <div asp-validation-summary="ModelOnly" class="text-danger"></div>
             <div class="form-group">
@@ -43,16 +43,34 @@
                 <textarea asp-for="Input.Description" class="form-control" rows="4"></textarea>
                 <span asp-validation-for="Input.Description" class="text-danger"></span>
             </div>
+            <input asp-for="Input.MainImageUrl" type="hidden" />
+            <input asp-for="Input.GalleryImageUrls" type="hidden" />
             <div class="form-group">
-                <label asp-for="Input.MainImageUrl"></label>
-                <input asp-for="Input.MainImageUrl" class="form-control" />
-                <span asp-validation-for="Input.MainImageUrl" class="text-danger"></span>
+                <label asp-for="Input.ImageFiles"></label>
+                <input asp-for="Input.ImageFiles" type="file" class="form-control" multiple accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
+                <small class="form-text text-muted">JPG, PNG or WebP up to 5 MB each. Images are optimized and thumbnails generated automatically.</small>
+                <span asp-validation-for="Input.ImageFiles" class="text-danger"></span>
             </div>
-            <div class="form-group">
-                <label asp-for="Input.GalleryImageUrls"></label>
-                <textarea asp-for="Input.GalleryImageUrls" class="form-control" rows="2" placeholder="https://example.com/img1.jpg, https://example.com/img2.jpg"></textarea>
-                <span asp-validation-for="Input.GalleryImageUrls" class="text-danger"></span>
-            </div>
+            @if (Model.ImagePreviews.Any())
+            {
+                var selectedMain = Model.Input.SelectedMainImage ?? Model.Input.MainImageUrl;
+                <div class="form-group">
+                    <label>Main image</label>
+                    <div class="d-flex flex-wrap align-items-start">
+                        @foreach (var image in Model.ImagePreviews)
+                        {
+                            var isSelected = (!string.IsNullOrEmpty(selectedMain) && string.Equals(selectedMain, image, StringComparison.OrdinalIgnoreCase))
+                                             || (string.IsNullOrEmpty(selectedMain) && image == Model.ImagePreviews.First());
+                            <div class="me-3 mb-3 text-center">
+                                <input type="radio" name="Input.SelectedMainImage" value="@image" @(isSelected ? "checked" : null) class="form-check-input" />
+                                <div class="mt-2">
+                                    <img src="@image" alt="Product image option" class="img-thumbnail" style="max-width: 140px;" />
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
             <div class="form-row">
                 <div class="form-group col-md-3">
                     <label asp-for="Input.WeightKg"></label>

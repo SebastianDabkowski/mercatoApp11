@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -9,6 +10,7 @@ using SD.ProjectName.Modules.Products.Application;
 using SD.ProjectName.Modules.Products.Domain;
 using SD.ProjectName.Modules.Products.Domain.Interfaces;
 using SD.ProjectName.WebApp.Identity;
+using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Seller.Products
 {
@@ -21,6 +23,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
         private readonly ManageCategories _categories;
         private readonly ILogger<EditModel> _logger;
         private readonly IProductRepository _productRepository;
+        private readonly ProductImageService _productImageService;
 
         public EditModel(
             GetProducts getProducts,
@@ -28,7 +31,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             UserManager<ApplicationUser> userManager,
             ManageCategories categories,
             ILogger<EditModel> logger,
-            IProductRepository productRepository)
+            IProductRepository productRepository,
+            ProductImageService productImageService)
         {
             _getProducts = getProducts;
             _updateProduct = updateProduct;
@@ -36,12 +40,14 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             _categories = categories;
             _logger = logger;
             _productRepository = productRepository;
+            _productImageService = productImageService;
         }
 
         [BindProperty]
         public InputModel Input { get; set; } = new();
 
         public List<SelectListItem> CategoryOptions { get; private set; } = new();
+        public List<string> ImagePreviews { get; private set; } = new();
 
         public async Task<IActionResult> OnGetAsync(int id)
         {
@@ -81,6 +87,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             };
 
             await LoadCategoriesAsync(product.CategoryId);
+            ImagePreviews = BuildImages(product.MainImageUrl, product.GalleryImageUrls);
+            Input.SelectedMainImage = product.MainImageUrl;
             return Page();
         }
 
@@ -94,11 +102,6 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Challenge();
             }
 
-            if (!ModelState.IsValid)
-            {
-                return Page();
-            }
-
             var product = await _getProducts.GetById(Input.Id, includeDrafts: true);
             if (product == null)
             {
@@ -110,9 +113,22 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Forbid();
             }
 
+            var currentImages = BuildImages(product.MainImageUrl, product.GalleryImageUrls);
+            currentImages.AddRange(BuildImages(Input.MainImageUrl, Input.GalleryImageUrls));
+            currentImages = currentImages.Distinct().ToList();
+            ValidateUploads(Input.ImageFiles);
+            if (!ModelState.IsValid)
+            {
+                ImagePreviews = currentImages;
+                Input.SelectedMainImage ??= Input.MainImageUrl ?? product.MainImageUrl;
+                return Page();
+            }
+
             if (!Input.CategoryId.HasValue)
             {
                 ModelState.AddModelError(nameof(Input.CategoryId), "Select a category.");
+                ImagePreviews = currentImages;
+                Input.SelectedMainImage ??= Input.MainImageUrl ?? product.MainImageUrl;
                 return Page();
             }
 
@@ -120,6 +136,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             if (category == null || (!category.IsActive && product.CategoryId != category.Id))
             {
                 ModelState.AddModelError(nameof(Input.CategoryId), "Select a valid active category.");
+                ImagePreviews = currentImages;
+                Input.SelectedMainImage ??= Input.MainImageUrl ?? product.MainImageUrl;
                 return Page();
             }
 
@@ -127,8 +145,15 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             if (otherWithSku != null && otherWithSku.Id != product.Id)
             {
                 ModelState.AddModelError(nameof(Input.MerchantSku), "This SKU is already used by another product.");
+                ImagePreviews = currentImages;
+                Input.SelectedMainImage ??= Input.MainImageUrl ?? product.MainImageUrl;
                 return Page();
             }
+
+            var savedImages = await SaveUploadsAsync(user.Id);
+            var allImages = currentImages.Concat(savedImages).Distinct().ToList();
+            var mainImage = SelectMainImage(Input.SelectedMainImage ?? product.MainImageUrl, allImages);
+            var galleryImages = BuildGallery(allImages, mainImage);
 
             product.Title = Input.Title.Trim();
             product.MerchantSku = Input.MerchantSku.Trim();
@@ -137,8 +162,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             product.CategoryId = category.Id;
             product.Category = category.FullPath;
             product.Description = string.IsNullOrWhiteSpace(Input.Description) ? null : Input.Description.Trim();
-            product.MainImageUrl = string.IsNullOrWhiteSpace(Input.MainImageUrl) ? null : Input.MainImageUrl.Trim();
-            product.GalleryImageUrls = string.IsNullOrWhiteSpace(Input.GalleryImageUrls) ? null : Input.GalleryImageUrls.Trim();
+            product.MainImageUrl = mainImage;
+            product.GalleryImageUrls = galleryImages;
             product.WeightKg = Input.WeightKg;
             product.LengthCm = Input.LengthCm;
             product.WidthCm = Input.WidthCm;
@@ -148,6 +173,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             await _updateProduct.UpdateAsync(product);
             _logger.LogInformation("Product {ProductId} updated by seller {SellerId}", product.Id, user.Id);
 
+            Input.MainImageUrl = mainImage;
+            Input.GalleryImageUrls = galleryImages;
             TempData["StatusMessage"] = "Product updated.";
             return RedirectToPage("List");
         }
@@ -184,7 +211,6 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
             [MaxLength(500)]
             [Display(Name = "Main image URL")]
-            [Url(ErrorMessage = "Provide a valid image URL.")]
             public string? MainImageUrl { get; set; }
 
             [MaxLength(2000)]
@@ -210,6 +236,12 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             [MaxLength(200)]
             [Display(Name = "Shipping methods")]
             public string? ShippingMethods { get; set; }
+
+            [Display(Name = "Upload images")]
+            public List<IFormFile> ImageFiles { get; set; } = new();
+
+            [Display(Name = "Main image")]
+            public string? SelectedMainImage { get; set; }
         }
 
         private async Task LoadCategoriesAsync(int? selectedCategoryId)
@@ -237,6 +269,76 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                     });
                 }
             }
+        }
+
+        private void ValidateUploads(IEnumerable<IFormFile> files)
+        {
+            foreach (var file in files.Where(f => f != null))
+            {
+                var validationError = _productImageService.Validate(file);
+                if (!string.IsNullOrEmpty(validationError))
+                {
+                    ModelState.AddModelError($"{nameof(Input)}.{nameof(Input.ImageFiles)}", validationError);
+                    return;
+                }
+            }
+        }
+
+        private async Task<List<string>> SaveUploadsAsync(string sellerId)
+        {
+            var saved = new List<string>();
+            foreach (var file in Input.ImageFiles.Where(f => f != null))
+            {
+                var result = await _productImageService.SaveOptimizedAsync(file, sellerId, HttpContext.RequestAborted);
+                saved.Add(result.OptimizedUrl);
+            }
+
+            return saved;
+        }
+
+        private static List<string> BuildImages(string? mainImage, string? galleryImages)
+        {
+            var images = new List<string>();
+            if (!string.IsNullOrWhiteSpace(mainImage))
+            {
+                images.Add(mainImage);
+            }
+
+            if (!string.IsNullOrWhiteSpace(galleryImages))
+            {
+                images.AddRange(galleryImages.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            }
+
+            return images.Distinct().ToList();
+        }
+
+        private static string? SelectMainImage(string? selectedMain, List<string> images)
+        {
+            if (!images.Any())
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(selectedMain) && images.Contains(selectedMain))
+            {
+                return selectedMain;
+            }
+
+            return images.First();
+        }
+
+        private static string? BuildGallery(List<string> images, string? mainImage)
+        {
+            if (!images.Any())
+            {
+                return null;
+            }
+
+            var gallery = images
+                .Where(i => string.IsNullOrWhiteSpace(mainImage) || !string.Equals(i, mainImage, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            return gallery.Any() ? string.Join(", ", gallery) : null;
         }
     }
 }
