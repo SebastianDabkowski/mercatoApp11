@@ -29,6 +29,8 @@ namespace SD.ProjectName.Modules.Products.Domain.Interfaces
 
         Task<List<ProductModel>> FilterActiveProducts(ProductFilterOptions filters, CancellationToken cancellationToken = default);
 
+        Task<PagedResult<ProductModel>> FilterActiveProductsPaged(ProductFilterOptions filters, int pageNumber, int pageSize, CancellationToken cancellationToken = default);
+
         Task<ProductFilterMetadata> GetFilterMetadata(ProductFilterContext context, CancellationToken cancellationToken = default);
     }
 }

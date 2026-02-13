@@ -220,6 +220,36 @@ namespace SD.ProjectName.Tests.Products
         }
 
         [Fact]
+        public async Task FilterActiveProductsPaged_ShouldReturnTotalAndClampPage()
+        {
+            await using var context = CreateContext();
+            for (var i = 1; i <= 12; i++)
+            {
+                context.Products.Add(new ProductModel
+                {
+                    Title = $"Item {i}",
+                    MerchantSku = $"SKU-PAGE-{i}",
+                    Price = i,
+                    Stock = 1,
+                    Category = "Cat",
+                    WorkflowState = ProductWorkflowStates.Active,
+                    SellerId = "seller-1"
+                });
+            }
+
+            await context.SaveChangesAsync();
+
+            var repository = new ProductRepository(context);
+            var paged = await repository.FilterActiveProductsPaged(new ProductFilterOptions(), pageNumber: 4, pageSize: 5);
+
+            Assert.Equal(12, paged.TotalCount);
+            Assert.Equal(3, paged.TotalPages);
+            Assert.Equal(3, paged.PageNumber);
+            Assert.Equal(2, paged.Items.Count);
+            Assert.Equal(new[] { "Item 2", "Item 1" }, paged.Items.Select(p => p.Title).ToArray());
+        }
+
+        [Fact]
         public async Task GetFilterMetadata_ShouldReturnDistinctValues()
         {
             await using var context = CreateContext();

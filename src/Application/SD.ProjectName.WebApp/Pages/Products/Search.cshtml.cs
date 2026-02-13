@@ -15,6 +15,7 @@ namespace SD.ProjectName.WebApp.Pages.Products
         private readonly ManageCategories _manageCategories;
         private readonly UserManager<ApplicationUser> _userManager;
         private const int MaxQueryLength = 200;
+        private const int DefaultPageSize = 12;
 
         public SearchModel(GetProducts getProducts, ManageCategories manageCategories, UserManager<ApplicationUser> userManager)
         {
@@ -44,9 +45,18 @@ namespace SD.ProjectName.WebApp.Pages.Products
         [BindProperty(SupportsGet = true)]
         public string? Sort { get; set; }
 
+        [BindProperty(SupportsGet = true, Name = "page")]
+        public int PageNumber { get; set; } = 1;
+
         public List<ProductModel> Results { get; private set; } = new();
 
         public string? StatusMessage { get; private set; }
+
+        public int TotalResults { get; private set; }
+
+        public int TotalPages { get; private set; }
+
+        public int PageSize => DefaultPageSize;
 
         public List<SelectListItem> CategoryOptions { get; private set; } = new();
 
@@ -109,7 +119,12 @@ namespace SD.ProjectName.WebApp.Pages.Products
                 SortBy = AppliedSort
             };
 
-            Results = await _getProducts.FilterActive(filterOptions, cancellationToken);
+            PageNumber = Math.Max(PageNumber, 1);
+            var pagedResults = await _getProducts.FilterActivePaged(filterOptions, PageNumber, DefaultPageSize, cancellationToken);
+            TotalResults = pagedResults.TotalCount;
+            TotalPages = pagedResults.TotalPages;
+            PageNumber = pagedResults.PageNumber;
+            Results = pagedResults.Items;
             BuildActiveFilters(filterOptions, sellerNames);
 
             if (!Results.Any())

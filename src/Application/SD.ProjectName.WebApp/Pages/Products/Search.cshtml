@@ -40,6 +40,7 @@
         {
             <input type="hidden" name="maxPrice" value="@Model.MaxPrice" />
         }
+        <input type="hidden" name="page" value="1" />
         <input type="search"
                name="q"
                value="@query"
@@ -63,6 +64,7 @@
         <form id="searchFilters" method="get" asp-page="/Products/Search">
             <input type="hidden" name="q" value="@query" />
             <input type="hidden" name="sort" value="@Model.Sort" />
+            <input type="hidden" name="page" value="1" />
             <div class="row g-3">
                 <div class="col-12 col-md-6 col-lg-3">
                     <label class="form-label" for="filterCategory">Category</label>
@@ -134,13 +136,73 @@
             </ul>
         }
     </div>
+
+    <div class="d-flex align-items-center justify-content-between mt-3">
+        <div class="text-muted small">
+            Showing @((Model.TotalResults == 0 ? 0 : ((Model.PageNumber - 1) * Model.PageSize) + 1))-@Math.Min(Model.PageNumber * Model.PageSize, Model.TotalResults) of @Model.TotalResults result@(Model.TotalResults == 1 ? string.Empty : "s")
+        </div>
+        @if (Model.TotalPages > 1)
+        {
+            <nav aria-label="Search results pages">
+                <ul class="pagination mb-0">
+                    <li class="page-item @(Model.PageNumber == 1 ? "disabled" : string.Empty)">
+                        <a class="page-link"
+                           asp-page="/Products/Search"
+                           asp-route-page="@(Model.PageNumber - 1)"
+                           asp-route-q="@query"
+                           asp-route-condition="@Model.Condition"
+                           asp-route-categoryId="@Model.CategoryId"
+                           asp-route-sellerId="@Model.SellerId"
+                           asp-route-minPrice="@Model.MinPrice"
+                           asp-route-maxPrice="@Model.MaxPrice"
+                           asp-route-sort="@Model.Sort">Previous</a>
+                    </li>
+                    @for (var pageNumber = 1; pageNumber <= Model.TotalPages; pageNumber++)
+                    {
+                        <li class="page-item @(pageNumber == Model.PageNumber ? "active" : string.Empty)">
+                            <a class="page-link"
+                               asp-page="/Products/Search"
+                               asp-route-page="@pageNumber"
+                               asp-route-q="@query"
+                               asp-route-condition="@Model.Condition"
+                               asp-route-categoryId="@Model.CategoryId"
+                               asp-route-sellerId="@Model.SellerId"
+                               asp-route-minPrice="@Model.MinPrice"
+                               asp-route-maxPrice="@Model.MaxPrice"
+                               asp-route-sort="@Model.Sort">@pageNumber</a>
+                        </li>
+                    }
+                    <li class="page-item @(Model.PageNumber >= Model.TotalPages ? "disabled" : string.Empty)">
+                        <a class="page-link"
+                           asp-page="/Products/Search"
+                           asp-route-page="@(Model.PageNumber + 1)"
+                           asp-route-q="@query"
+                           asp-route-condition="@Model.Condition"
+                           asp-route-categoryId="@Model.CategoryId"
+                           asp-route-sellerId="@Model.SellerId"
+                           asp-route-minPrice="@Model.MinPrice"
+                           asp-route-maxPrice="@Model.MaxPrice"
+                           asp-route-sort="@Model.Sort">Next</a>
+                    </li>
+                </ul>
+            </nav>
+        }
+        else
+        {
+            <span class="text-muted small">All results are displayed.</span>
+        }
+    </div>
 }
 else
 {
     <div class="d-flex align-items-center justify-content-between mb-3">
         <div>
             <div class="small text-muted">Active products only</div>
-            <h2 class="h5 mb-0">@Model.Results.Count result@(Model.Results.Count == 1 ? "" : "s") for "@query"</h2>
+            @{
+                var start = Model.TotalResults == 0 ? 0 : ((Model.PageNumber - 1) * Model.PageSize) + 1;
+                var end = Math.Min(Model.PageNumber * Model.PageSize, Model.TotalResults);
+            }
+            <h2 class="h5 mb-0">Showing @start-@end of @Model.TotalResults result@(Model.TotalResults == 1 ? "" : "s") for "@query"</h2>
         </div>
         <form method="get" class="d-flex align-items-center gap-2" asp-page="/Products/Search">
             <input type="hidden" name="q" value="@query" />
@@ -149,6 +211,7 @@ else
             <input type="hidden" name="sellerId" value="@Model.SellerId" />
             <input type="hidden" name="minPrice" value="@Model.MinPrice" />
             <input type="hidden" name="maxPrice" value="@Model.MaxPrice" />
+            <input type="hidden" name="page" value="1" />
             <label class="form-label mb-0 me-1" for="sortSelect">Sort</label>
             <select id="sortSelect" name="sort" class="form-select form-select-sm" onchange="this.form.submit()">
                 @foreach (var option in Model.SortOptions)

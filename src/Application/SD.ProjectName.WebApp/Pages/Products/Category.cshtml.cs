@@ -15,6 +15,7 @@ namespace SD.ProjectName.WebApp.Pages.Products
         private readonly ManageCategories _manageCategories;
         private readonly GetProducts _getProducts;
         private readonly UserManager<ApplicationUser> _userManager;
+        private const int DefaultPageSize = 12;
 
         public CategoryModel(ManageCategories manageCategories, GetProducts getProducts, UserManager<ApplicationUser> userManager)
         {
@@ -52,6 +53,9 @@ namespace SD.ProjectName.WebApp.Pages.Products
         [BindProperty(SupportsGet = true)]
         public string? Sort { get; set; }
 
+        [BindProperty(SupportsGet = true, Name = "page")]
+        public int PageNumber { get; set; } = 1;
+
         public List<SelectListItem> CategoryOptions { get; private set; } = new();
 
         public List<SelectListItem> SellerOptions { get; private set; } = new();
@@ -69,6 +73,12 @@ namespace SD.ProjectName.WebApp.Pages.Products
         public bool HasActiveFilters => ActiveFilters.Any();
 
         public string? StatusMessage { get; private set; }
+
+        public int TotalResults { get; private set; }
+
+        public int TotalPages { get; private set; }
+
+        public int PageSize => DefaultPageSize;
 
         public async Task<IActionResult> OnGetAsync(int? id, CancellationToken cancellationToken)
         {
@@ -130,7 +140,12 @@ namespace SD.ProjectName.WebApp.Pages.Products
                 SortBy = AppliedSort
             };
 
-            Products = await _getProducts.FilterActive(filters, cancellationToken);
+            PageNumber = Math.Max(PageNumber, 1);
+            var paged = await _getProducts.FilterActivePaged(filters, PageNumber, DefaultPageSize, cancellationToken);
+            TotalResults = paged.TotalCount;
+            TotalPages = paged.TotalPages;
+            PageNumber = paged.PageNumber;
+            Products = paged.Items;
             BuildActiveFilters(filters, sellerNames);
 
             if (!Products.Any())

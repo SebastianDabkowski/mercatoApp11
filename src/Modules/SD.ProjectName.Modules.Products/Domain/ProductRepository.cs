@@ -80,47 +80,31 @@ namespace SD.ProjectName.Modules.Products.Domain
 
         public async Task<List<ProductModel>> FilterActiveProducts(ProductFilterOptions filters, CancellationToken cancellationToken = default)
         {
-            var query = BuildActiveQuery(filters, out var normalizedSearch);
-            var normalizedSearchValue = normalizedSearch;
-
-            if (filters.MinPrice.HasValue)
-            {
-                query = query.Where(p => p.Price >= filters.MinPrice.Value);
-            }
-
-            if (filters.MaxPrice.HasValue)
-            {
-                query = query.Where(p => p.Price <= filters.MaxPrice.Value);
-            }
-
-            if (!string.IsNullOrWhiteSpace(filters.Condition) && ProductConditions.IsValid(filters.Condition))
-            {
-                var normalizedCondition = ProductConditions.Normalize(filters.Condition);
-                query = query.Where(p =>
-                    p.Condition == normalizedCondition ||
-                    (string.IsNullOrEmpty(p.Condition) && normalizedCondition == ProductConditions.New));
-            }
-
-            if (!string.IsNullOrWhiteSpace(filters.SellerId))
-            {
-                query = query.Where(p => p.SellerId == filters.SellerId);
-            }
-
-            var hasSearch = !string.IsNullOrWhiteSpace(normalizedSearchValue);
-            var sort = ProductSortOptions.Normalize(filters.SortBy, hasSearch);
-
-            query = sort switch
-            {
-                ProductSortOptions.PriceAsc => query.OrderBy(p => p.Price).ThenByDescending(p => p.Id),
-                ProductSortOptions.PriceDesc => query.OrderByDescending(p => p.Price).ThenByDescending(p => p.Id),
-                ProductSortOptions.Relevance when hasSearch && normalizedSearchValue != null => query
-                    .OrderByDescending(p => p.Title.ToLower().Contains(normalizedSearchValue))
-                    .ThenByDescending(p => !string.IsNullOrWhiteSpace(p.Description) && p.Description!.ToLower().Contains(normalizedSearchValue))
-                    .ThenByDescending(p => p.Id),
-                _ => query.OrderByDescending(p => p.Id)
-            };
-
+            var query = BuildFilteredQuery(filters, out _, out _);
             return await query.ToListAsync(cancellationToken);
+        }
+
+        public async Task<PagedResult<ProductModel>> FilterActiveProductsPaged(ProductFilterOptions filters, int pageNumber, int pageSize, CancellationToken cancellationToken = default)
+        {
+            var query = BuildFilteredQuery(filters, out _, out _);
+            var total = await query.CountAsync(cancellationToken);
+            var normalizedPageSize = Math.Max(1, Math.Min(pageSize, 100));
+            var totalPages = normalizedPageSize > 0 ? (int)Math.Ceiling(total / (double)normalizedPageSize) : 0;
+            var normalizedPageNumber = totalPages > 0 ? Math.Min(Math.Max(pageNumber, 1), totalPages) : 1;
+            var skip = (normalizedPageNumber - 1) * normalizedPageSize;
+
+            var items = await query
+                .Skip(skip)
+                .Take(normalizedPageSize)
+                .ToListAsync(cancellationToken);
+
+            return new PagedResult<ProductModel>
+            {
+                Items = items,
+                TotalCount = total,
+                PageNumber = normalizedPageNumber,
+                PageSize = normalizedPageSize
+            };
         }
 
         public async Task<ProductFilterMetadata> GetFilterMetadata(ProductFilterContext context, CancellationToken cancellationToken = default)
@@ -239,6 +223,52 @@ namespace SD.ProjectName.Modules.Products.Domain
             }
 
             return await query.FirstOrDefaultAsync();
+        }
+
+        private IQueryable<ProductModel> BuildFilteredQuery(ProductFilterOptions filters, out bool hasSearch, out string? normalizedSearchValue)
+        {
+            var query = BuildActiveQuery(filters, out var normalizedSearch);
+            normalizedSearchValue = normalizedSearch;
+            var searchValue = normalizedSearchValue;
+
+            if (filters.MinPrice.HasValue)
+            {
+                query = query.Where(p => p.Price >= filters.MinPrice.Value);
+            }
+
+            if (filters.MaxPrice.HasValue)
+            {
+                query = query.Where(p => p.Price <= filters.MaxPrice.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(filters.Condition) && ProductConditions.IsValid(filters.Condition))
+            {
+                var normalizedCondition = ProductConditions.Normalize(filters.Condition);
+                query = query.Where(p =>
+                    p.Condition == normalizedCondition ||
+                    (string.IsNullOrEmpty(p.Condition) && normalizedCondition == ProductConditions.New));
+            }
+
+            if (!string.IsNullOrWhiteSpace(filters.SellerId))
+            {
+                query = query.Where(p => p.SellerId == filters.SellerId);
+            }
+
+            hasSearch = !string.IsNullOrWhiteSpace(searchValue);
+            var sort = ProductSortOptions.Normalize(filters.SortBy, hasSearch);
+
+            query = sort switch
+            {
+                ProductSortOptions.PriceAsc => query.OrderBy(p => p.Price).ThenByDescending(p => p.Id),
+                ProductSortOptions.PriceDesc => query.OrderByDescending(p => p.Price).ThenByDescending(p => p.Id),
+                ProductSortOptions.Relevance when hasSearch && searchValue != null => query
+                    .OrderByDescending(p => p.Title.ToLower().Contains(searchValue))
+                    .ThenByDescending(p => !string.IsNullOrWhiteSpace(p.Description) && p.Description!.ToLower().Contains(searchValue))
+                    .ThenByDescending(p => p.Id),
+                _ => query.OrderByDescending(p => p.Id)
+            };
+
+            return query;
         }
 
         private IQueryable<ProductModel> BuildActiveQuery(ProductFilterContext context, out string? normalizedSearch)

@@ -49,6 +49,11 @@ namespace SD.ProjectName.Modules.Products.Application
             return await _repository.FilterActiveProducts(filters, cancellationToken);
         }
 
+        public async Task<PagedResult<ProductModel>> FilterActivePaged(ProductFilterOptions filters, int pageNumber, int pageSize, CancellationToken cancellationToken = default)
+        {
+            return await _repository.FilterActiveProductsPaged(filters, pageNumber, pageSize, cancellationToken);
+        }
+
         public async Task<ProductFilterMetadata> GetFilterMetadata(ProductFilterContext context, CancellationToken cancellationToken = default)
         {
             return await _repository.GetFilterMetadata(context, cancellationToken);
