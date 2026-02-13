@@ -85,7 +85,15 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             var snapshot = ReadSnapshot();
             if (snapshot != null)
             {
-                Summary = new CartSummary(new List<CartSellerGroup>(), snapshot.ItemsSubtotal, snapshot.ShippingTotal, snapshot.GrandTotal, snapshot.TotalQuantity, CartSettlementSummary.Empty);
+                Summary = new CartSummary(
+                    new List<CartSellerGroup>(),
+                    snapshot.ItemsSubtotal,
+                    snapshot.ShippingTotal,
+                    snapshot.GrandTotal,
+                    snapshot.TotalQuantity,
+                    CartSettlementSummary.Empty,
+                    snapshot.DiscountTotal,
+                    snapshot.PromoCode);
             }
             else
             {
@@ -152,7 +160,15 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             Address = order.Address;
             PaymentReference = order.PaymentReference;
             PaymentMethodLabel = order.PaymentMethodLabel;
-            Summary = new CartSummary(new List<CartSellerGroup>(), order.ItemsSubtotal, order.ShippingTotal, order.GrandTotal, order.TotalQuantity, CartSettlementSummary.Empty);
+            Summary = new CartSummary(
+                new List<CartSellerGroup>(),
+                order.ItemsSubtotal,
+                order.ShippingTotal,
+                order.GrandTotal,
+                order.TotalQuantity,
+                CartSettlementSummary.Empty,
+                order.DiscountTotal,
+                order.PromoCode);
         }
     }
 }

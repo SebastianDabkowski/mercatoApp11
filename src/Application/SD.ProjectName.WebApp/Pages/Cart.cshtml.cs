@@ -13,6 +13,8 @@ namespace SD.ProjectName.WebApp.Pages
         public decimal ShippingTotal { get; private set; }
         public decimal GrandTotal { get; private set; }
         public int TotalQuantity { get; private set; }
+        public decimal DiscountTotal { get; private set; }
+        public string? AppliedPromoCode { get; private set; }
 
         public CartModel(CartViewService cartViewService, IUserCartService userCartService)
         {
@@ -29,6 +31,8 @@ namespace SD.ProjectName.WebApp.Pages
             ShippingTotal = summary.ShippingTotal;
             GrandTotal = summary.GrandTotal;
             TotalQuantity = summary.TotalQuantity;
+            DiscountTotal = summary.DiscountTotal;
+            AppliedPromoCode = summary.AppliedPromoCode;
         }
     }
 }

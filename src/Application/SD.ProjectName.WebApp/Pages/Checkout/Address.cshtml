@@ -113,14 +113,94 @@
                         <span>Shipping</span>
                         <span>@Model.Summary.ShippingTotal.ToString("C")</span>
                     </div>
+                    <div class="d-flex justify-content-between mb-2 @(Model.Summary.DiscountTotal > 0 ? "" : "d-none")" id="address-discount-row">
+                        <span>Discount <span class="text-muted">@((Model.Summary.AppliedPromoCode ?? string.Empty) == string.Empty ? string.Empty : $"({Model.Summary.AppliedPromoCode})")</span></span>
+                        <span>-@Model.Summary.DiscountTotal.ToString("C")</span>
+                    </div>
                     <hr />
                     <div class="d-flex justify-content-between">
                         <strong>Total</strong>
                         <strong>@Model.Summary.GrandTotal.ToString("C")</strong>
                     </div>
                     <div class="text-muted small mt-2">@Model.Summary.TotalQuantity item(s)</div>
+                    <div class="mt-3">
+                        <label class="form-label" for="promo-code-input">Promo code</label>
+                        <div class="input-group">
+                            <input type="text" id="promo-code-input" class="form-control" value="@Model.Summary.AppliedPromoCode" placeholder="Enter promo code" />
+                            <button type="button" class="btn btn-outline-primary" id="apply-promo-button">Apply</button>
+                            <button type="button" class="btn btn-outline-secondary @(string.IsNullOrWhiteSpace(Model.Summary.AppliedPromoCode) ? "d-none" : "")" id="remove-promo-button">Remove</button>
+                        </div>
+                        <div class="small mt-2 text-danger d-none" id="promo-error"></div>
+                        <div class="small mt-2 text-success d-none" id="promo-success"></div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </form>
+
+@section Scripts {
+    <script>
+        (() => {
+            const applyButton = document.getElementById('apply-promo-button');
+            const removeButton = document.getElementById('remove-promo-button');
+            const input = document.getElementById('promo-code-input');
+            const promoError = document.getElementById('promo-error');
+            const promoSuccess = document.getElementById('promo-success');
+
+            const resetMessages = () => {
+                if (promoError) {
+                    promoError.classList.add('d-none');
+                    promoError.textContent = '';
+                }
+                if (promoSuccess) {
+                    promoSuccess.classList.add('d-none');
+                    promoSuccess.textContent = '';
+                }
+            };
+
+            const handleResponse = (result) => {
+                resetMessages();
+                if (!result) {
+                    if (promoError) {
+                        promoError.textContent = 'Could not apply promo code.';
+                        promoError.classList.remove('d-none');
+                    }
+                    return;
+                }
+
+                if (result.success) {
+                    if (promoSuccess) {
+                        promoSuccess.textContent = result.message || 'Promo code applied.';
+                        promoSuccess.classList.remove('d-none');
+                    }
+                    window.location.reload();
+                } else if (promoError) {
+                    promoError.textContent = result.message || 'Promo code could not be applied.';
+                    promoError.classList.remove('d-none');
+                }
+            };
+
+            applyButton?.addEventListener('click', () => {
+                resetMessages();
+                const code = input?.value ?? '';
+                fetch('/Api/Promo?handler=Apply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                })
+                    .then(r => r.json().catch(() => ({})))
+                    .then(handleResponse)
+                    .catch(() => handleResponse(null));
+            });
+
+            removeButton?.addEventListener('click', () => {
+                resetMessages();
+                fetch('/Api/Promo?handler=Remove', { method: 'POST' })
+                    .then(r => r.json().catch(() => ({})))
+                    .then(handleResponse)
+                    .catch(() => handleResponse(null));
+            });
+        })();
+    </script>
+}

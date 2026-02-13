@@ -58,6 +58,11 @@ builder.Services.AddOptions<CartOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<CartOptions>(sp => sp.GetRequiredService<IOptions<CartOptions>>().Value);
+builder.Services.AddOptions<PromoOptions>()
+    .Bind(builder.Configuration.GetSection(PromoOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<PromoOptions>(sp => sp.GetRequiredService<IOptions<PromoOptions>>().Value);
 builder.Services.AddOptions<CheckoutOptions>()
     .Bind(builder.Configuration.GetSection(CheckoutOptions.SectionName))
     .ValidateDataAnnotations()
@@ -73,6 +78,7 @@ builder.Services.AddScoped<RecentlyViewedService>();
 builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<CartTotalsCalculator>();
 builder.Services.AddScoped<CartViewService>();
+builder.Services.AddScoped<PromoCodeService>();
 builder.Services.AddScoped<IUserCartService, UserCartService>();
 builder.Services.AddScoped<CheckoutStateService>();
 builder.Services.AddScoped<ShippingOptionsService>();

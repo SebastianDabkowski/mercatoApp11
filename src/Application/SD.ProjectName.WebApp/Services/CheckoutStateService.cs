@@ -80,7 +80,7 @@ namespace SD.ProjectName.WebApp.Services
 
     public record CheckoutOrderItemSnapshot(int ProductId, int Quantity, decimal UnitPrice, decimal LineTotal, string VariantKey);
 
-    public record CheckoutOrderSnapshot(List<CheckoutOrderItemSnapshot> Items, decimal ItemsSubtotal, decimal ShippingTotal, decimal GrandTotal, int TotalQuantity);
+    public record CheckoutOrderSnapshot(List<CheckoutOrderItemSnapshot> Items, decimal ItemsSubtotal, decimal ShippingTotal, decimal GrandTotal, int TotalQuantity, decimal DiscountTotal = 0, string? PromoCode = null);
 
     public record CheckoutState(
         string? SavedAddressKey,

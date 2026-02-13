@@ -80,7 +80,8 @@ namespace SD.ProjectName.Tests.Products
             repo.Setup(r => r.GetByIds(It.IsAny<IEnumerable<int>>(), false)).ReturnsAsync(products.ToList());
             var getProducts = new GetProducts(repo.Object);
             var totalsCalculator = new CartTotalsCalculator(options);
-            var cartViewService = new CartViewService(cartService, totalsCalculator, getProducts, userManager.Object);
+            var promoService = new PromoCodeService(new PromoOptions(), TimeProvider.System, Mock.Of<ILogger<PromoCodeService>>());
+            var cartViewService = new CartViewService(cartService, totalsCalculator, getProducts, userManager.Object, promoService);
             return new UserCartService(cartService, cartViewService, userManager.Object, Mock.Of<ILogger<UserCartService>>());
         }
 

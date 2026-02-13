@@ -210,8 +210,9 @@ namespace SD.ProjectName.Tests.Products
             }
 
             var totalsCalculator = new CartTotalsCalculator(options);
+            var promoService = new PromoCodeService(new PromoOptions(), TimeProvider.System, Mock.Of<ILogger<PromoCodeService>>());
 
-            return new CartViewService(cartService, totalsCalculator, getProducts, userManager.Object);
+            return new CartViewService(cartService, totalsCalculator, getProducts, userManager.Object, promoService);
         }
 
         private static HttpContext BuildContextWithCart(CartService cartService, string cookieName, List<CartItem> items)
