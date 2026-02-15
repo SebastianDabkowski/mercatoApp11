@@ -13,23 +13,32 @@ namespace SD.ProjectName.WebApp.Pages.Account
     {
         private readonly IConsentService _consents;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly ILogger<PrivacySettingsModel> _logger;
         private readonly UserDataExportService _dataExport;
+        private readonly UserAccountDeletionService _deletionService;
 
         public PrivacySettingsModel(
             IConsentService consents,
             UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager,
             UserDataExportService dataExport,
+            UserAccountDeletionService deletionService,
             ILogger<PrivacySettingsModel> logger)
         {
             _consents = consents;
             _userManager = userManager;
+            _signInManager = signInManager;
             _dataExport = dataExport;
+            _deletionService = deletionService;
             _logger = logger;
         }
 
         [BindProperty]
         public List<ConsentInputModel> Consents { get; set; } = new();
+
+        [BindProperty]
+        public bool ConfirmDeletion { get; set; }
 
         public List<ConsentViewModel> ActiveConsents { get; private set; } = new();
 
@@ -104,6 +113,50 @@ namespace SD.ProjectName.WebApp.Pages.Account
                 ModelState.AddModelError(string.Empty, "We could not generate your data export right now. Please try again later.");
                 return Page();
             }
+        }
+
+        public async Task<IActionResult> OnPostDeleteAsync()
+        {
+            var user = await _userManager.GetUserAsync(User);
+            if (user == null)
+            {
+                return Challenge();
+            }
+
+            await LoadAsync(user, preserveSelections: true);
+
+            if (!ConfirmDeletion)
+            {
+                ModelState.AddModelError(nameof(ConfirmDeletion), "Please confirm you understand the impact before deleting your account.");
+                return Page();
+            }
+
+            var result = await _deletionService.DeleteAsync(
+                user.Id,
+                user.Id,
+                "User self-service",
+                HttpContext.RequestAborted);
+
+            if (!result.Success)
+            {
+                if (result.BlockingReasons != null && result.BlockingReasons.Count > 0)
+                {
+                    foreach (var reason in result.BlockingReasons)
+                    {
+                        ModelState.AddModelError(string.Empty, reason);
+                    }
+                }
+                else if (!string.IsNullOrWhiteSpace(result.Error))
+                {
+                    ModelState.AddModelError(string.Empty, result.Error);
+                }
+
+                return Page();
+            }
+
+            await _signInManager.SignOutAsync();
+            StatusMessage = "Your account has been deleted and your personal data has been anonymized.";
+            return RedirectToPage("/Index");
         }
 
         private async Task LoadAsync(ApplicationUser user, bool preserveSelections)
