@@ -27,6 +27,8 @@ namespace SD.ProjectName.WebApp.Services
         public string? ActionType { get; init; }
 
         public string? ResourceId { get; init; }
+
+        public bool? IsSuccess { get; init; }
     }
 
     public record AdminAuditLogEntry(
@@ -36,7 +38,8 @@ namespace SD.ProjectName.WebApp.Services
         string? ResourceId,
         string ActorName,
         string? ActorId,
-        string? Details);
+        string? Details,
+        bool IsSuccess);
 
     public class AdminAuditLogService
     {
@@ -48,7 +51,9 @@ namespace SD.ProjectName.WebApp.Services
             "ProductReview",
             "CommissionRule",
             "VatRule",
-            "FeatureFlag"
+            "FeatureFlag",
+            "Login",
+            "CriticalAction"
         };
 
         private readonly ApplicationDbContext _applicationDbContext;
@@ -112,7 +117,8 @@ namespace SD.ProjectName.WebApp.Services
                         a.UserId,
                         string.IsNullOrWhiteSpace(a.ActorName) ? "System" : a.ActorName!,
                         a.ActorUserId,
-                        a.Reason))
+                        a.Reason,
+                        true))
                     .ToListAsync(cancellationToken);
 
                 entries.AddRange(userEntries);
@@ -144,7 +150,8 @@ namespace SD.ProjectName.WebApp.Services
                         a.ProductId.ToString(),
                         string.IsNullOrWhiteSpace(a.Actor) ? "System" : a.Actor!,
                         null,
-                        BuildStatusDetail(a.FromStatus, a.ToStatus, a.Reason)))
+                        BuildStatusDetail(a.FromStatus, a.ToStatus, a.Reason),
+                        true))
                     .ToListAsync(cancellationToken);
 
                 entries.AddRange(productEntries);
@@ -176,7 +183,8 @@ namespace SD.ProjectName.WebApp.Services
                         a.PhotoId.ToString(),
                         string.IsNullOrWhiteSpace(a.Actor) ? "System" : a.Actor!,
                         null,
-                        BuildStatusDetail(a.FromStatus, a.ToStatus, a.Reason)))
+                        BuildStatusDetail(a.FromStatus, a.ToStatus, a.Reason),
+                        true))
                     .ToListAsync(cancellationToken);
 
                 entries.AddRange(photoEntries);
@@ -208,7 +216,8 @@ namespace SD.ProjectName.WebApp.Services
                         a.ReviewId.ToString(),
                         string.IsNullOrWhiteSpace(a.Actor) ? "System" : a.Actor!,
                         null,
-                        BuildStatusDetail(a.FromStatus, a.ToStatus, a.Reason)))
+                        BuildStatusDetail(a.FromStatus, a.ToStatus, a.Reason),
+                        true))
                     .ToListAsync(cancellationToken);
 
                 entries.AddRange(reviewEntries);
@@ -240,7 +249,8 @@ namespace SD.ProjectName.WebApp.Services
                         a.RuleId.ToString(),
                         string.IsNullOrWhiteSpace(a.ChangedByName) ? "System" : a.ChangedByName!,
                         a.ChangedBy,
-                        "Commission rule change captured."))
+                        "Commission rule change captured.",
+                        true))
                     .ToListAsync(cancellationToken);
 
                 entries.AddRange(commissionEntries);
@@ -272,7 +282,8 @@ namespace SD.ProjectName.WebApp.Services
                         a.RuleId.ToString(),
                         string.IsNullOrWhiteSpace(a.ChangedByName) ? "System" : a.ChangedByName!,
                         a.ChangedBy,
-                        "VAT rule change captured."))
+                        "VAT rule change captured.",
+                        true))
                     .ToListAsync(cancellationToken);
 
                 entries.AddRange(vatEntries);
@@ -304,10 +315,79 @@ namespace SD.ProjectName.WebApp.Services
                         a.FlagId.ToString(),
                         string.IsNullOrWhiteSpace(a.ActorName) ? "System" : a.ActorName!,
                         a.ActorId,
-                        "Feature flag change captured."))
+                        "Feature flag change captured.",
+                        true))
                     .ToListAsync(cancellationToken);
 
                 entries.AddRange(flagEntries);
+            }
+
+            if (IsIncluded(filters.EntityType, "Login"))
+            {
+                var query = _applicationDbContext.LoginAudits.AsNoTracking();
+                if (effectiveFrom.HasValue)
+                {
+                    query = query.Where(a => a.OccurredOn >= effectiveFrom.Value);
+                }
+
+                if (effectiveTo.HasValue)
+                {
+                    query = query.Where(a => a.OccurredOn <= effectiveTo.Value);
+                }
+
+                if (!string.IsNullOrWhiteSpace(filters.ResourceId))
+                {
+                    query = query.Where(a =>
+                        (a.UserId != null && a.UserId == filters.ResourceId) ||
+                        (a.Email != null && a.Email == filters.ResourceId));
+                }
+
+                var loginEntries = await query
+                    .Select(a => new AdminAuditLogEntry(
+                        a.OccurredOn,
+                        "Login",
+                        a.EventType,
+                        string.IsNullOrWhiteSpace(a.UserId) ? a.Email : a.UserId,
+                        string.IsNullOrWhiteSpace(a.Email) ? "Unknown user" : a.Email!,
+                        a.UserId,
+                        BuildLoginDetail(a.IpAddress, a.UserAgent),
+                        a.IsSuccess))
+                    .ToListAsync(cancellationToken);
+
+                entries.AddRange(loginEntries);
+            }
+
+            if (IsIncluded(filters.EntityType, "CriticalAction"))
+            {
+                var query = _applicationDbContext.CriticalActionAudits.AsNoTracking();
+                if (effectiveFrom.HasValue)
+                {
+                    query = query.Where(a => a.OccurredOn >= effectiveFrom.Value);
+                }
+
+                if (effectiveTo.HasValue)
+                {
+                    query = query.Where(a => a.OccurredOn <= effectiveTo.Value);
+                }
+
+                if (!string.IsNullOrWhiteSpace(filters.ResourceId))
+                {
+                    query = query.Where(a => a.ResourceId == filters.ResourceId);
+                }
+
+                var criticalEntries = await query
+                    .Select(a => new AdminAuditLogEntry(
+                        a.OccurredOn,
+                        string.IsNullOrWhiteSpace(a.ResourceType) ? "CriticalAction" : a.ResourceType!,
+                        a.ActionType,
+                        a.ResourceId,
+                        string.IsNullOrWhiteSpace(a.ActorName) ? "Unknown" : a.ActorName!,
+                        a.ActorUserId,
+                        a.Details,
+                        a.IsSuccess))
+                    .ToListAsync(cancellationToken);
+
+                entries.AddRange(criticalEntries);
             }
 
             var filtered = ApplyPostFilters(entries, filters);
@@ -353,6 +433,11 @@ namespace SD.ProjectName.WebApp.Services
                 result = result.Where(e => string.Equals(e.ResourceId, filters.ResourceId, StringComparison.OrdinalIgnoreCase));
             }
 
+            if (filters.IsSuccess.HasValue)
+            {
+                result = result.Where(e => e.IsSuccess == filters.IsSuccess.Value);
+            }
+
             return result;
         }
 
@@ -381,6 +466,22 @@ namespace SD.ProjectName.WebApp.Services
             }
 
             return parts.Count == 0 ? string.Empty : string.Join(" | ", parts);
+        }
+
+        private static string? BuildLoginDetail(string? ipAddress, string? userAgent)
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(ipAddress))
+            {
+                parts.Add($"IP {ipAddress.Trim()}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(userAgent))
+            {
+                parts.Add(userAgent.Trim());
+            }
+
+            return parts.Count == 0 ? null : string.Join(" | ", parts);
         }
     }
 }

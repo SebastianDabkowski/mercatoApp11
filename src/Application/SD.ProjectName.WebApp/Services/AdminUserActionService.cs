@@ -14,6 +14,7 @@ namespace SD.ProjectName.WebApp.Services
         private readonly ProductDbContext _productDbContext;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly TimeProvider _timeProvider;
+        private readonly CriticalActionAuditService _criticalAudit;
         private readonly ILogger<AdminUserActionService> _logger;
 
         public AdminUserActionService(
@@ -21,12 +22,14 @@ namespace SD.ProjectName.WebApp.Services
             ProductDbContext productDbContext,
             UserManager<ApplicationUser> userManager,
             TimeProvider timeProvider,
+            CriticalActionAuditService criticalAudit,
             ILogger<AdminUserActionService> logger)
         {
             _applicationDbContext = applicationDbContext;
             _productDbContext = productDbContext;
             _userManager = userManager;
             _timeProvider = timeProvider;
+            _criticalAudit = criticalAudit;
             _logger = logger;
         }
 
@@ -120,18 +123,25 @@ namespace SD.ProjectName.WebApp.Services
 
         public async Task<AdminUserActionResult> ChangeRoleAsync(string userId, string targetRole, string? actorUserId, string actorName, CancellationToken cancellationToken = default)
         {
+            var normalizedActor = string.IsNullOrWhiteSpace(actorName) ? "Admin" : actorName.Trim();
+
             if (!PlatformRoles.IsValid(targetRole))
             {
+                await _criticalAudit.RecordAsync(
+                    new CriticalActionAuditEntry("RoleChange", "User", userId, normalizedActor, actorUserId, false, "Invalid role requested."),
+                    cancellationToken);
                 return new AdminUserActionResult(false, "Choose a valid platform role.");
             }
 
             var user = await _userManager.FindByIdAsync(userId);
             if (user == null)
             {
+                await _criticalAudit.RecordAsync(
+                    new CriticalActionAuditEntry("RoleChange", "User", userId, normalizedActor, actorUserId, false, "User not found."),
+                    cancellationToken);
                 return new AdminUserActionResult(false, "User not found.");
             }
 
-            var actor = string.IsNullOrWhiteSpace(actorName) ? "Admin" : actorName.Trim();
             var currentRoles = await _userManager.GetRolesAsync(user);
             var platformRoles = currentRoles.Where(PlatformRoles.IsValid).ToList();
 
@@ -140,6 +150,9 @@ namespace SD.ProjectName.WebApp.Services
                 var removeResult = await _userManager.RemoveFromRolesAsync(user, platformRoles);
                 if (!removeResult.Succeeded)
                 {
+                    await _criticalAudit.RecordAsync(
+                        new CriticalActionAuditEntry("RoleChange", "User", user.Id, normalizedActor, actorUserId, false, "Unable to remove existing roles."),
+                        cancellationToken);
                     return new AdminUserActionResult(false, "Unable to update roles right now.");
                 }
             }
@@ -147,6 +160,9 @@ namespace SD.ProjectName.WebApp.Services
             var addResult = await _userManager.AddToRoleAsync(user, targetRole);
             if (!addResult.Succeeded)
             {
+                await _criticalAudit.RecordAsync(
+                    new CriticalActionAuditEntry("RoleChange", "User", user.Id, normalizedActor, actorUserId, false, "Unable to assign requested role."),
+                    cancellationToken);
                 return new AdminUserActionResult(false, "Unable to assign the requested role.");
             }
 
@@ -176,6 +192,9 @@ namespace SD.ProjectName.WebApp.Services
             var updateResult = await _userManager.UpdateAsync(user);
             if (!updateResult.Succeeded)
             {
+                await _criticalAudit.RecordAsync(
+                    new CriticalActionAuditEntry("RoleChange", "User", user.Id, normalizedActor, actorUserId, false, "Unable to persist updated role."),
+                    cancellationToken);
                 return new AdminUserActionResult(false, "Unable to persist the updated role.");
             }
 
@@ -185,7 +204,7 @@ namespace SD.ProjectName.WebApp.Services
             {
                 UserId = user.Id,
                 ActorUserId = actorUserId,
-                ActorName = actor,
+                ActorName = normalizedActor,
                 Action = "Role changed",
                 Reason = $"Role set to {targetRole}",
                 CreatedOn = _timeProvider.GetUtcNow()
@@ -193,7 +212,11 @@ namespace SD.ProjectName.WebApp.Services
 
             await _applicationDbContext.SaveChangesAsync(cancellationToken);
 
-            _logger.LogInformation("User {UserId} role updated to {Role} by {Actor}.", user.Id, targetRole, actor);
+            await _criticalAudit.RecordAsync(
+                new CriticalActionAuditEntry("RoleChange", "User", user.Id, normalizedActor, actorUserId, true, $"Role set to {targetRole}"),
+                cancellationToken);
+
+            _logger.LogInformation("User {UserId} role updated to {Role} by {Actor}.", user.Id, targetRole, normalizedActor);
             return new AdminUserActionResult(true, $"Role changed to {targetRole}.");
         }
 

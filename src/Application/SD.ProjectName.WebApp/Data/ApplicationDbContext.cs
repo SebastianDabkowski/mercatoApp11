@@ -10,6 +10,7 @@ namespace SD.ProjectName.WebApp.Data
     {
         public DbSet<LoginAudit> LoginAudits => Set<LoginAudit>();
         public DbSet<UserAdminAudit> UserAdminAudits => Set<UserAdminAudit>();
+        public DbSet<CriticalActionAudit> CriticalActionAudits => Set<CriticalActionAudit>();
         public DbSet<SellerTeamMember> SellerTeamMembers => Set<SellerTeamMember>();
         public DbSet<OrderRecord> Orders => Set<OrderRecord>();
         public DbSet<SellerShippingMethod> SellerShippingMethods => Set<SellerShippingMethod>();
@@ -563,6 +564,36 @@ namespace SD.ProjectName.WebApp.Data
 
                 entity.HasIndex(a => a.UserId);
                 entity.HasIndex(a => new { a.UserId, a.CreatedOn });
+            });
+
+            builder.Entity<CriticalActionAudit>(entity =>
+            {
+                entity.Property(a => a.ActionType)
+                    .HasMaxLength(64)
+                    .IsRequired();
+
+                entity.Property(a => a.ResourceType)
+                    .HasMaxLength(64);
+
+                entity.Property(a => a.ResourceId)
+                    .HasMaxLength(128);
+
+                entity.Property(a => a.ActorName)
+                    .HasMaxLength(256)
+                    .IsRequired();
+
+                entity.Property(a => a.ActorUserId)
+                    .HasMaxLength(450);
+
+                entity.Property(a => a.Details)
+                    .HasMaxLength(512);
+
+                entity.Property(a => a.OccurredOn)
+                    .IsRequired();
+
+                entity.HasIndex(a => a.OccurredOn);
+                entity.HasIndex(a => new { a.ActionType, a.OccurredOn });
+                entity.HasIndex(a => new { a.ResourceType, a.ResourceId, a.OccurredOn });
             });
 
             builder.Entity<AnalyticsEvent>(entity =>

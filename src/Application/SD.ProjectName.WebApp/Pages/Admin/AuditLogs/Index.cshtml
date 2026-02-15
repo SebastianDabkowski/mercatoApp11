@@ -40,6 +40,14 @@
             <label class="form-label fw-semibold" for="resource">Resource ID</label>
             <input id="resource" class="form-control" type="search" name="resource" value="@Model.ResourceId" placeholder="User, product, rule..." />
         </div>
+        <div class="col-md-2">
+            <label class="form-label fw-semibold" for="result">Outcome</label>
+            <select id="result" class="form-select" name="result">
+                <option value="">All outcomes</option>
+                <option value="success" selected='@(string.Equals(Model.Result, "success", StringComparison.OrdinalIgnoreCase) ? "selected" : null)'>Success</option>
+                <option value="failure" selected='@(string.Equals(Model.Result, "failure", StringComparison.OrdinalIgnoreCase) || string.Equals(Model.Result, "fail", StringComparison.OrdinalIgnoreCase) ? "selected" : null)'>Failure</option>
+            </select>
+        </div>
         <div class="col-md-12 d-flex justify-content-end gap-2">
             <button class="btn btn-primary" type="submit">Apply</button>
             <a class="btn btn-link text-decoration-none" asp-page="Index">Reset</a>
@@ -63,6 +71,7 @@ else
                     <th scope="col">Admin</th>
                     <th scope="col">Action</th>
                     <th scope="col">Target</th>
+                    <th scope="col">Outcome</th>
                     <th scope="col">Details</th>
                 </tr>
             </thead>
@@ -84,6 +93,16 @@ else
                         </td>
                         <td>
                             <div>@(entry.ResourceId ?? "N/A")</div>
+                        </td>
+                        <td>
+                            @if (entry.IsSuccess)
+                            {
+                                <span class="badge text-bg-success">Success</span>
+                            }
+                            else
+                            {
+                                <span class="badge text-bg-danger">Failure</span>
+                            }
                         </td>
                         <td>
                             @if (!string.IsNullOrWhiteSpace(entry.Details))
@@ -112,7 +131,8 @@ else
                    asp-route-actor="@Model.Actor"
                    asp-route-entity="@Model.EntityType"
                    asp-route-action="@Model.ActionType"
-                   asp-route-resource="@Model.ResourceId">Previous</a>
+                   asp-route-resource="@Model.ResourceId"
+                   asp-route-result="@Model.Result">Previous</a>
             </li>
             <li class="page-item active">
                 <span class="page-link">Page @Model.Logs.PageNumber of @Model.Logs.TotalPages</span>
@@ -126,7 +146,8 @@ else
                    asp-route-actor="@Model.Actor"
                    asp-route-entity="@Model.EntityType"
                    asp-route-action="@Model.ActionType"
-                   asp-route-resource="@Model.ResourceId">Next</a>
+                   asp-route-resource="@Model.ResourceId"
+                   asp-route-result="@Model.Result">Next</a>
             </li>
         </ul>
     </nav>

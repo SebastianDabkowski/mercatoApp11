@@ -12,11 +12,13 @@ public class PayoutSettingsModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IPayoutEncryptionService _payoutEncryption;
+    private readonly CriticalActionAuditService _criticalAudit;
 
-    public PayoutSettingsModel(UserManager<ApplicationUser> userManager, IPayoutEncryptionService payoutEncryption)
+    public PayoutSettingsModel(UserManager<ApplicationUser> userManager, IPayoutEncryptionService payoutEncryption, CriticalActionAuditService criticalAudit)
     {
         _userManager = userManager;
         _payoutEncryption = payoutEncryption;
+        _criticalAudit = criticalAudit;
     }
 
     [BindProperty]
@@ -70,7 +72,37 @@ public class PayoutSettingsModel : PageModel
         user.PayoutBankRouting = _payoutEncryption.Protect(Input.BankRoutingNumber);
         user.PayoutUpdatedOn = DateTimeOffset.UtcNow;
 
-        await _userManager.UpdateAsync(user);
+        var updateResult = await _userManager.UpdateAsync(user);
+        var actorName = string.IsNullOrWhiteSpace(user.FullName)
+            ? user.Email ?? user.UserName ?? "Seller"
+            : user.FullName;
+
+        if (!updateResult.Succeeded)
+        {
+            StatusMessage = "Unable to save payout preferences right now.";
+            await _criticalAudit.RecordAsync(
+                new CriticalActionAuditEntry(
+                    "PayoutChange",
+                    "User",
+                    user.Id,
+                    actorName,
+                    user.Id,
+                    false,
+                    "Identity update failed."),
+                HttpContext.RequestAborted);
+            return Page();
+        }
+
+        await _criticalAudit.RecordAsync(
+            new CriticalActionAuditEntry(
+                "PayoutChange",
+                "User",
+                user.Id,
+                actorName,
+                user.Id,
+                true,
+                $"Method {user.PayoutMethod}, schedule {user.PayoutSchedule}"),
+            HttpContext.RequestAborted);
         StatusMessage = "Payout preferences updated.";
         return RedirectToPage();
     }

@@ -194,6 +194,7 @@ builder.Services.AddScoped<OrderService>();
 builder.Services.AddScoped<AdminReportingService>();
 builder.Services.AddScoped<AdminUserService>();
 builder.Services.AddScoped<AdminUserActionService>();
+builder.Services.AddScoped<CriticalActionAuditService>();
 builder.Services.AddScoped<AdminAuditLogService>();
 builder.Services.AddScoped<ProcessingActivityRegistryService>();
 builder.Services.AddScoped<SellerReportingService>();

@@ -5,8 +5,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
+using SD.ProjectName.WebApp.Data;
 using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Pages.Seller;
 using SD.ProjectName.WebApp.Services;
@@ -89,7 +91,12 @@ public class PayoutSettingsTests
             ViewData = new ViewDataDictionary(new EmptyModelMetadataProvider(), modelState)
         };
 
-        var model = new PayoutSettingsModel(userManager, encryptionService)
+        var auditContext = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"payout-audit-{Guid.NewGuid()}")
+            .Options);
+        var auditService = new CriticalActionAuditService(auditContext, TimeProvider.System);
+
+        var model = new PayoutSettingsModel(userManager, encryptionService, auditService)
         {
             PageContext = pageContext,
             TempData = new TempDataDictionary(httpContext, Mock.Of<ITempDataProvider>())
