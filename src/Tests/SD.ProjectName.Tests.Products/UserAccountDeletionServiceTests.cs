@@ -20,7 +20,8 @@ public class UserAccountDeletionServiceTests
             .Options;
 
         await using var context = new ApplicationDbContext(options);
-        var service = new UserAccountDeletionService(context, TimeProvider.System, NullLogger<UserAccountDeletionService>.Instance);
+        var critical = new CriticalActionAuditService(context, TimeProvider.System);
+        var service = new UserAccountDeletionService(context, TimeProvider.System, critical, NullLogger<UserAccountDeletionService>.Instance);
 
         var user = new ApplicationUser
         {
@@ -109,7 +110,8 @@ public class UserAccountDeletionServiceTests
             .Options;
 
         await using var context = new ApplicationDbContext(options);
-        var service = new UserAccountDeletionService(context, TimeProvider.System, NullLogger<UserAccountDeletionService>.Instance);
+        var critical = new CriticalActionAuditService(context, TimeProvider.System);
+        var service = new UserAccountDeletionService(context, TimeProvider.System, critical, NullLogger<UserAccountDeletionService>.Instance);
 
         var user = new ApplicationUser
         {

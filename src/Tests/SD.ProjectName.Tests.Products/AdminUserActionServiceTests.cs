@@ -22,7 +22,8 @@ namespace SD.ProjectName.Tests.Products
             await using var productContext = CreateProductContext();
             var userManager = new Mock<UserManager<ApplicationUser>>(Mock.Of<IUserStore<ApplicationUser>>(), null!, null!, null!, null!, null!, null!, null!, null!).Object;
             var timestamp = new DateTimeOffset(2026, 2, 15, 12, 0, 0, TimeSpan.Zero);
-            var service = new AdminUserActionService(appContext, productContext, userManager, new FixedTimeProvider(timestamp), NullLogger<AdminUserActionService>.Instance);
+            var critical = new CriticalActionAuditService(appContext, new FixedTimeProvider(timestamp));
+            var service = new AdminUserActionService(appContext, productContext, userManager, new FixedTimeProvider(timestamp), critical, NullLogger<AdminUserActionService>.Instance);
 
             await service.RecordUserAccessAsync("user-123", "admin-1", "Admin Tester", "Viewed profile", "Inspected account", CancellationToken.None);
 

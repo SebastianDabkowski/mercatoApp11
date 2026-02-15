@@ -41,6 +41,9 @@ namespace SD.ProjectName.WebApp.Pages.Admin.AuditLogs
         [BindProperty(SupportsGet = true, Name = "resource")]
         public string? ResourceId { get; set; }
 
+        [BindProperty(SupportsGet = true, Name = "result")]
+        public string? Result { get; set; }
+
         [BindProperty(SupportsGet = true, Name = "page")]
         public int PageNumber { get; set; } = 1;
 
@@ -62,7 +65,8 @@ namespace SD.ProjectName.WebApp.Pages.Admin.AuditLogs
             !string.IsNullOrWhiteSpace(Actor) ||
             !string.IsNullOrWhiteSpace(EntityType) ||
             !string.IsNullOrWhiteSpace(ActionType) ||
-            !string.IsNullOrWhiteSpace(ResourceId);
+            !string.IsNullOrWhiteSpace(ResourceId) ||
+            !string.IsNullOrWhiteSpace(Result);
 
         public async Task OnGetAsync()
         {
@@ -73,7 +77,8 @@ namespace SD.ProjectName.WebApp.Pages.Admin.AuditLogs
                 Actor = string.IsNullOrWhiteSpace(Actor) ? null : Actor.Trim(),
                 EntityType = string.IsNullOrWhiteSpace(EntityType) ? null : EntityType.Trim(),
                 ActionType = string.IsNullOrWhiteSpace(ActionType) ? null : ActionType.Trim(),
-                ResourceId = string.IsNullOrWhiteSpace(ResourceId) ? null : ResourceId.Trim()
+                ResourceId = string.IsNullOrWhiteSpace(ResourceId) ? null : ResourceId.Trim(),
+                IsSuccess = NormalizeResult(Result)
             };
 
             PageNumber = Math.Max(1, PageNumber);
@@ -104,5 +109,14 @@ namespace SD.ProjectName.WebApp.Pages.Admin.AuditLogs
                 .AddTicks(-1);
             return new DateTimeOffset(unspecified, TimeSpan.Zero);
         }
+
+        private static bool? NormalizeResult(string? result) =>
+            result?.Trim().ToLowerInvariant() switch
+            {
+                "success" => true,
+                "failure" => false,
+                "fail" => false,
+                _ => null
+            };
     }
 }

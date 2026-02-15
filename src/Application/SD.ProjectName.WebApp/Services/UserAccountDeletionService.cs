@@ -25,6 +25,7 @@ public class UserAccountDeletionService
 
     private readonly ApplicationDbContext _dbContext;
     private readonly TimeProvider _timeProvider;
+    private readonly CriticalActionAuditService _criticalAudit;
     private readonly ILogger<UserAccountDeletionService> _logger;
     private readonly JsonSerializerOptions _serializerOptions = new()
     {
@@ -34,29 +35,42 @@ public class UserAccountDeletionService
     public UserAccountDeletionService(
         ApplicationDbContext dbContext,
         TimeProvider timeProvider,
+        CriticalActionAuditService criticalAudit,
         ILogger<UserAccountDeletionService> logger)
     {
         _dbContext = dbContext;
         _timeProvider = timeProvider;
+        _criticalAudit = criticalAudit;
         _logger = logger;
     }
 
     public async Task<UserDeletionResult> DeleteAsync(string userId, string? actorUserId, string? actorName, CancellationToken cancellationToken = default)
     {
+        var normalizedActor = string.IsNullOrWhiteSpace(actorName) ? "User request" : actorName.Trim();
+
         if (string.IsNullOrWhiteSpace(userId))
         {
+            await _criticalAudit.RecordAsync(
+                new CriticalActionAuditEntry("AccountDeletion", "User", null, normalizedActor, actorUserId, false, "User id is required."),
+                cancellationToken);
             return new UserDeletionResult(false, "User id is required.");
         }
 
         var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
         if (user == null)
         {
+            await _criticalAudit.RecordAsync(
+                new CriticalActionAuditEntry("AccountDeletion", "User", userId, normalizedActor, actorUserId, false, "User not found."),
+                cancellationToken);
             return new UserDeletionResult(false, "User not found.");
         }
 
         var blocking = await FindBlockingReasonsAsync(userId, cancellationToken);
         if (blocking.Count > 0)
         {
+            await _criticalAudit.RecordAsync(
+                new CriticalActionAuditEntry("AccountDeletion", "User", userId, normalizedActor, actorUserId, false, "Blocked by active items."),
+                cancellationToken);
             return new UserDeletionResult(false, "Account deletion is blocked by active items.", blocking);
         }
 
@@ -82,7 +96,7 @@ public class UserAccountDeletionService
         {
             UserId = user.Id,
             ActorUserId = actorUserId,
-            ActorName = string.IsNullOrWhiteSpace(actorName) ? "User request" : actorName.Trim(),
+            ActorName = normalizedActor,
             Action = "Deleted",
             Reason = "Account deletion with anonymization",
             CreatedOn = _timeProvider.GetUtcNow()
@@ -94,6 +108,10 @@ public class UserAccountDeletionService
             await transaction.CommitAsync(cancellationToken);
             await transaction.DisposeAsync();
         }
+
+        await _criticalAudit.RecordAsync(
+            new CriticalActionAuditEntry("AccountDeletion", "User", user.Id, normalizedActor, actorUserId, true, "Account anonymized and disabled."),
+            cancellationToken);
 
         _logger.LogInformation("Account {UserId} anonymized and disabled by {Actor}.", user.Id, actorName ?? "User");
         return new UserDeletionResult(true);

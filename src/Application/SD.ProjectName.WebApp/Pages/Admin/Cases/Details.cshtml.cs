@@ -1,4 +1,6 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using SD.ProjectName.WebApp.Identity;
@@ -10,6 +12,8 @@ namespace SD.ProjectName.WebApp.Pages.Admin.Cases
     public class DetailsModel : PageModel
     {
         private readonly OrderService _orderService;
+        private readonly CriticalActionAuditService _criticalAudit;
+        private readonly UserManager<ApplicationUser> _userManager;
 
         [BindProperty(SupportsGet = true)]
         public string? CaseId { get; set; }
@@ -38,9 +42,11 @@ namespace SD.ProjectName.WebApp.Pages.Admin.Cases
             Case != null
             && !string.Equals(ReturnRequestStatuses.Normalize(Case.Summary.Status), ReturnRequestStatuses.UnderAdminReview, StringComparison.OrdinalIgnoreCase);
 
-        public DetailsModel(OrderService orderService)
+        public DetailsModel(OrderService orderService, CriticalActionAuditService criticalAudit, UserManager<ApplicationUser> userManager)
         {
             _orderService = orderService;
+            _criticalAudit = criticalAudit;
+            _userManager = userManager;
         }
 
         public async Task<IActionResult> OnGetAsync(string? caseId, int? orderId)
@@ -79,6 +85,7 @@ namespace SD.ProjectName.WebApp.Pages.Admin.Cases
                 return await LoadAsync(CaseId);
             }
 
+            await LogCriticalAsync("ReturnEscalation", result.Success, $"Escalated: {EscalationReason}");
             return RedirectToPage(new { caseId = CaseId, orderId = OrderId });
         }
 
@@ -117,9 +124,19 @@ namespace SD.ProjectName.WebApp.Pages.Admin.Cases
             if (!result.Success)
             {
                 ModelState.AddModelError(string.Empty, result.Error ?? "Unable to record decision.");
+                await LogCriticalAsync("ReturnDecision", false, $"Decision failed: {Decision}");
                 return await LoadAsync(CaseId);
             }
 
+            var refundDetail = RefundAmount.HasValue
+                ? RefundAmount.Value.ToString("F2", CultureInfo.InvariantCulture)
+                : "n/a";
+            var referenceDetail = string.IsNullOrWhiteSpace(RefundReference) ? "n/a" : RefundReference!.Trim();
+
+            await LogCriticalAsync(
+                "ReturnDecision",
+                true,
+                $"Decision: {Decision}; Refund: {refundDetail}; Reference: {referenceDetail}");
             return RedirectToPage(new { caseId = CaseId, orderId = OrderId });
         }
 
@@ -134,6 +151,30 @@ namespace SD.ProjectName.WebApp.Pages.Admin.Cases
             Case = detail;
             OrderId = detail.Summary.OrderId;
             return Page();
+        }
+
+        private async Task LogCriticalAsync(string action, bool success, string? details)
+        {
+            if (string.IsNullOrWhiteSpace(CaseId))
+            {
+                return;
+            }
+
+            var actor = await _userManager.GetUserAsync(User);
+            var actorName = actor == null
+                ? "Admin"
+                : (!string.IsNullOrWhiteSpace(actor.FullName) ? actor.FullName : actor.Email ?? actor.UserName ?? "Admin");
+
+            await _criticalAudit.RecordAsync(
+                new CriticalActionAuditEntry(
+                    action,
+                    "ReturnCase",
+                    CaseId,
+                    actorName,
+                    actor?.Id,
+                    success,
+                    details),
+                HttpContext.RequestAborted);
         }
     }
 }
