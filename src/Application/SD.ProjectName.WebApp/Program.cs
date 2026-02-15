@@ -158,6 +158,8 @@ builder.Services.AddScoped<RecentlyViewedService>();
 builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<CartTotalsCalculator>();
 builder.Services.AddScoped<CartViewService>();
+builder.Services.AddScoped<FeatureFlagService>();
+builder.Services.AddScoped<IFeatureFlagEvaluator>(sp => sp.GetRequiredService<FeatureFlagService>());
 builder.Services.AddScoped<CommissionRuleService>();
 builder.Services.AddScoped<ICommissionRuleResolver>(sp => sp.GetRequiredService<CommissionRuleService>());
 builder.Services.AddScoped<VatRuleService>();

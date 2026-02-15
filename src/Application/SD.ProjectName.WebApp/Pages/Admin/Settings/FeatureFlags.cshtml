@@ -1,0 +1,187 @@
+@page
+@model SD.ProjectName.WebApp.Pages.Admin.Settings.FeatureFlagsModel
+@{
+    ViewData["Title"] = "Feature flags";
+}
+
+<h1 class="display-6">Feature flags</h1>
+<p class="text-muted">Control rollout per environment, target internal users or specific sellers, and change availability without deployments.</p>
+
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <div class="alert alert-success">@Model.SuccessMessage</div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="fw-semibold">Flags</div>
+                    <div class="text-muted small">Name, key, and environment rollout state.</div>
+                </div>
+                <div class="text-muted small">@Model.Flags.Count flag(s)</div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Key</th>
+                            <th>Default</th>
+                            <th>Environments</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @if (Model.Flags.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-3">No feature flags defined yet.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var flag in Model.Flags)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold">@flag.Name</div>
+                                    <div class="text-muted small">@flag.Description</div>
+                                </td>
+                                <td><code>@flag.Key</code></td>
+                                <td>
+                                    <span class="badge @(flag.DefaultEnabled ? "bg-success" : "bg-secondary")">
+                                        @(flag.DefaultEnabled ? "On" : "Off")
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="d-flex flex-column gap-2">
+                                        @foreach (var env in flag.Environments.OrderBy(e => e.Environment))
+                                        {
+                                            <div class="d-flex align-items-center gap-2">
+                                                <span class="badge @(env.Enabled ? "bg-success" : "bg-secondary")">@env.Environment</span>
+                                                @if (env.Targeting.InternalOnly)
+                                                {
+                                                    <span class="badge bg-info text-dark">Internal only</span>
+                                                }
+                                                @if (env.Targeting.AllowedUsers.Count > 0)
+                                                {
+                                                    <span class="badge bg-light text-dark">Users: @string.Join(", ", env.Targeting.AllowedUsers)</span>
+                                                }
+                                                @if (env.Targeting.AllowedSellers.Count > 0)
+                                                {
+                                                    <span class="badge bg-light text-dark">Sellers: @string.Join(", ", env.Targeting.AllowedSellers)</span>
+                                                }
+                                                @if (env.Targeting.PercentageRollout.HasValue)
+                                                {
+                                                    <span class="badge bg-warning text-dark">@($"{env.Targeting.PercentageRollout.Value}%")</span>
+                                                }
+                                                <form class="ms-auto" method="post" asp-page-handler="Toggle">
+                                                    <input type="hidden" name="flagId" value="@flag.Id" />
+                                                    <input type="hidden" name="environment" value="@env.Environment" />
+                                                    <input type="hidden" name="enabled" value="@(env.Enabled ? "false" : "true")" />
+                                                    <button type="submit" class="btn btn-sm @(env.Enabled ? "btn-outline-danger" : "btn-outline-primary")">
+                                                        @(env.Enabled ? "Disable" : "Enable")
+                                                    </button>
+                                                </form>
+                                            </div>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <div class="fw-semibold">Create flag</div>
+                <div class="text-muted small">Define default behavior and per-environment rollout.</div>
+            </div>
+            <div class="card-body">
+                <form method="post" asp-page-handler="Create">
+                    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Key" class="form-label">Key</label>
+                        <input asp-for="Input.Key" class="form-control" />
+                        <span asp-validation-for="Input.Key" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Name" class="form-label">Name</label>
+                        <input asp-for="Input.Name" class="form-control" />
+                        <span asp-validation-for="Input.Name" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Description" class="form-label">Description</label>
+                        <textarea asp-for="Input.Description" class="form-control" rows="2"></textarea>
+                        <span asp-validation-for="Input.Description" class="text-danger"></span>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input asp-for="Input.DefaultEnabled" class="form-check-input" />
+                        <label asp-for="Input.DefaultEnabled" class="form-check-label">Default enabled</label>
+                    </div>
+
+                    <div class="border rounded p-3 mb-3">
+                        <div class="fw-semibold mb-2">Environments</div>
+                        @for (var i = 0; i < Model.Input.Environments.Count; i++)
+                        {
+                            <div class="border rounded p-2 mb-3">
+                                <input type="hidden" asp-for="Input.Environments[i].Environment" />
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <div class="fw-semibold">@Model.Input.Environments[i].Environment</div>
+                                    <div class="form-check">
+                                        <input asp-for="Input.Environments[i].Enabled" class="form-check-input" />
+                                        <label asp-for="Input.Environments[i].Enabled" class="form-check-label">Enabled</label>
+                                    </div>
+                                </div>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-6">
+                                        <label asp-for="Input.Environments[i].PercentageRollout" class="form-label">Rollout %</label>
+                                        <input asp-for="Input.Environments[i].PercentageRollout" class="form-control" min="0" max="100" />
+                                        <span asp-validation-for="Input.Environments[i].PercentageRollout" class="text-danger"></span>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="form-check mt-4">
+                                            <input asp-for="Input.Environments[i].InternalOnly" class="form-check-input" />
+                                            <label asp-for="Input.Environments[i].InternalOnly" class="form-check-label">Internal users only</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <label asp-for="Input.Environments[i].AllowedUsers" class="form-label">Allow user IDs</label>
+                                    <input asp-for="Input.Environments[i].AllowedUsers" class="form-control" placeholder="user-1, user-2" />
+                                </div>
+                                <div>
+                                    <label asp-for="Input.Environments[i].AllowedSellers" class="form-label">Allow seller IDs</label>
+                                    <input asp-for="Input.Environments[i].AllowedSellers" class="form-control" placeholder="seller-1, seller-2" />
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    @if (Model.Errors.Count > 0)
+                    {
+                        <div class="alert alert-warning">
+                            <ul class="mb-0">
+                                @foreach (var err in Model.Errors)
+                                {
+                                    <li>@err</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    <button type="submit" class="btn btn-primary w-100">Save flag</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
