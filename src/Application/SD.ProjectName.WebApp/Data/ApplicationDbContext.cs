@@ -31,6 +31,8 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<FeatureFlag> FeatureFlags => Set<FeatureFlag>();
         public DbSet<FeatureFlagEnvironment> FeatureFlagEnvironments => Set<FeatureFlagEnvironment>();
         public DbSet<FeatureFlagAudit> FeatureFlagAudits => Set<FeatureFlagAudit>();
+        public DbSet<ProcessingActivity> ProcessingActivities => Set<ProcessingActivity>();
+        public DbSet<ProcessingActivityRevision> ProcessingActivityRevisions => Set<ProcessingActivityRevision>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -728,6 +730,65 @@ namespace SD.ProjectName.WebApp.Data
                 entity.HasOne<FeatureFlag>()
                     .WithMany()
                     .HasForeignKey(a => a.FlagId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            builder.Entity<ProcessingActivity>(entity =>
+            {
+                entity.Property(a => a.Name)
+                    .IsRequired()
+                    .HasMaxLength(256);
+                entity.Property(a => a.Purpose)
+                    .IsRequired()
+                    .HasMaxLength(1024);
+                entity.Property(a => a.LegalBasis)
+                    .IsRequired()
+                    .HasMaxLength(512);
+                entity.Property(a => a.DataCategories)
+                    .IsRequired()
+                    .HasMaxLength(1024);
+                entity.Property(a => a.DataSubjects)
+                    .IsRequired()
+                    .HasMaxLength(512);
+                entity.Property(a => a.Processors)
+                    .IsRequired()
+                    .HasMaxLength(1024);
+                entity.Property(a => a.RetentionPeriod)
+                    .IsRequired()
+                    .HasMaxLength(256);
+                entity.Property(a => a.DataTransfers)
+                    .HasMaxLength(512);
+                entity.Property(a => a.SecurityMeasures)
+                    .HasMaxLength(1024);
+                entity.Property(a => a.CreatedById)
+                    .HasMaxLength(450);
+                entity.Property(a => a.CreatedByName)
+                    .HasMaxLength(256);
+                entity.Property(a => a.UpdatedById)
+                    .HasMaxLength(450);
+                entity.Property(a => a.UpdatedByName)
+                    .HasMaxLength(256);
+                entity.HasIndex(a => a.Name)
+                    .IsUnique();
+            });
+
+            builder.Entity<ProcessingActivityRevision>(entity =>
+            {
+                entity.Property(r => r.ChangeType)
+                    .HasMaxLength(32)
+                    .HasDefaultValue("Updated");
+                entity.Property(r => r.ChangedFields)
+                    .HasMaxLength(512);
+                entity.Property(r => r.ChangedById)
+                    .HasMaxLength(450);
+                entity.Property(r => r.ChangedByName)
+                    .HasMaxLength(256);
+                entity.Property(r => r.SnapshotJson)
+                    .HasColumnType("nvarchar(max)");
+                entity.HasIndex(r => r.ProcessingActivityId);
+                entity.HasOne(r => r.ProcessingActivity)
+                    .WithMany(a => a.Revisions)
+                    .HasForeignKey(r => r.ProcessingActivityId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
