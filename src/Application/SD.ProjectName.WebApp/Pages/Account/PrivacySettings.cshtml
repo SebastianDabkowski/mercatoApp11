@@ -59,3 +59,23 @@
         <button type="submit" class="btn btn-outline-primary">Download my data</button>
     </div>
 </form>
+
+<form method="post" asp-page-handler="Delete" class="card mt-4">
+    <div class="card-header">
+        Delete account
+    </div>
+    <div class="card-body">
+        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+        <p class="mb-3 text-danger">Deleting your account is permanent. Your login will be disabled, personal details will be anonymized, and you will lose access to your data. Order and financial history will be retained in an anonymized form.</p>
+        <p class="mb-3">You cannot delete your account while you have active orders or open disputes.</p>
+        <div class="form-check">
+            <input class="form-check-input" asp-for="ConfirmDeletion" />
+            <label class="form-check-label" asp-for="ConfirmDeletion">
+                I understand the impact and want to permanently delete my account.
+            </label>
+        </div>
+    </div>
+    <div class="card-footer text-end">
+        <button type="submit" class="btn btn-danger">Delete my account</button>
+    </div>
+</form>
