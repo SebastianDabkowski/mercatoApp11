@@ -50,7 +50,16 @@ namespace SD.ProjectName.Tests.Identity
                     EffectiveFrom = DateTimeOffset.UtcNow.AddDays(-1)
                 });
 
-            var model = CreateRegisterModel(userManager, store, signInManager, emailSender, legalDocs);
+            var consentService = new Mock<IConsentService>();
+            consentService.Setup(c => c.GetActiveConsentsAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<ConsentDefinitionView>
+                {
+                    new(1, ConsentTypes.Newsletter, "Newsletter", "News updates", false, false, new ConsentVersionView(10, "v1", DateTimeOffset.UtcNow.AddDays(-2), "content"), null)
+                });
+            consentService.Setup(c => c.RecordUserConsentsAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, bool>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(ConsentOperationResult.Succeeded());
+
+            var model = CreateRegisterModel(userManager, store, signInManager, emailSender, legalDocs, consentService);
             model.Input = new RegisterModel.InputModel
             {
                 Email = "buyer@example.com",
@@ -79,7 +88,8 @@ namespace SD.ProjectName.Tests.Identity
             Mock<IUserEmailStore<ApplicationUser>> store,
             Mock<SignInManager<ApplicationUser>> signInManager,
             Mock<IEmailSender> emailSender,
-            Mock<ILegalDocumentService> legalDocs)
+            Mock<ILegalDocumentService> legalDocs,
+            Mock<IConsentService> consents)
         {
             var httpContext = new DefaultHttpContext();
             httpContext.Request.Scheme = "https";
@@ -98,7 +108,8 @@ namespace SD.ProjectName.Tests.Identity
                 emailSender.Object,
                 Options.Create(new KycOptions()),
                 Options.Create(new EmailOptions()),
-                legalDocs.Object)
+                legalDocs.Object,
+                consents.Object)
             {
                 PageContext = pageContext,
                 Url = new TestUrlHelper(actionContext),

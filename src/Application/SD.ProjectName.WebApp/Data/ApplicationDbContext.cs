@@ -28,6 +28,9 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<AnalyticsEvent> AnalyticsEvents => Set<AnalyticsEvent>();
         public DbSet<IntegrationConfiguration> IntegrationConfigurations => Set<IntegrationConfiguration>();
         public DbSet<LegalDocumentVersion> LegalDocumentVersions => Set<LegalDocumentVersion>();
+        public DbSet<ConsentDefinition> ConsentDefinitions => Set<ConsentDefinition>();
+        public DbSet<ConsentVersion> ConsentVersions => Set<ConsentVersion>();
+        public DbSet<UserConsentDecision> UserConsentDecisions => Set<UserConsentDecision>();
         public DbSet<FeatureFlag> FeatureFlags => Set<FeatureFlag>();
         public DbSet<FeatureFlagEnvironment> FeatureFlagEnvironments => Set<FeatureFlagEnvironment>();
         public DbSet<FeatureFlagAudit> FeatureFlagAudits => Set<FeatureFlagAudit>();
@@ -790,6 +793,51 @@ namespace SD.ProjectName.WebApp.Data
                     .WithMany(a => a.Revisions)
                     .HasForeignKey(r => r.ProcessingActivityId)
                     .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            builder.Entity<ConsentDefinition>(entity =>
+            {
+                entity.Property(d => d.ConsentType)
+                    .IsRequired()
+                    .HasMaxLength(64);
+                entity.Property(d => d.Title)
+                    .IsRequired()
+                    .HasMaxLength(128);
+                entity.Property(d => d.Description)
+                    .HasMaxLength(512);
+                entity.HasIndex(d => d.ConsentType)
+                    .IsUnique();
+            });
+
+            builder.Entity<ConsentVersion>(entity =>
+            {
+                entity.Property(v => v.VersionTag)
+                    .IsRequired()
+                    .HasMaxLength(64);
+                entity.Property(v => v.Content)
+                    .IsRequired()
+                    .HasColumnType("nvarchar(max)");
+                entity.HasIndex(v => new { v.ConsentDefinitionId, v.VersionTag })
+                    .IsUnique();
+                entity.HasOne(v => v.ConsentDefinition)
+                    .WithMany(d => d.Versions)
+                    .HasForeignKey(v => v.ConsentDefinitionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            builder.Entity<UserConsentDecision>(entity =>
+            {
+                entity.Property(c => c.UserId)
+                    .IsRequired()
+                    .HasMaxLength(450);
+                entity.Property(c => c.DecidedOn)
+                    .IsRequired();
+                entity.HasIndex(c => new { c.UserId, c.DecidedOn });
+                entity.HasIndex(c => new { c.UserId, c.ConsentVersionId });
+                entity.HasOne(c => c.ConsentVersion)
+                    .WithMany()
+                    .HasForeignKey(c => c.ConsentVersionId)
+                    .OnDelete(DeleteBehavior.Restrict);
             });
 
             builder.Entity<LegalDocumentVersion>(entity =>
