@@ -243,6 +243,8 @@ Acts as the enforcement gate that regenerates `ARCHITECTURE.md`/`AGENT.md` after
 
 \*\*Primary Responsibilities\*\*
 
+\- Automation guarantee: whenever architecture changes, doc-sync regenerates `ARCHITECTURE.md`; when agent responsibilities shift, it regenerates `AGENT.md`; ADR validation checks all ADRs against the current architecture and backfills any missing records.
+
 \- Watch for architecture or agent-responsibility changes and auto-update `ARCHITECTURE.md` and `AGENT.md` in the same change.
 
 \- Run ADR validation against the current architecture; create or update missing ADRs immediately using the standard template and numbering.

@@ -118,6 +118,7 @@ Keep this list updated whenever ADRs are added or changed so this document mirro
 - Ensure unit tests cover new paths.
 
 ## Documentation Sync Rules
+- Doc-sync automation guarantee: architecture changes auto-regenerate `ARCHITECTURE.md`, agent responsibility changes auto-regenerate `AGENT.md`, and ADR validation backfills any missing ADRs against the current architecture.
 - DocSync acceptance mapping (Given/When/Then):
   - Given a change in system architecture, when the architecture is updated, then `ARCHITECTURE.md` is regenerated to reflect the new structure.
   - Given a new or modified agent, when responsibilities change, then `AGENT.md` is regenerated to match the updated ownership and duties.
