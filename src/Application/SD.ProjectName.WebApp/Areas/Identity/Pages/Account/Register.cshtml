@@ -111,6 +111,39 @@
                 <span asp-validation-for="Input.AcceptTerms" class="text-danger"></span>
             </div>
 
+            @if (Model.Consents.Any())
+            {
+                <div class="card mb-3">
+                    <div class="card-header">
+                        Privacy and communication choices
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-3">Tell us what we can contact you about. Optional items are off by default unless marked otherwise.</p>
+                        @for (var i = 0; i < Model.Consents.Count; i++)
+                        {
+                            var consent = Model.Consents[i];
+                            <div class="form-check mb-3">
+                                <input type="hidden" asp-for="Input.Consents[i].Type" value="@consent.Type" />
+                                <input class="form-check-input" asp-for="Input.Consents[i].Accepted" />
+                                <label class="form-check-label" asp-for="Input.Consents[i].Accepted">
+                                    <strong>@consent.Title</strong><br />
+                                    <span class="text-muted small">@consent.Description</span><br />
+                                    <span class="text-muted small">Version @consent.VersionTag (@consent.VersionEffectiveFrom?.ToString("yyyy-MM-dd") ?? "n/a")</span>
+                                    @if (!string.IsNullOrWhiteSpace(consent.Content))
+                                    {
+                                        <span class="d-block text-muted small">@consent.Content</span>
+                                    }
+                                    @if (consent.AllowPreselect)
+                                    {
+                                        <span class="badge bg-light text-dark border">Pre-selected where allowed</span>
+                                    }
+                                </label>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
             <button id="registerSubmit" type="submit" class="w-100 btn btn-lg btn-primary">Register</button>
         </form>
     </div>

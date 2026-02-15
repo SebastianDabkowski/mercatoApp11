@@ -25,6 +25,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
         private readonly IOptions<KycOptions> _kycOptions;
         private readonly EmailOptions _emailOptions;
         private readonly ILegalDocumentService _legalDocuments;
+        private readonly IConsentService _consents;
 
         public RegisterModel(
             UserManager<ApplicationUser> userManager,
@@ -34,7 +35,8 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             IEmailSender emailSender,
             IOptions<KycOptions> kycOptions,
             IOptions<EmailOptions> emailOptions,
-            ILegalDocumentService legalDocuments)
+            ILegalDocumentService legalDocuments,
+            IConsentService consents)
         {
             _userManager = userManager;
             _userStore = userStore;
@@ -45,6 +47,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             _kycOptions = kycOptions;
             _emailOptions = emailOptions.Value;
             _legalDocuments = legalDocuments;
+            _consents = consents;
         }
 
         [BindProperty]
@@ -55,6 +58,8 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
         public string? ReturnUrl { get; set; }
 
         public LegalDocumentVersion? ActiveTerms { get; private set; }
+
+        public List<ConsentDisplay> Consents { get; private set; } = new();
 
         public class InputModel : IValidatableObject
         {
@@ -104,6 +109,8 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             [Range(typeof(bool), "true", "true", ErrorMessage = "You must accept the terms to create an account.")]
             public bool AcceptTerms { get; set; }
 
+            public List<ConsentInputModel> Consents { get; set; } = new();
+
             public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
             {
                 if (!AccountTypes.IsValid(AccountType))
@@ -126,11 +133,42 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             }
         }
 
+        public class ConsentInputModel
+        {
+            [Required]
+            public string Type { get; set; } = string.Empty;
+
+            [Display(Name = "I agree")]
+            public bool Accepted { get; set; }
+        }
+
+        public class ConsentDisplay
+        {
+            public string Type { get; set; } = string.Empty;
+
+            public string Title { get; set; } = string.Empty;
+
+            public string Description { get; set; } = string.Empty;
+
+            public string VersionTag { get; set; } = string.Empty;
+
+            public DateTimeOffset? VersionEffectiveFrom { get; set; }
+
+            public bool AllowPreselect { get; set; }
+
+            public bool IsRequired { get; set; }
+
+            public string Content { get; set; } = string.Empty;
+
+            public bool Accepted { get; set; }
+        }
+
         public async Task OnGetAsync(string? returnUrl = null)
         {
             ReturnUrl = returnUrl ?? Url.Content("~/");
             ExternalLogins = (await _signInManager.GetExternalAuthenticationSchemesAsync()).ToList();
             await LoadLegalAsync();
+            await LoadConsentsAsync();
         }
 
         public async Task<IActionResult> OnPostAsync(string? returnUrl = null)
@@ -138,6 +176,8 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             returnUrl ??= Url.Content("~/");
             ExternalLogins = (await _signInManager.GetExternalAuthenticationSchemesAsync()).ToList();
             await LoadLegalAsync();
+            await LoadConsentsAsync();
+            ValidateConsentSelections();
 
             if (ModelState.IsValid)
             {
@@ -192,6 +232,19 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                         await _userManager.UpdateAsync(user);
                     }
 
+                    var consentResult = await _consents.RecordUserConsentsAsync(
+                        user.Id,
+                        Input.Consents.ToDictionary(c => c.Type, c => c.Accepted),
+                        HttpContext.RequestAborted);
+                    if (!consentResult.Success)
+                    {
+                        foreach (var error in consentResult.Errors)
+                        {
+                            ModelState.AddModelError(string.Empty, error);
+                        }
+                        return Page();
+                    }
+
                     var userId = await _userManager.GetUserIdAsync(user);
                     var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
                     code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
@@ -219,6 +272,58 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
         private async Task LoadLegalAsync()
         {
             ActiveTerms = await _legalDocuments.GetActiveVersionAsync(LegalDocumentTypes.TermsOfService, DateTimeOffset.UtcNow, HttpContext.RequestAborted);
+        }
+
+        private async Task LoadConsentsAsync()
+        {
+            Input ??= new InputModel();
+            Input.Consents ??= new List<ConsentInputModel>();
+
+            var definitions = await _consents.GetActiveConsentsAsync(HttpContext.RequestAborted);
+            var inputLookup = Input.Consents.ToDictionary(c => ConsentTypes.Normalize(c.Type), c => c, StringComparer.OrdinalIgnoreCase);
+
+            Consents = new List<ConsentDisplay>();
+            foreach (var definition in definitions)
+            {
+                var normalizedType = ConsentTypes.Normalize(definition.ConsentType);
+                var accepted = inputLookup.TryGetValue(normalizedType, out var selection)
+                    ? selection.Accepted
+                    : definition.AllowPreselect;
+
+                if (!inputLookup.ContainsKey(normalizedType))
+                {
+                    Input.Consents.Add(new ConsentInputModel
+                    {
+                        Type = normalizedType,
+                        Accepted = accepted
+                    });
+                }
+
+                Consents.Add(new ConsentDisplay
+                {
+                    Type = normalizedType,
+                    Title = definition.Title,
+                    Description = definition.Description,
+                    VersionTag = definition.ActiveVersion?.VersionTag ?? "n/a",
+                    VersionEffectiveFrom = definition.ActiveVersion?.EffectiveFrom,
+                    AllowPreselect = definition.AllowPreselect,
+                    IsRequired = definition.IsRequired,
+                    Content = definition.ActiveVersion?.Content ?? string.Empty,
+                    Accepted = accepted
+                });
+            }
+        }
+
+        private void ValidateConsentSelections()
+        {
+            foreach (var consent in Consents.Where(c => c.IsRequired))
+            {
+                var selection = Input.Consents.FirstOrDefault(c => ConsentTypes.Normalize(c.Type) == consent.Type);
+                if (selection == null || !selection.Accepted)
+                {
+                    ModelState.AddModelError(string.Empty, $"You must accept {consent.Title} to continue.");
+                }
+            }
         }
 
         private async Task SendRegistrationEmailAsync(string email, string subject, string body)
