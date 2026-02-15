@@ -1,5 +1,7 @@
 ﻿@page "/Seller/Products/Edit/{id:int}"
 @model SD.ProjectName.WebApp.Pages.Seller.Products.EditModel
+@using System.Text.Json
+@using System.Collections.Generic
 @{
     ViewData["Title"] = "Edit product";
 }
@@ -38,6 +40,7 @@
                 </select>
                 <span asp-validation-for="Input.CategoryId" class="text-danger"></span>
             </div>
+            <div id="category-attributes" class="mb-3"></div>
             <div class="form-group">
                 <label asp-for="Input.Description"></label>
                 <textarea asp-for="Input.Description" class="form-control" rows="4"></textarea>
@@ -115,3 +118,97 @@
 </div>
 
 <partial name="_ValidationScriptsPartial" />
+<script>
+    (function () {
+        const templates = @Html.Raw(Model.AttributeTemplatesJson);
+        const selectedValues = @Html.Raw(JsonSerializer.Serialize(Model.Input.AttributeValues ?? new Dictionary<int, string>()));
+        const legacyAttributes = @Html.Raw(JsonSerializer.Serialize(Model.LegacyAttributes ?? new Dictionary<string, string>()));
+        const container = document.getElementById('category-attributes');
+        const categorySelect = document.getElementById('Input_CategoryId');
+
+        function buildInput(attribute) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'form-group';
+
+            const label = document.createElement('label');
+            label.textContent = attribute.name + (attribute.isRequired ? ' *' : '');
+            wrapper.appendChild(label);
+
+            let inputElement;
+            if (attribute.type === 'list') {
+                inputElement = document.createElement('select');
+                inputElement.className = 'form-control';
+                inputElement.name = `Input.AttributeValues[${attribute.id}]`;
+
+                const options = (attribute.options || '').split(',').map(o => o.trim()).filter(o => o);
+                options.forEach(o => {
+                    const opt = document.createElement('option');
+                    opt.value = o;
+                    opt.textContent = o;
+                    inputElement.appendChild(opt);
+                });
+            } else {
+                inputElement = document.createElement('input');
+                inputElement.className = 'form-control';
+                inputElement.type = attribute.type === 'number' ? 'number' : 'text';
+                inputElement.name = `Input.AttributeValues[${attribute.id}]`;
+            }
+
+            if (selectedValues && selectedValues.hasOwnProperty(attribute.id)) {
+                inputElement.value = selectedValues[attribute.id] || '';
+            }
+
+            wrapper.appendChild(inputElement);
+            return wrapper;
+        }
+
+        function renderLegacy(containerEl) {
+            const keys = Object.keys(legacyAttributes || {});
+            if (!keys.length) return;
+
+            const box = document.createElement('div');
+            box.className = 'alert alert-info mt-2';
+            const title = document.createElement('div');
+            title.className = 'fw-semibold mb-1';
+            title.textContent = 'Existing attributes (deprecated)';
+            box.appendChild(title);
+
+            keys.forEach(k => {
+                const row = document.createElement('div');
+                row.textContent = `${k}: ${legacyAttributes[k]}`;
+                box.appendChild(row);
+            });
+
+            containerEl.appendChild(box);
+        }
+
+        function renderAttributes() {
+            if (!container || !categorySelect) return;
+            container.innerHTML = '';
+
+            const selectedCategory = categorySelect.value;
+            if (!selectedCategory || !templates[selectedCategory] || templates[selectedCategory].length === 0) {
+                container.classList.add('d-none');
+                renderLegacy(container);
+                return;
+            }
+
+            container.classList.remove('d-none');
+            const header = document.createElement('h5');
+            header.textContent = 'Category attributes';
+            container.appendChild(header);
+
+            templates[selectedCategory].forEach(attribute => {
+                container.appendChild(buildInput(attribute));
+            });
+
+            renderLegacy(container);
+        }
+
+        if (categorySelect) {
+            categorySelect.addEventListener('change', renderAttributes);
+        }
+
+        renderAttributes();
+    })();
+</script>

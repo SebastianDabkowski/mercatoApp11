@@ -165,6 +165,18 @@ else
                 <div>Dimensions: @(Model.Product.LengthCm?.ToString("0.###") ?? "n/a") x @(Model.Product.WidthCm?.ToString("0.###") ?? "n/a") x @(Model.Product.HeightCm?.ToString("0.###") ?? "n/a") cm</div>
             </dd>
         }
+        @if (Model.Product.Attributes.Any())
+        {
+            <dt class="col-sm-2">Attributes</dt>
+            <dd class="col-sm-10">
+                <ul class="list-unstyled mb-0">
+                    @foreach (var attr in Model.Product.Attributes)
+                    {
+                        <li><strong>@attr.Key:</strong> @attr.Value</li>
+                    }
+                </ul>
+            </dd>
+        }
         @if (!string.IsNullOrWhiteSpace(Model.Product.GalleryImageUrls))
         {
             var galleryImages = Model.Product.GalleryImageUrls

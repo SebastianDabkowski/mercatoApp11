@@ -230,6 +230,7 @@ builder.Services.AddScoped<ChangeProductWorkflowState>();
 builder.Services.AddScoped<ArchiveProduct>();
 builder.Services.AddScoped<BulkUpdateProducts>();
 builder.Services.AddScoped<ManageCategories>();
+builder.Services.AddScoped<ManageCategoryAttributes>();
 builder.Services.AddSingleton<ProductImportQueue>();
 builder.Services.AddScoped<ProductCatalogImportService>();
 builder.Services.AddHostedService<ProductImportBackgroundService>();
