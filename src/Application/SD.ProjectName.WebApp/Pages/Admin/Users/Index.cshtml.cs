@@ -7,7 +7,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Admin.Users
 {
-    [Authorize(Roles = AccountTypes.Admin)]
+    [Authorize(Policy = Permissions.AdminUsers)]
     public class IndexModel : PageModel
     {
         private readonly AdminUserService _userService;

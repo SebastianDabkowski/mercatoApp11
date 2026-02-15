@@ -8,7 +8,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Admin.Settings
 {
-    [Authorize(Roles = AccountTypes.Admin)]
+    [Authorize(Policy = Permissions.AdminSettings)]
     public class CommissionsModel : PageModel
     {
         private readonly CommissionRuleService _commissionRules;

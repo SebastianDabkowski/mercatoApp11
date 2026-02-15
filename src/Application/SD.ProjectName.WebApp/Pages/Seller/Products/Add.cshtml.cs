@@ -15,7 +15,7 @@ using System.Text.Json;
 
 namespace SD.ProjectName.WebApp.Pages.Seller.Products
 {
-    [Authorize(Roles = AccountTypes.Seller)]
+    [Authorize(Policy = Permissions.SellerWorkspace)]
     public class AddModel : PageModel
     {
         private readonly CreateProduct _createProduct;

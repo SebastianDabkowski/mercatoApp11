@@ -13,7 +13,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Admin.Settings
 {
-    [Authorize(Roles = AccountTypes.Admin)]
+    [Authorize(Policy = Permissions.AdminSettings)]
     public class VatModel : PageModel
     {
         private readonly VatRuleService _vatRules;

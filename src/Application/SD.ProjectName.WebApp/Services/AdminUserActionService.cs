@@ -118,6 +118,85 @@ namespace SD.ProjectName.WebApp.Services
             return new AdminUserActionResult(true, "Account reactivated.");
         }
 
+        public async Task<AdminUserActionResult> ChangeRoleAsync(string userId, string targetRole, string? actorUserId, string actorName, CancellationToken cancellationToken = default)
+        {
+            if (!PlatformRoles.IsValid(targetRole))
+            {
+                return new AdminUserActionResult(false, "Choose a valid platform role.");
+            }
+
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
+            {
+                return new AdminUserActionResult(false, "User not found.");
+            }
+
+            var actor = string.IsNullOrWhiteSpace(actorName) ? "Admin" : actorName.Trim();
+            var currentRoles = await _userManager.GetRolesAsync(user);
+            var platformRoles = currentRoles.Where(PlatformRoles.IsValid).ToList();
+
+            if (platformRoles.Count > 0)
+            {
+                var removeResult = await _userManager.RemoveFromRolesAsync(user, platformRoles);
+                if (!removeResult.Succeeded)
+                {
+                    return new AdminUserActionResult(false, "Unable to update roles right now.");
+                }
+            }
+
+            var addResult = await _userManager.AddToRoleAsync(user, targetRole);
+            if (!addResult.Succeeded)
+            {
+                return new AdminUserActionResult(false, "Unable to assign the requested role.");
+            }
+
+            user.AccountType = ResolveAccountType(targetRole);
+            if (!string.Equals(targetRole, PlatformRoles.Seller, StringComparison.OrdinalIgnoreCase))
+            {
+                user.StoreOwnerId = null;
+                var sellerRoles = SellerInternalRoles.Allowed.ToList();
+                if (sellerRoles.Count > 0)
+                {
+                    await _userManager.RemoveFromRolesAsync(user, sellerRoles);
+                }
+            }
+            else
+            {
+                if (user.StoreOwnerId == null)
+                {
+                    user.StoreOwnerId = user.Id;
+                }
+
+                if (!await _userManager.IsInRoleAsync(user, SellerInternalRoles.StoreOwner))
+                {
+                    await _userManager.AddToRoleAsync(user, SellerInternalRoles.StoreOwner);
+                }
+            }
+
+            var updateResult = await _userManager.UpdateAsync(user);
+            if (!updateResult.Succeeded)
+            {
+                return new AdminUserActionResult(false, "Unable to persist the updated role.");
+            }
+
+            await _userManager.UpdateSecurityStampAsync(user);
+
+            _applicationDbContext.UserAdminAudits.Add(new UserAdminAudit
+            {
+                UserId = user.Id,
+                ActorUserId = actorUserId,
+                ActorName = actor,
+                Action = "Role changed",
+                Reason = $"Role set to {targetRole}",
+                CreatedOn = _timeProvider.GetUtcNow()
+            });
+
+            await _applicationDbContext.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation("User {UserId} role updated to {Role} by {Actor}.", user.Id, targetRole, actor);
+            return new AdminUserActionResult(true, $"Role changed to {targetRole}.");
+        }
+
         private static string? NormalizeReason(string? reason)
         {
             if (string.IsNullOrWhiteSpace(reason))
@@ -135,5 +214,13 @@ namespace SD.ProjectName.WebApp.Services
                 .Where(p => p.SellerId == sellerId)
                 .ExecuteUpdateAsync(setters => setters.SetProperty(p => p.IsSellerBlocked, isBlocked), cancellationToken);
         }
+
+        private static string ResolveAccountType(string targetRole) =>
+            targetRole switch
+            {
+                var r when r.Equals(PlatformRoles.Buyer, StringComparison.OrdinalIgnoreCase) => AccountTypes.Buyer,
+                var r when r.Equals(PlatformRoles.Seller, StringComparison.OrdinalIgnoreCase) => AccountTypes.Seller,
+                _ => AccountTypes.Admin
+            };
     }
 }

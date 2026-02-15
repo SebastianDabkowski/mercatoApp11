@@ -8,7 +8,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Admin.Users
 {
-    [Authorize(Roles = AccountTypes.Admin)]
+    [Authorize(Policy = Permissions.AdminUsers)]
     public class DetailsModel : PageModel
     {
         private readonly AdminUserService _userService;
@@ -16,9 +16,13 @@ namespace SD.ProjectName.WebApp.Pages.Admin.Users
         private readonly UserManager<ApplicationUser> _userManager;
 
         public AdminUserDetail? UserDetail { get; private set; }
+        public List<string> AvailableRoles { get; } = PlatformRoles.All.ToList();
 
         [BindProperty]
         public BlockInputModel Block { get; set; } = new();
+
+        [BindProperty]
+        public string? Role { get; set; }
 
         [TempData]
         public string? AlertMessage { get; set; }
@@ -43,6 +47,7 @@ namespace SD.ProjectName.WebApp.Pages.Admin.Users
                 return NotFound();
             }
 
+            Role = UserDetail.Roles.FirstOrDefault();
             return Page();
         }
 
@@ -56,6 +61,7 @@ namespace SD.ProjectName.WebApp.Pages.Admin.Users
             if (!ModelState.IsValid)
             {
                 UserDetail = await _userService.GetUserAsync(id, HttpContext.RequestAborted);
+                Role = UserDetail?.Roles.FirstOrDefault();
                 return Page();
             }
 
@@ -66,6 +72,35 @@ namespace SD.ProjectName.WebApp.Pages.Admin.Users
             {
                 ModelState.AddModelError(string.Empty, result.Message);
                 UserDetail = await _userService.GetUserAsync(id, HttpContext.RequestAborted);
+                return Page();
+            }
+
+            AlertMessage = result.Message;
+            return RedirectToPage(new { id });
+        }
+
+        public async Task<IActionResult> OnPostChangeRoleAsync(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return NotFound();
+            }
+
+            if (string.IsNullOrWhiteSpace(Role))
+            {
+                ModelState.AddModelError(nameof(Role), "Choose a platform role.");
+                UserDetail = await _userService.GetUserAsync(id, HttpContext.RequestAborted);
+                return Page();
+            }
+
+            var actor = await _userManager.GetUserAsync(User);
+            var actorName = ResolveActorName(actor);
+            var result = await _userActionService.ChangeRoleAsync(id, Role, actor?.Id, actorName, HttpContext.RequestAborted);
+            if (!result.Success)
+            {
+                ModelState.AddModelError(nameof(Role), result.Message);
+                UserDetail = await _userService.GetUserAsync(id, HttpContext.RequestAborted);
+                Role = UserDetail?.Roles.FirstOrDefault();
                 return Page();
             }
 
@@ -87,6 +122,7 @@ namespace SD.ProjectName.WebApp.Pages.Admin.Users
             {
                 ModelState.AddModelError(string.Empty, result.Message);
                 UserDetail = await _userService.GetUserAsync(id, HttpContext.RequestAborted);
+                Role = UserDetail?.Roles.FirstOrDefault();
                 return Page();
             }
 

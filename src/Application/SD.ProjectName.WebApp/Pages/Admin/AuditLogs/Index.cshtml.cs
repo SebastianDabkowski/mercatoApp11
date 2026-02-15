@@ -8,7 +8,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Admin.AuditLogs
 {
-    [Authorize(Roles = AccountTypes.Admin)]
+    [Authorize(Policy = Permissions.AdminAudit)]
     public class IndexModel : PageModel
     {
         private const int DefaultPageSize = 25;

@@ -9,7 +9,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Seller
 {
-    [Authorize(Roles = AccountTypes.Seller)]
+    [Authorize(Policy = Permissions.SellerWorkspace)]
     public class ShippingSettingsModel : PageModel
     {
         private readonly SellerShippingMethodService _shippingMethodService;

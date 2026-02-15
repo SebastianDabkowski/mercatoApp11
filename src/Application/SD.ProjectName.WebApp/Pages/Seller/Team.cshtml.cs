@@ -12,7 +12,7 @@ using SD.ProjectName.WebApp.Identity;
 
 namespace SD.ProjectName.WebApp.Pages.Seller
 {
-    [Authorize(Roles = AccountTypes.Seller)]
+    [Authorize(Policy = Permissions.SellerWorkspace)]
     public class TeamModel : PageModel
     {
         private readonly ApplicationDbContext _dbContext;

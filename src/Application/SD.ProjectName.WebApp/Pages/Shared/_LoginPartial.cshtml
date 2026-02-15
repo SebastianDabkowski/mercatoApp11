@@ -1,13 +1,17 @@
 ﻿@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.Authorization
 @using SD.ProjectName.WebApp.Identity
 @inject SignInManager<ApplicationUser> SignInManager
-@inject UserManager<ApplicationUser> UserManager
+@inject IAuthorizationService AuthorizationService
 
 <ul class="navbar-nav">
 @if (SignInManager.IsSignedIn(User))
 {
-    var currentUser = await UserManager.GetUserAsync(User);
-    if (currentUser?.AccountType == AccountTypes.Buyer)
+    var buyerAccess = (await AuthorizationService.AuthorizeAsync(User, null, Permissions.BuyerPortal)).Succeeded;
+    var sellerAccess = (await AuthorizationService.AuthorizeAsync(User, null, Permissions.SellerWorkspace)).Succeeded;
+    var adminAccess = (await AuthorizationService.AuthorizeAsync(User, null, Permissions.AdminDashboard)).Succeeded;
+    var complianceAccess = (await AuthorizationService.AuthorizeAsync(User, null, Permissions.ComplianceRegistry)).Succeeded;
+    if (buyerAccess)
     {
         <li class="nav-item">
             <a class="nav-link text-dark" asp-area="" asp-page="/Buyer/Orders/Index">Orders</a>
@@ -19,7 +23,7 @@
             <a class="nav-link text-dark" asp-area="" asp-page="/Buyer/Addresses/Index">Addresses</a>
         </li>
     }
-    if (currentUser?.AccountType == AccountTypes.Seller)
+    if (sellerAccess)
     {
         <li class="nav-item">
             <a class="nav-link text-dark" asp-area="" asp-page="/Seller/Orders/Index">Orders</a>
@@ -31,7 +35,13 @@
             <a class="nav-link text-dark" asp-area="" asp-page="/Seller/Cases/Index">Returns &amp; complaints</a>
         </li>
     }
-    if (User.IsInRole(AccountTypes.Admin) || User.IsInRole(ComplianceRoles.Compliance))
+    if (adminAccess)
+    {
+        <li class="nav-item">
+            <a class="nav-link text-dark" asp-area="" asp-page="/Admin/Dashboard">Admin</a>
+        </li>
+    }
+    if (complianceAccess)
     {
         <li class="nav-item">
             <a class="nav-link text-dark" asp-area="" asp-page="/Compliance/ProcessingRegistry">Processing registry</a>

@@ -1,7 +1,7 @@
 @page
 @using Microsoft.AspNetCore.Authorization
 @using SD.ProjectName.WebApp.Identity
-@attribute [Authorize(Roles = AccountTypes.Admin)]
+@attribute [Authorize(Policy = Permissions.AdminSettings)]
 @model SD.ProjectName.WebApp.Pages.Admin.Settings.CurrenciesModel
 @{
     ViewData["Title"] = "Currency settings";

@@ -6,7 +6,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Admin.Questions
 {
-    [Authorize(Roles = AccountTypes.Admin)]
+    [Authorize(Policy = Permissions.SupportQuestions)]
     public class IndexModel : PageModel
     {
         private readonly OrderService _orderService;

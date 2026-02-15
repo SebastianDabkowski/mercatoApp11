@@ -17,7 +17,7 @@ using System.Collections.Generic;
 
 namespace SD.ProjectName.WebApp.Pages.Seller.Products
 {
-    [Authorize(Roles = AccountTypes.Seller)]
+    [Authorize(Policy = Permissions.SellerWorkspace)]
     public class EditModel : PageModel
     {
         private readonly GetProducts _getProducts;

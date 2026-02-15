@@ -1,10 +1,13 @@
 ﻿@page "/Products/Details/{id:int}"
+@using Microsoft.AspNetCore.Authorization
 @using System.Text.Json
 @using System.Text.Json.Serialization
 @using SD.ProjectName.WebApp.Identity
+@inject IAuthorizationService AuthorizationService
 @model SD.ProjectName.WebApp.Pages.Products.DetailsModel
 @{
     ViewData["Title"] = Model.Product?.Title ?? "Product unavailable";
+    var buyerAccess = (await AuthorizationService.AuthorizeAsync(User, null, Permissions.BuyerPortal)).Succeeded;
 }
 
 @if (Model.Product == null)
@@ -243,7 +246,7 @@ else
                 <div class="alert alert-light border">No questions yet. Be the first to ask.</div>
             }
 
-            @if (User?.Identity?.IsAuthenticated == true && User.IsInRole(AccountTypes.Buyer))
+            @if (buyerAccess)
             {
                 <form method="post" asp-page-handler="Question" asp-route-id="@Model.Product!.Id" asp-route-returnUrl="@Model.ReturnUrl">
                     <div class="mb-2">

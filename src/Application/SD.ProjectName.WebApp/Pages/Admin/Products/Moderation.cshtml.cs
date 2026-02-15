@@ -10,7 +10,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Admin.Products
 {
-    [Authorize(Roles = AccountTypes.Admin)]
+    [Authorize(Policy = Permissions.AdminModeration)]
     public class ModerationModel : PageModel
     {
         private const int DefaultPageSize = 20;

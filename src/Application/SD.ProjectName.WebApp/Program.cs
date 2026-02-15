@@ -23,6 +23,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddDistributedMemoryCache();
+builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
     {
@@ -42,6 +43,7 @@ builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
     .AddEntityFrameworkStores<ApplicationDbContext>();
 builder.Services.AddSingleton<IEmailSender, ConsoleEmailSender>();
 builder.Services.Configure<DataProtectionTokenProviderOptions>(o => o.TokenLifespan = TimeSpan.FromHours(24));
+builder.Services.Configure<SecurityStampValidatorOptions>(options => options.ValidationInterval = TimeSpan.Zero);
 builder.Services.Configure<KycOptions>(builder.Configuration.GetSection("Kyc"));
 builder.Services.Configure<SecurityOptions>(builder.Configuration.GetSection("Security"));
 builder.Services.Configure<SellerInternalUserOptions>(builder.Configuration.GetSection("SellerInternalUsers"));
@@ -146,6 +148,7 @@ builder.Services.AddSingleton<PushSubscriptionStore>();
 builder.Services.AddSingleton<WebPushClient>();
 builder.Services.AddSingleton<IPushNotificationDispatcher, PushNotificationDispatcher>();
 builder.Services.AddScoped<ISessionTokenService, DistributedSessionTokenService>();
+builder.Services.AddScoped<RolePermissionService>();
 builder.Services.AddScoped<CurrencyConfigurationService>();
 builder.Services.AddScoped<IntegrationManagementService>();
 builder.Services.AddScoped<LegalDocumentService>();
@@ -182,6 +185,8 @@ builder.Services.AddSingleton<PaymentProviderService>();
 builder.Services.AddSingleton<ShippingProviderService>();
 builder.Services.AddScoped<ProductModerationService>();
 builder.Services.AddScoped<ProductPhotoModerationService>();
+builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+builder.Services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {
@@ -225,9 +230,7 @@ if (!string.IsNullOrWhiteSpace(facebookAppId) && !string.IsNullOrWhiteSpace(face
 
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy(AccountTypes.Buyer, policy => policy.RequireRole(AccountTypes.Buyer));
-    options.AddPolicy(AccountTypes.Seller, policy => policy.RequireRole(AccountTypes.Seller));
-    options.AddPolicy(AccountTypes.Admin, policy => policy.RequireRole(AccountTypes.Admin));
+    options.InvokeHandlersAfterFailure = false;
 });
 
 // init module Products
@@ -253,9 +256,10 @@ builder.Services.AddHostedService<ProductExportBackgroundService>();
 
 builder.Services.AddRazorPages(options =>
 {
-    options.Conventions.AuthorizeFolder("/Buyer", AccountTypes.Buyer);
-    options.Conventions.AuthorizeFolder("/Seller", AccountTypes.Seller);
-    options.Conventions.AuthorizeFolder("/Admin", AccountTypes.Admin);
+    options.Conventions.AuthorizeFolder("/Buyer", Permissions.BuyerPortal);
+    options.Conventions.AuthorizeFolder("/Seller", Permissions.SellerWorkspace);
+    options.Conventions.AuthorizeFolder("/Admin", Permissions.AdminDashboard);
+    options.Conventions.AuthorizeFolder("/Compliance", Permissions.ComplianceRegistry);
 });
 
 var app = builder.Build();

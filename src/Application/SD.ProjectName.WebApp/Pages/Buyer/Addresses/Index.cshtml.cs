@@ -7,7 +7,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Buyer.Addresses
 {
-    [Authorize(Roles = AccountTypes.Buyer)]
+    [Authorize(Policy = Permissions.BuyerPortal)]
     public class IndexModel : PageModel
     {
         private readonly UserManager<ApplicationUser> _userManager;

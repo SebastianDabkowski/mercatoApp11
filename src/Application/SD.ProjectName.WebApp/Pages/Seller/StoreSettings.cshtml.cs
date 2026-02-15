@@ -11,7 +11,7 @@ using SD.ProjectName.WebApp.Identity;
 
 namespace SD.ProjectName.WebApp.Pages.Seller
 {
-    [Authorize(Roles = AccountTypes.Seller)]
+    [Authorize(Policy = Permissions.SellerWorkspace)]
     public class StoreSettingsModel : PageModel
     {
         private readonly UserManager<ApplicationUser> _userManager;

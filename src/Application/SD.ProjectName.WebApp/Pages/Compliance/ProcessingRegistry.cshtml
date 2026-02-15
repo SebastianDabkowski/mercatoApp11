@@ -1,14 +1,17 @@
 @page "/Compliance/ProcessingRegistry/{id?}"
+@using Microsoft.AspNetCore.Authorization
 @using SD.ProjectName.WebApp.Identity
+@inject IAuthorizationService AuthorizationService
 @model SD.ProjectName.WebApp.Pages.Compliance.ProcessingRegistryModel
 @{
     ViewData["Title"] = "Data processing registry";
+    var canAccessAdmin = (await AuthorizationService.AuthorizeAsync(User, null, Permissions.AdminDashboard)).Succeeded;
 }
 
 <h1 class="display-6">Data processing registry</h1>
 <p class="text-muted">
     Maintain the GDPR Art. 30 record of processing activities with purposes, legal bases, data categories, processors, and retention.
-    Access is limited to @AccountTypes.Admin and @ComplianceRoles.Compliance users.
+    Access is limited to roles granted the processing registry permission.
     </p>
 
 @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
@@ -30,7 +33,7 @@
 }
 
 <div class="d-flex gap-2 mb-3">
-    @if (User.IsInRole(AccountTypes.Admin))
+    @if (canAccessAdmin)
     {
         <a class="btn btn-outline-secondary" asp-page="/Admin/Dashboard">Back to admin</a>
     }

@@ -2,7 +2,7 @@ namespace SD.ProjectName.WebApp.Identity;
 
 public static class ComplianceRoles
 {
-    public const string Compliance = "Compliance";
+    public const string Compliance = PlatformRoles.Compliance;
 
     public static readonly string[] Allowed = [Compliance];
 

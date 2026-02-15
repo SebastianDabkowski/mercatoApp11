@@ -8,7 +8,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Compliance;
 
-[Authorize(Roles = $"{AccountTypes.Admin},{ComplianceRoles.Compliance}")]
+[Authorize(Policy = Permissions.ComplianceRegistry)]
 public class ProcessingRegistryModel : PageModel
 {
     private readonly ProcessingActivityRegistryService _registryService;

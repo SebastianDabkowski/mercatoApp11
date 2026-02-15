@@ -7,7 +7,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Seller;
 
-[Authorize(Roles = AccountTypes.Seller)]
+[Authorize(Policy = Permissions.SellerWorkspace)]
 public class PayoutSettingsModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;
