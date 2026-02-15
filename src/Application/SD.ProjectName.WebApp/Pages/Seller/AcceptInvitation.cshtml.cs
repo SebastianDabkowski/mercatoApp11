@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SD.ProjectName.WebApp.Data;
 using SD.ProjectName.WebApp.Identity;
+using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Seller
 {
@@ -16,23 +17,28 @@ namespace SD.ProjectName.WebApp.Pages.Seller
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly IOptions<SellerInternalUserOptions> _featureOptions;
         private readonly ILogger<AcceptInvitationModel> _logger;
+        private readonly ILegalDocumentService _legalDocuments;
 
         public AcceptInvitationModel(
             ApplicationDbContext dbContext,
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             IOptions<SellerInternalUserOptions> featureOptions,
-            ILogger<AcceptInvitationModel> logger)
+            ILogger<AcceptInvitationModel> logger,
+            ILegalDocumentService legalDocuments)
         {
             _dbContext = dbContext;
             _userManager = userManager;
             _signInManager = signInManager;
             _featureOptions = featureOptions;
             _logger = logger;
+            _legalDocuments = legalDocuments;
         }
 
         public string InvitationEmail { get; private set; } = string.Empty;
         public string InvitationRole { get; private set; } = string.Empty;
+
+        public LegalDocumentVersion? ActiveTerms { get; private set; }
 
         [BindProperty(SupportsGet = true)]
         public string? Code { get; set; }
@@ -85,6 +91,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller
 
             InvitationEmail = invite.Email;
             InvitationRole = invite.Role;
+            ActiveTerms = await _legalDocuments.GetActiveVersionAsync(LegalDocumentTypes.TermsOfService, DateTimeOffset.UtcNow, HttpContext.RequestAborted);
             return Page();
         }
 
@@ -110,6 +117,15 @@ namespace SD.ProjectName.WebApp.Pages.Seller
                 return Page();
             }
 
+            var activeTerms = await _legalDocuments.GetActiveVersionAsync(LegalDocumentTypes.TermsOfService, DateTimeOffset.UtcNow, HttpContext.RequestAborted);
+            if (activeTerms == null)
+            {
+                ActiveTerms = activeTerms;
+                ModelState.AddModelError(string.Empty, "Terms of Service are not configured. Contact support.");
+                return Page();
+            }
+            ActiveTerms = activeTerms;
+
             var existing = await _userManager.FindByEmailAsync(invite.Email);
             if (existing != null)
             {
@@ -133,7 +149,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller
                 OnboardingStatus = OnboardingStatuses.Completed,
                 OnboardingStep = 3,
                 TermsAccepted = Input.AcceptTerms,
-                TermsAcceptedOn = DateTimeOffset.UtcNow
+                TermsAcceptedOn = DateTimeOffset.UtcNow,
+                TermsVersionId = activeTerms.Id
             };
 
             var result = await _userManager.CreateAsync(user, Input.Password);

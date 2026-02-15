@@ -27,6 +27,7 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<CurrencySetting> CurrencySettings => Set<CurrencySetting>();
         public DbSet<AnalyticsEvent> AnalyticsEvents => Set<AnalyticsEvent>();
         public DbSet<IntegrationConfiguration> IntegrationConfigurations => Set<IntegrationConfiguration>();
+        public DbSet<LegalDocumentVersion> LegalDocumentVersions => Set<LegalDocumentVersion>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -671,6 +672,29 @@ namespace SD.ProjectName.WebApp.Data
                 entity.Property(i => i.Enabled)
                     .HasDefaultValue(true);
                 entity.HasIndex(i => new { i.Key, i.Environment })
+                    .IsUnique();
+            });
+
+            builder.Entity<LegalDocumentVersion>(entity =>
+            {
+                entity.Property(d => d.DocumentType)
+                    .IsRequired()
+                    .HasMaxLength(64);
+                entity.Property(d => d.VersionTag)
+                    .IsRequired()
+                    .HasMaxLength(64);
+                entity.Property(d => d.Title)
+                    .HasMaxLength(256);
+                entity.Property(d => d.CreatedBy)
+                    .HasMaxLength(450);
+                entity.Property(d => d.CreatedByName)
+                    .HasMaxLength(256);
+                entity.Property(d => d.UpdatedBy)
+                    .HasMaxLength(450);
+                entity.Property(d => d.UpdatedByName)
+                    .HasMaxLength(256);
+                entity.HasIndex(d => new { d.DocumentType, d.EffectiveFrom });
+                entity.HasIndex(d => new { d.DocumentType, d.VersionTag })
                     .IsUnique();
             });
         }

@@ -143,6 +143,8 @@ builder.Services.AddSingleton<IPushNotificationDispatcher, PushNotificationDispa
 builder.Services.AddScoped<ISessionTokenService, DistributedSessionTokenService>();
 builder.Services.AddScoped<CurrencyConfigurationService>();
 builder.Services.AddScoped<IntegrationManagementService>();
+builder.Services.AddScoped<LegalDocumentService>();
+builder.Services.AddScoped<ILegalDocumentService>(sp => sp.GetRequiredService<LegalDocumentService>());
 builder.Services.AddScoped<ILoginAuditService, LoginAuditService>();
 builder.Services.AddScoped<SessionCookieEvents>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, LoggingAuthorizationMiddlewareResultHandler>();

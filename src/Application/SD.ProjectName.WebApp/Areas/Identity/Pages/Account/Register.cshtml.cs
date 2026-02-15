@@ -24,6 +24,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
         private readonly IEmailSender _emailSender;
         private readonly IOptions<KycOptions> _kycOptions;
         private readonly EmailOptions _emailOptions;
+        private readonly ILegalDocumentService _legalDocuments;
 
         public RegisterModel(
             UserManager<ApplicationUser> userManager,
@@ -32,7 +33,8 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             ILogger<RegisterModel> logger,
             IEmailSender emailSender,
             IOptions<KycOptions> kycOptions,
-            IOptions<EmailOptions> emailOptions)
+            IOptions<EmailOptions> emailOptions,
+            ILegalDocumentService legalDocuments)
         {
             _userManager = userManager;
             _userStore = userStore;
@@ -42,6 +44,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             _emailSender = emailSender;
             _kycOptions = kycOptions;
             _emailOptions = emailOptions.Value;
+            _legalDocuments = legalDocuments;
         }
 
         [BindProperty]
@@ -50,6 +53,8 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
         public IList<AuthenticationScheme> ExternalLogins { get; set; } = new List<AuthenticationScheme>();
 
         public string? ReturnUrl { get; set; }
+
+        public LegalDocumentVersion? ActiveTerms { get; private set; }
 
         public class InputModel : IValidatableObject
         {
@@ -125,15 +130,24 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
         {
             ReturnUrl = returnUrl ?? Url.Content("~/");
             ExternalLogins = (await _signInManager.GetExternalAuthenticationSchemesAsync()).ToList();
+            await LoadLegalAsync();
         }
 
         public async Task<IActionResult> OnPostAsync(string? returnUrl = null)
         {
             returnUrl ??= Url.Content("~/");
             ExternalLogins = (await _signInManager.GetExternalAuthenticationSchemesAsync()).ToList();
+            await LoadLegalAsync();
 
             if (ModelState.IsValid)
             {
+                var activeTerms = ActiveTerms ?? await _legalDocuments.GetActiveVersionAsync(LegalDocumentTypes.TermsOfService, DateTimeOffset.UtcNow, HttpContext.RequestAborted);
+                if (activeTerms == null)
+                {
+                    ModelState.AddModelError(string.Empty, "Terms of Service are not configured yet. Please contact support.");
+                    return Page();
+                }
+
                 var user = CreateUser();
                 user.FullName = Input.FullName;
                 user.Address = Input.Address;
@@ -160,6 +174,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 }
                 user.TermsAccepted = Input.AcceptTerms;
                 user.TermsAcceptedOn = DateTimeOffset.UtcNow;
+                user.TermsVersionId = activeTerms.Id;
 
                 await _userStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);
                 await _emailStore.SetEmailAsync(user, Input.Email, CancellationToken.None);
@@ -199,6 +214,11 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             }
 
             return Page();
+        }
+
+        private async Task LoadLegalAsync()
+        {
+            ActiveTerms = await _legalDocuments.GetActiveVersionAsync(LegalDocumentTypes.TermsOfService, DateTimeOffset.UtcNow, HttpContext.RequestAborted);
         }
 
         private async Task SendRegistrationEmailAsync(string email, string subject, string body)

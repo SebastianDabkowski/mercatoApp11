@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages
 {
@@ -12,8 +13,10 @@ namespace SD.ProjectName.WebApp.Pages
             _logger = logger;
         }
 
-        public void OnGet()
+        public IActionResult OnGet()
         {
+            _logger.LogInformation("Redirecting /Privacy to legal content page.");
+            return RedirectToPage("/Legal/Document", new { type = LegalDocumentTypes.PrivacyPolicy });
         }
     }
 

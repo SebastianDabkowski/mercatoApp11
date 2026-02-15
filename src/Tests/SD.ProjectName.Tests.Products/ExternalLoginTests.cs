@@ -97,11 +97,23 @@ namespace SD.ProjectName.Tests.Identity
                 ViewData = new ViewDataDictionary(new EmptyModelMetadataProvider(), modelState)
             };
 
+            var legalDocs = new Mock<ILegalDocumentService>();
+            legalDocs.Setup(l => l.GetActiveVersionAsync(It.IsAny<string>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new LegalDocumentVersion
+                {
+                    Id = 7,
+                    DocumentType = LegalDocumentTypes.TermsOfService,
+                    VersionTag = "v1",
+                    Content = "Terms",
+                    EffectiveFrom = DateTimeOffset.UtcNow.AddDays(-1)
+                });
+
             return new ExternalLoginModel(
                 signInManager.Object,
                 userManager.Object,
                 Mock.Of<ILogger<ExternalLoginModel>>(),
-                userCartService ?? Mock.Of<IUserCartService>())
+                userCartService ?? Mock.Of<IUserCartService>(),
+                legalDocs.Object)
             {
                 PageContext = pageContext,
                 Url = new TestUrlHelper(actionContext),
