@@ -60,8 +60,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Cases
 
         public async Task<IActionResult> OnPostMessageAsync()
         {
-            var sellerId = _userManager.GetUserId(User);
-            if (string.IsNullOrWhiteSpace(sellerId))
+            var seller = await _userManager.GetUserAsync(User);
+            var sellerId = seller?.GetSellerTenantId();
+            if (sellerId == null)
             {
                 return Challenge();
             }
@@ -94,8 +95,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Cases
 
         public async Task<IActionResult> OnPostDecisionAsync()
         {
-            var sellerId = _userManager.GetUserId(User);
-            if (string.IsNullOrWhiteSpace(sellerId))
+            var seller = await _userManager.GetUserAsync(User);
+            var sellerId = seller?.GetSellerTenantId();
+            if (sellerId == null)
             {
                 return Challenge();
             }
@@ -158,8 +160,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Cases
 
         private async Task<IActionResult> LoadAsync(string caseId)
         {
-            var sellerId = _userManager.GetUserId(User);
-            if (string.IsNullOrWhiteSpace(sellerId))
+            var seller = await _userManager.GetUserAsync(User);
+            var sellerId = seller?.GetSellerTenantId();
+            if (sellerId == null)
             {
                 return Challenge();
             }

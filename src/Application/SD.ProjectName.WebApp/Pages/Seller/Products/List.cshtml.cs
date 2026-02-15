@@ -56,7 +56,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
 
             var normalizedState = NormalizeWorkflowState(WorkflowStateFilter);
             WorkflowStateFilter = normalizedState;
-            Products = await _getProducts.GetFilteredList(user.Id, includeDrafts: true, Search, normalizedState);
+            var sellerId = user.GetSellerTenantId();
+            Products = await _getProducts.GetFilteredList(sellerId, includeDrafts: true, Search, normalizedState);
             return Page();
         }
 
@@ -74,7 +75,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return NotFound();
             }
 
-            if (product.SellerId != user.Id)
+            var sellerId = user.GetSellerTenantId();
+            if (product.SellerId != sellerId)
             {
                 return Forbid();
             }
@@ -105,7 +107,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return NotFound();
             }
 
-            if (product.SellerId != user.Id)
+            var sellerId = user.GetSellerTenantId();
+            if (product.SellerId != sellerId)
             {
                 return Forbid();
             }
@@ -135,13 +138,14 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return NotFound();
             }
 
-            if (product.SellerId != user.Id)
+            var sellerId = user.GetSellerTenantId();
+            if (product.SellerId != sellerId)
             {
                 return Forbid();
             }
 
             await _archiveProduct.ArchiveAsync(product);
-            _logger.LogInformation("Product {ProductId} archived by seller {SellerId}", id, user.Id);
+            _logger.LogInformation("Product {ProductId} archived by seller {SellerId}", id, sellerId);
 
             TempData["StatusMessage"] = "Product deleted.";
             return RedirectToPage();
@@ -164,7 +168,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 WorkflowState = ExportFilteredOnly ? normalizedState : null
             };
 
-            await _exportService.QueueAsync(user.Id, options);
+            await _exportService.QueueAsync(user.GetSellerTenantId(), options);
             TempData["StatusMessage"] = "Export requested. Check export history to download once ready.";
             return RedirectToPage(new { search = Search, workflowState = WorkflowStateFilter });
         }

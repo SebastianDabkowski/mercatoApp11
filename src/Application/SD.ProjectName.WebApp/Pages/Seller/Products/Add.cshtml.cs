@@ -76,6 +76,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Challenge();
             }
 
+            var sellerId = user.GetSellerTenantId();
             if (!Input.CategoryId.HasValue)
             {
                 ModelState.AddModelError(nameof(Input.CategoryId), "Select a category.");
@@ -97,7 +98,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Page();
             }
 
-            var existingSku = await _productRepository.GetBySku(user.Id, Input.MerchantSku.Trim(), includeDrafts: true);
+            var existingSku = await _productRepository.GetBySku(sellerId, Input.MerchantSku.Trim(), includeDrafts: true);
             if (existingSku != null)
             {
                 ModelState.AddModelError(nameof(Input.MerchantSku), "This SKU is already used by another product.");
@@ -113,7 +114,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Page();
             }
 
-            var savedImages = await SaveUploadsAsync(user.Id);
+            var savedImages = await SaveUploadsAsync(sellerId);
             var allImages = savedImages.ToList();
             foreach (var existing in BuildImagesFromFields())
             {
@@ -146,7 +147,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 VariantData = ProductVariantSerializer.Serialize(variants),
                 Attributes = attributes,
                 WorkflowState = ProductWorkflowStates.Draft,
-                SellerId = user.Id
+                SellerId = sellerId
             };
 
             Input.MainImageUrl = mainImage;

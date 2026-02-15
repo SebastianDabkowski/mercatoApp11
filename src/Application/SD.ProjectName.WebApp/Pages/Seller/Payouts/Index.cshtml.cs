@@ -46,8 +46,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Payouts
 
         public async Task<IActionResult> OnGetAsync()
         {
-            var sellerId = _userManager.GetUserId(User);
-            if (string.IsNullOrWhiteSpace(sellerId))
+            var seller = await _userManager.GetUserAsync(User);
+            var sellerId = seller?.GetSellerTenantId();
+            if (sellerId == null)
             {
                 return Challenge();
             }

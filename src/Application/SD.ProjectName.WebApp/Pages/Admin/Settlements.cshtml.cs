@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using SD.ProjectName.WebApp.Identity;
@@ -15,12 +16,20 @@ namespace SD.ProjectName.WebApp.Pages.Admin
     {
         private readonly OrderService _orderService;
         private readonly SettlementOptions _settlementOptions;
+        private readonly AdminUserActionService _userActionService;
+        private readonly UserManager<ApplicationUser> _userManager;
         private readonly TimeZoneInfo _timeZone;
 
-        public SettlementsModel(OrderService orderService, SettlementOptions settlementOptions)
+        public SettlementsModel(
+            OrderService orderService,
+            SettlementOptions settlementOptions,
+            AdminUserActionService userActionService,
+            UserManager<ApplicationUser> userManager)
         {
             _orderService = orderService;
             _settlementOptions = settlementOptions;
+            _userActionService = userActionService;
+            _userManager = userManager;
             _timeZone = ResolveTimeZone(settlementOptions.TimeZone);
         }
 
@@ -57,6 +66,11 @@ namespace SD.ProjectName.WebApp.Pages.Admin
                 {
                     PeriodStart = Detail.Summary.PeriodStart;
                     PeriodEnd = Detail.Summary.PeriodEnd;
+                    await LogPayoutAccessAsync(
+                        SellerId,
+                        "Viewed payout detail",
+                        $"Period {Year}-{Month:00}",
+                        cancellationToken);
                 }
             }
         }
@@ -68,6 +82,15 @@ namespace SD.ProjectName.WebApp.Pages.Admin
             var fileName = string.IsNullOrWhiteSpace(SellerId)
                 ? $"settlements-{Year}-{Month:00}.csv"
                 : $"settlement-{SellerId}-{Year}-{Month:00}.csv";
+
+            if (!string.IsNullOrWhiteSpace(SellerId))
+            {
+                await LogPayoutAccessAsync(
+                    SellerId,
+                    "Exported payout detail",
+                    $"Period {Year}-{Month:00}",
+                    cancellationToken);
+            }
 
             return File(csv, "text/csv", fileName);
         }
@@ -91,6 +114,22 @@ namespace SD.ProjectName.WebApp.Pages.Admin
             var anchorLocal = new DateTime(Year, Month, closeDay, 0, 0, 0, DateTimeKind.Unspecified);
             var anchor = new DateTimeOffset(anchorLocal, _timeZone.GetUtcOffset(anchorLocal));
             return (anchor.AddMonths(-1), anchor);
+        }
+
+        private async Task LogPayoutAccessAsync(string sellerId, string action, string? reason, CancellationToken cancellationToken)
+        {
+            var actor = await _userManager.GetUserAsync(User);
+            var actorName = actor == null
+                ? "Admin"
+                : (!string.IsNullOrWhiteSpace(actor.FullName) ? actor.FullName : actor.Email ?? actor.UserName ?? "Admin");
+
+            await _userActionService.RecordUserAccessAsync(
+                sellerId,
+                actor?.Id,
+                actorName,
+                action,
+                reason,
+                cancellationToken);
         }
 
         private static TimeZoneInfo ResolveTimeZone(string? timeZone)

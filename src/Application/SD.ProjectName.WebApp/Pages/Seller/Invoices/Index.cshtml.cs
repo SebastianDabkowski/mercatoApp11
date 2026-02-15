@@ -33,8 +33,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Invoices
 
         public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
         {
-            var sellerId = _userManager.GetUserId(User);
-            if (string.IsNullOrWhiteSpace(sellerId))
+            var seller = await _userManager.GetUserAsync(User);
+            var sellerId = seller?.GetSellerTenantId();
+            if (sellerId == null)
             {
                 return Challenge();
             }
@@ -46,8 +47,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Invoices
 
         public async Task<IActionResult> OnGetDownloadAsync(string invoiceNumber, CancellationToken cancellationToken)
         {
-            var sellerId = _userManager.GetUserId(User);
-            if (string.IsNullOrWhiteSpace(sellerId))
+            var seller = await _userManager.GetUserAsync(User);
+            var sellerId = seller?.GetSellerTenantId();
+            if (sellerId == null)
             {
                 return Challenge();
             }

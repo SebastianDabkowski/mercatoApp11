@@ -46,6 +46,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Challenge();
             }
 
+            var sellerId = user.GetSellerTenantId();
             if (!SelectedIds.Any())
             {
                 TempData["ErrorMessage"] = "Select at least one product to update.";
@@ -53,7 +54,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             }
 
             Input.SelectedIds = SelectedIds;
-            await LoadSelectedProducts(user.Id);
+            await LoadSelectedProducts(sellerId);
             return Page();
         }
 
@@ -65,9 +66,10 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Challenge();
             }
 
+            var sellerId = user.GetSellerTenantId();
             SelectedIds = Input.SelectedIds ?? new List<int>();
             Input.SelectedIds = SelectedIds;
-            await LoadSelectedProducts(user.Id);
+            await LoadSelectedProducts(sellerId);
             if (!SelectedProducts.Any())
             {
                 TempData["ErrorMessage"] = "Select at least one product to update.";
@@ -75,7 +77,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             }
 
             var command = ToCommand(Input);
-            var result = await _bulkUpdater.PreviewAsync(user.Id, SelectedIds, command);
+            var result = await _bulkUpdater.PreviewAsync(sellerId, SelectedIds, command);
 
             PreviewResults = result.Items;
             ValidationMessages = result.ValidationErrors;
@@ -95,9 +97,10 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Challenge();
             }
 
+            var sellerId = user.GetSellerTenantId();
             SelectedIds = Input.SelectedIds ?? new List<int>();
             Input.SelectedIds = SelectedIds;
-            await LoadSelectedProducts(user.Id);
+            await LoadSelectedProducts(sellerId);
             if (!SelectedProducts.Any())
             {
                 TempData["ErrorMessage"] = "Select at least one product to update.";
@@ -105,7 +108,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             }
 
             var command = ToCommand(Input);
-            var result = await _bulkUpdater.ApplyAsync(user.Id, SelectedIds, command);
+            var result = await _bulkUpdater.ApplyAsync(sellerId, SelectedIds, command);
 
             PreviewResults = result.Items;
             ValidationMessages = result.ValidationErrors;
@@ -129,7 +132,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             }
 
             _logger.LogInformation("Bulk update applied by seller {SellerId} to {AppliedCount} products. Price op: {PriceOp} ({PriceValue}), Stock op: {StockOp} ({StockValue})",
-                user.Id,
+                sellerId,
                 applied,
                 command.PriceOperation,
                 command.PriceValue,
