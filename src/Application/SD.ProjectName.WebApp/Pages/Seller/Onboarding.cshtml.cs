@@ -8,7 +8,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace SD.ProjectName.WebApp.Pages.Seller
 {
-    [Authorize(Roles = AccountTypes.Seller)]
+    [Authorize(Policy = Permissions.SellerWorkspace)]
     public class OnboardingModel : PageModel
     {
         private const int TotalSteps = 3;

@@ -7,7 +7,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Admin.Reviews
 {
-    [Authorize(Roles = AccountTypes.Admin)]
+    [Authorize(Policy = Permissions.AdminModeration)]
     public class IndexModel : PageModel
     {
         private readonly OrderService _orderService;

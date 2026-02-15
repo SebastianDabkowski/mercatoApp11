@@ -6,7 +6,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Admin.Reports
 {
-    [Authorize(Roles = AccountTypes.Admin)]
+    [Authorize(Policy = Permissions.AdminReports)]
     public class OrdersModel : PageModel
     {
         private readonly AdminReportingService _reportingService;

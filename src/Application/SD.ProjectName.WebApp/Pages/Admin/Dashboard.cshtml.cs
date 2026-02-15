@@ -20,7 +20,7 @@ namespace SD.ProjectName.WebApp.Pages.Admin
             preset is Today or Last7 or Last30 or Custom;
     }
 
-    [Authorize(Roles = AccountTypes.Admin)]
+    [Authorize(Policy = Permissions.AdminDashboard)]
     public class DashboardModel : PageModel
     {
         private readonly OrderService _orderService;

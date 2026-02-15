@@ -4,7 +4,7 @@ using SD.ProjectName.WebApp.Identity;
 
 namespace SD.ProjectName.WebApp.Pages.Buyer
 {
-    [Authorize(Roles = AccountTypes.Buyer)]
+    [Authorize(Policy = Permissions.BuyerPortal)]
     public class DashboardModel : PageModel
     {
         public void OnGet()

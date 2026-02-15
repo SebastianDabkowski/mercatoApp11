@@ -1,7 +1,7 @@
 @page
 @using Microsoft.AspNetCore.Authorization
 @using SD.ProjectName.WebApp.Identity
-@attribute [Authorize(Roles = AccountTypes.Buyer)]
+@attribute [Authorize(Policy = Permissions.BuyerPortal)]
 @model SD.ProjectName.WebApp.Pages.Buyer.DashboardModel
 @{
     ViewData["Title"] = "Buyer dashboard";

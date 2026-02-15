@@ -2,7 +2,7 @@
 @using Microsoft.AspNetCore.Authorization
 @using SD.ProjectName.WebApp.Identity
 @using SD.ProjectName.WebApp.Services
-@attribute [Authorize(Roles = AccountTypes.Admin)]
+@attribute [Authorize(Policy = Permissions.AdminDashboard)]
 @model SD.ProjectName.WebApp.Pages.Admin.DashboardModel
 @{
     ViewData["Title"] = "Admin dashboard";

@@ -2,7 +2,7 @@
 @using Microsoft.AspNetCore.Authorization
 @using SD.ProjectName.WebApp.Identity
 @using SD.ProjectName.WebApp.Services
-@attribute [Authorize(Roles = AccountTypes.Seller)]
+@attribute [Authorize(Policy = Permissions.SellerWorkspace)]
 @model SD.ProjectName.WebApp.Pages.Seller.DashboardModel
 @{
     ViewData["Title"] = "Seller dashboard";

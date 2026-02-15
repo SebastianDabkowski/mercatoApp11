@@ -10,7 +10,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Admin
 {
-    [Authorize(Roles = AccountTypes.Admin)]
+    [Authorize(Policy = Permissions.AdminSettlements)]
     public class SettlementsModel : PageModel
     {
         private readonly OrderService _orderService;

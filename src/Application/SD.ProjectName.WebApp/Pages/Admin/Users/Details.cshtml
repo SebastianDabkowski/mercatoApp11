@@ -41,6 +41,8 @@
                         @user.AccountStatus
                         <span class="text-muted">· @(user.EmailConfirmed ? "Email confirmed" : "Email pending")</span>
                     </dd>
+                    <dt class="col-sm-5">Platform role</dt>
+                    <dd class="col-sm-7">@((user.Roles.Count == 0 ? "None" : string.Join(", ", user.Roles)))</dd>
                     <dt class="col-sm-5">Onboarding</dt>
                     <dd class="col-sm-7">@user.OnboardingStatus</dd>
                     <dt class="col-sm-5">KYC</dt>
@@ -136,6 +138,24 @@
     <div class="card-header fw-semibold">Account actions</div>
     <div class="card-body">
         <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+        <div class="mb-4">
+            <form method="post" asp-page-handler="ChangeRole" asp-route-id="@user.Id" class="row g-2 align-items-end">
+                <div class="col-sm-6">
+                    <label class="form-label" asp-for="Role">Platform role</label>
+                    <select asp-for="Role" class="form-select">
+                        @foreach (var role in Model.AvailableRoles)
+                        {
+                            <option value="@role" selected="@(string.Equals(Model.Role, role, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@role</option>
+                        }
+                    </select>
+                    <span asp-validation-for="Role" class="text-danger small"></span>
+                </div>
+                <div class="col-sm-6 d-flex gap-2">
+                    <div class="form-text">Role changes refresh permissions on the next request.</div>
+                    <button class="btn btn-outline-primary ms-auto" type="submit">Update role</button>
+                </div>
+            </form>
+        </div>
         @if (user.LockoutEnabled && user.LockoutEnd.HasValue && user.LockoutEnd.Value >= DateTimeOffset.UtcNow)
         {
             <form method="post" asp-page-handler="Unblock" asp-route-id="@user.Id" class="d-flex flex-column gap-2" onsubmit="return confirm('Reactivate this account and restore access?');">

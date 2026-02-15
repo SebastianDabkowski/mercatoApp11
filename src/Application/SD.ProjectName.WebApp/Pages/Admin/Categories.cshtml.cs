@@ -8,7 +8,7 @@ using SD.ProjectName.WebApp.Identity;
 
 namespace SD.ProjectName.WebApp.Pages.Admin
 {
-    [Authorize(Roles = AccountTypes.Admin)]
+    [Authorize(Policy = Permissions.AdminCatalog)]
     public class CategoriesModel : PageModel
     {
         private readonly ManageCategories _categories;

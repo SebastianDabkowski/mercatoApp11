@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Identity
 {
@@ -7,10 +8,13 @@ namespace SD.ProjectName.WebApp.Identity
         public static async Task SeedRolesAsync(IServiceProvider services, CancellationToken cancellationToken = default)
         {
             var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
+            var rolePermissions = services.GetRequiredService<RolePermissionService>();
 
-            foreach (var role in AccountTypes.Allowed
+            var rolesToEnsure = PlatformRoles.All
                 .Concat(SellerInternalRoles.Allowed)
-                .Concat(ComplianceRoles.Allowed))
+                .Distinct(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var role in rolesToEnsure)
             {
                 if (!await roleManager.RoleExistsAsync(role))
                 {
@@ -19,6 +23,8 @@ namespace SD.ProjectName.WebApp.Identity
 
                 cancellationToken.ThrowIfCancellationRequested();
             }
+
+            await rolePermissions.EnsureDefaultPermissionsAsync(cancellationToken);
         }
     }
 }

@@ -7,7 +7,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Buyer.Cases
 {
-    [Authorize(Roles = AccountTypes.Buyer)]
+    [Authorize(Policy = Permissions.BuyerPortal)]
     public class IndexModel : PageModel
     {
         private readonly OrderService _orderService;

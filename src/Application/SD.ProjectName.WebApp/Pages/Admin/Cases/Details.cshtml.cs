@@ -6,7 +6,7 @@ using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Admin.Cases
 {
-    [Authorize(Roles = AccountTypes.Admin)]
+    [Authorize(Policy = Permissions.SupportCases)]
     public class DetailsModel : PageModel
     {
         private readonly OrderService _orderService;

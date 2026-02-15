@@ -83,6 +83,7 @@ namespace SD.ProjectName.WebApp.Services
         string Email,
         string FullName,
         string AccountType,
+        IReadOnlyList<string> Roles,
         string Status,
         string AccountStatus,
         bool EmailConfirmed,
@@ -207,6 +208,17 @@ namespace SD.ProjectName.WebApp.Services
 
             var createdOn = user.TermsAcceptedOn ?? user.EmailVerifiedOn ?? user.OnboardingStartedOn;
 
+            var roleNames = await _dbContext.UserRoles.AsNoTracking()
+                .Where(r => r.UserId == userId)
+                .Join(_dbContext.Roles.AsNoTracking(), ur => ur.RoleId, r => r.Id, (_, r) => r.Name ?? string.Empty)
+                .Where(r => !string.IsNullOrWhiteSpace(r))
+                .Distinct()
+                .ToListAsync(cancellationToken);
+            roleNames = roleNames
+                .Where(r => !string.IsNullOrWhiteSpace(r))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
             var audits = await _dbContext.UserAdminAudits.AsNoTracking()
                 .Where(a => a.UserId == userId)
                 .OrderByDescending(a => a.CreatedOn)
@@ -222,6 +234,7 @@ namespace SD.ProjectName.WebApp.Services
                 user.Email ?? string.Empty,
                 user.FullName,
                 user.AccountType,
+                roleNames,
                 DeriveStatus(user, now),
                 user.AccountStatus,
                 user.EmailConfirmed,
