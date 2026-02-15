@@ -26,6 +26,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         private readonly PaymentProviderService _paymentProvider;
         private readonly SellerShippingMethodService _sellerShippingMethodService;
         private readonly CurrencyConfigurationService _currencyConfiguration;
+        private readonly IntegrationManagementService _integrationService;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -54,7 +55,8 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             PromoCodeService promoCodeService,
             PaymentProviderService paymentProvider,
             SellerShippingMethodService sellerShippingMethodService,
-            CurrencyConfigurationService currencyConfiguration)
+            CurrencyConfigurationService currencyConfiguration,
+            IntegrationManagementService integrationService)
         {
             _cartViewService = cartViewService;
             _userCartService = userCartService;
@@ -68,6 +70,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             _paymentProvider = paymentProvider;
             _sellerShippingMethodService = sellerShippingMethodService;
             _currencyConfiguration = currencyConfiguration;
+            _integrationService = integrationService;
         }
 
         public async Task<IActionResult> OnGetAsync(string? providerToken = null, string? method = null)
@@ -100,6 +103,12 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             Methods = GetEnabledMethods();
             PaymentStatus = state.PaymentStatus;
             PaymentReference = state.PaymentReference;
+
+            var integrationAvailable = await EnsurePaymentIntegrationEnabledAsync();
+            if (!integrationAvailable)
+            {
+                return Page();
+            }
 
             if (Methods.Count == 0)
             {
@@ -158,6 +167,12 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             Methods = GetEnabledMethods();
             PaymentStatus = state.PaymentStatus;
             PaymentReference = state.PaymentReference;
+
+            var integrationAvailable = await EnsurePaymentIntegrationEnabledAsync();
+            if (!integrationAvailable)
+            {
+                return Page();
+            }
 
             if (Methods.Count == 0)
             {
@@ -451,6 +466,18 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
 
             var match = _checkoutOptions.PaymentMethods?.FirstOrDefault(m => string.Equals(m.Id, methodId, StringComparison.OrdinalIgnoreCase));
             return match?.Label ?? methodId;
+        }
+
+        private async Task<bool> EnsurePaymentIntegrationEnabledAsync()
+        {
+            var availability = await _integrationService.EnsureEnabledAsync(IntegrationManagementService.PaymentIntegrationKey, HttpContext.RequestAborted);
+            if (!availability.Allowed)
+            {
+                ModelState.AddModelError(string.Empty, availability.Message ?? "Payments are temporarily unavailable.");
+                return false;
+            }
+
+            return true;
         }
     }
 

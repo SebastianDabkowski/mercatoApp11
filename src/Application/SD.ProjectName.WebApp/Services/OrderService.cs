@@ -1122,6 +1122,7 @@ namespace SD.ProjectName.WebApp.Services
         private readonly EmailOptions _emailOptions;
         private readonly NotificationService? _notificationService;
         private readonly IAnalyticsTracker? _analyticsTracker;
+        private readonly IntegrationManagementService? _integrationService;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -1151,7 +1152,8 @@ namespace SD.ProjectName.WebApp.Services
             IAnalyticsTracker? analyticsTracker = null,
             ICommissionRuleResolver? commissionRuleResolver = null,
             IVatRuleResolver? vatRuleResolver = null,
-            CurrencyConfigurationService? currencyConfiguration = null)
+            CurrencyConfigurationService? currencyConfiguration = null,
+            IntegrationManagementService? integrationService = null)
         {
             _dbContext = dbContext;
             _emailSender = emailSender;
@@ -1170,6 +1172,7 @@ namespace SD.ProjectName.WebApp.Services
             _emailOptions = emailOptions ?? new EmailOptions();
             _notificationService = notificationService;
             _analyticsTracker = analyticsTracker;
+            _integrationService = integrationService;
         }
 
         public async Task<OrderCreationResult> EnsureOrderAsync(
@@ -5907,6 +5910,15 @@ namespace SD.ProjectName.WebApp.Services
                 && !string.IsNullOrWhiteSpace(providerId)
                 && !string.IsNullOrWhiteSpace(providerService))
             {
+                if (_integrationService != null)
+                {
+                    var integration = await _integrationService.EnsureEnabledAsync(IntegrationManagementService.BuildShippingKey(providerId!), cancellationToken);
+                    if (!integration.Allowed)
+                    {
+                        return new SubOrderStatusUpdateResult(false, integration.Message ?? "Shipping provider is unavailable.");
+                    }
+                }
+
                 var shipment = _shippingProviderService.CreateShipment(new ShippingProviderShipmentRequest(
                     providerId!,
                     providerService!,

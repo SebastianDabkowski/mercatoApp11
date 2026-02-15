@@ -26,6 +26,7 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<VatRuleAudit> VatRuleAudits => Set<VatRuleAudit>();
         public DbSet<CurrencySetting> CurrencySettings => Set<CurrencySetting>();
         public DbSet<AnalyticsEvent> AnalyticsEvents => Set<AnalyticsEvent>();
+        public DbSet<IntegrationConfiguration> IntegrationConfigurations => Set<IntegrationConfiguration>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -637,6 +638,39 @@ namespace SD.ProjectName.WebApp.Data
                 entity.Property(c => c.LatestRate)
                     .HasColumnType("decimal(18,6)");
                 entity.HasIndex(c => c.Code)
+                    .IsUnique();
+            });
+
+            builder.Entity<IntegrationConfiguration>(entity =>
+            {
+                entity.Property(i => i.Key)
+                    .IsRequired()
+                    .HasMaxLength(64);
+                entity.Property(i => i.Name)
+                    .IsRequired()
+                    .HasMaxLength(128);
+                entity.Property(i => i.Type)
+                    .IsRequired()
+                    .HasMaxLength(32);
+                entity.Property(i => i.Environment)
+                    .IsRequired()
+                    .HasMaxLength(32);
+                entity.Property(i => i.ApiKey)
+                    .HasMaxLength(256);
+                entity.Property(i => i.Endpoint)
+                    .HasMaxLength(256);
+                entity.Property(i => i.MerchantId)
+                    .HasMaxLength(128);
+                entity.Property(i => i.CallbackUrl)
+                    .HasMaxLength(256);
+                entity.Property(i => i.Status)
+                    .HasMaxLength(32)
+                    .HasDefaultValue(IntegrationStatuses.Configured);
+                entity.Property(i => i.LastHealthCheckMessage)
+                    .HasMaxLength(512);
+                entity.Property(i => i.Enabled)
+                    .HasDefaultValue(true);
+                entity.HasIndex(i => new { i.Key, i.Environment })
                     .IsUnique();
             });
         }
