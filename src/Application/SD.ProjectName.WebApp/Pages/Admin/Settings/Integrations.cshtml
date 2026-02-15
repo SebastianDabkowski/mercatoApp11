@@ -1,0 +1,146 @@
+@page
+@model SD.ProjectName.WebApp.Pages.Admin.Settings.IntegrationsModel
+@{
+    ViewData["Title"] = "Integrations";
+}
+
+<h2 class="mb-3">Integrations</h2>
+
+@if (Model.Errors.Count > 0)
+{
+    <div class="alert alert-danger">
+        @foreach (var error in Model.Errors)
+        {
+            <div>@error</div>
+        }
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <div class="alert alert-success">@Model.SuccessMessage</div>
+}
+
+<div class="row">
+    <div class="col-md-6">
+        <h5>Configured integrations</h5>
+        <table class="table table-sm align-middle">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Environment</th>
+                    <th>Status</th>
+                    <th>Enabled</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Integrations.Count == 0)
+                {
+                    <tr>
+                        <td colspan="6" class="text-muted">No integrations configured.</td>
+                    </tr>
+                }
+                else
+                {
+                    foreach (var integration in Model.Integrations)
+                    {
+                        <tr class="@(Model.Form?.Id == integration.Id ? "table-primary" : string.Empty)">
+                            <td>@integration.Name</td>
+                            <td>@integration.Type</td>
+                            <td>@integration.Environment</td>
+                            <td>@integration.Status</td>
+                            <td>@(integration.Enabled ? "Yes" : "No")</td>
+                            <td>
+                                <a asp-page="/Admin/Settings/Integrations" asp-route-id="@integration.Id" class="btn btn-link btn-sm">Manage</a>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="col-md-6">
+        <h5>Integration details</h5>
+        @if (Model.Form == null)
+        {
+            <p class="text-muted">Select an integration to view or edit its configuration.</p>
+        }
+        else
+        {
+            <form method="post">
+                <input type="hidden" asp-for="Form.Id" />
+                <div class="mb-3">
+                    <label asp-for="Form.Name" class="form-label"></label>
+                    <input asp-for="Form.Name" class="form-control" readonly />
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Form.Key" class="form-label"></label>
+                    <input asp-for="Form.Key" class="form-control" readonly />
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Form.Type" class="form-label"></label>
+                        <input asp-for="Form.Type" class="form-control" readonly />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Form.Environment" class="form-label"></label>
+                        <input asp-for="Form.Environment" class="form-control" readonly />
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Form.Endpoint" class="form-label"></label>
+                    <input asp-for="Form.Endpoint" class="form-control" />
+                    <span class="text-muted small">Example: https://provider.example/api</span>
+                    <span asp-validation-for="Form.Endpoint" class="text-danger"></span>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Form.MerchantId" class="form-label"></label>
+                        <input asp-for="Form.MerchantId" class="form-control" />
+                        <span asp-validation-for="Form.MerchantId" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Form.CallbackUrl" class="form-label"></label>
+                        <input asp-for="Form.CallbackUrl" class="form-control" />
+                        <span asp-validation-for="Form.CallbackUrl" class="text-danger"></span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Form.ApiKey" class="form-label"></label>
+                    <input asp-for="Form.ApiKey" class="form-control" autocomplete="off" placeholder="Leave blank to keep existing value" />
+                    @if (!string.IsNullOrWhiteSpace(Model.Form.ApiKeyPreview))
+                    {
+                        <div class="form-text">Stored key: @Model.Form.ApiKeyPreview</div>
+                    }
+                    <span asp-validation-for="Form.ApiKey" class="text-danger"></span>
+                </div>
+                <div class="form-check mb-3">
+                    <input asp-for="Form.Enabled" class="form-check-input" />
+                    <label asp-for="Form.Enabled" class="form-check-label"></label>
+                </div>
+                <div class="mb-3">
+                    <div class="text-muted small">
+                        Status: @Model.Form.Status ?? "Unknown"
+                        @if (Model.Form.LastHealthCheckOn.HasValue)
+                        {
+                            <span> • Checked @Model.Form.LastHealthCheckOn.Value.ToLocalTime()</span>
+                        }
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(Model.Form.LastHealthCheckMessage))
+                    {
+                        <div class="small">@Model.Form.LastHealthCheckMessage</div>
+                    }
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary" asp-page-handler="Save">Save</button>
+                    <button type="submit" class="btn btn-outline-secondary" asp-page-handler="HealthCheck">Run health check</button>
+                </div>
+            </form>
+        }
+    </div>
+</div>
+
+<partial name="_ValidationScriptsPartial" />
