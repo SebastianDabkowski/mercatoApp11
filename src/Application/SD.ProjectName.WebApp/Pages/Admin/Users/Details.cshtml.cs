@@ -47,6 +47,16 @@ namespace SD.ProjectName.WebApp.Pages.Admin.Users
                 return NotFound();
             }
 
+            var actor = await _userManager.GetUserAsync(User);
+            var actorName = ResolveActorName(actor);
+            await _userActionService.RecordUserAccessAsync(
+                id,
+                actor?.Id,
+                actorName,
+                "Viewed profile",
+                "Viewed admin user detail",
+                HttpContext.RequestAborted);
+
             Role = UserDetail.Roles.FirstOrDefault();
             return Page();
         }

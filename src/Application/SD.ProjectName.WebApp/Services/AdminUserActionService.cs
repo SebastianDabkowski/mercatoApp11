@@ -215,6 +215,33 @@ namespace SD.ProjectName.WebApp.Services
                 .ExecuteUpdateAsync(setters => setters.SetProperty(p => p.IsSellerBlocked, isBlocked), cancellationToken);
         }
 
+        public async Task RecordUserAccessAsync(
+            string userId,
+            string? actorUserId,
+            string actorName,
+            string action,
+            string? reason = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(action))
+            {
+                return;
+            }
+
+            var normalizedActor = string.IsNullOrWhiteSpace(actorName) ? "Admin" : actorName.Trim();
+            _applicationDbContext.UserAdminAudits.Add(new UserAdminAudit
+            {
+                UserId = userId.Trim(),
+                ActorUserId = actorUserId,
+                ActorName = normalizedActor,
+                Action = action.Trim(),
+                Reason = NormalizeReason(reason),
+                CreatedOn = _timeProvider.GetUtcNow()
+            });
+
+            await _applicationDbContext.SaveChangesAsync(cancellationToken);
+        }
+
         private static string ResolveAccountType(string targetRole) =>
             targetRole switch
             {

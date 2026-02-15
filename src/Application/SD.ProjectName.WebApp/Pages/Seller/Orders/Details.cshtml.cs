@@ -47,8 +47,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
 
         public async Task<IActionResult> OnGetLabelAsync(int orderId)
         {
-            var sellerId = _userManager.GetUserId(User);
-            if (string.IsNullOrWhiteSpace(sellerId))
+            var seller = await _userManager.GetUserAsync(User);
+            var sellerId = seller?.GetSellerTenantId();
+            if (sellerId == null)
             {
                 return Challenge();
             }
@@ -64,8 +65,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
 
         public async Task<IActionResult> OnPostStatusAsync(int orderId)
         {
-            var sellerId = _userManager.GetUserId(User);
-            if (string.IsNullOrWhiteSpace(sellerId))
+            var seller = await _userManager.GetUserAsync(User);
+            var sellerId = seller?.GetSellerTenantId();
+            if (sellerId == null)
             {
                 return Challenge();
             }
@@ -98,8 +100,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
 
         public async Task<IActionResult> OnPostMessageAsync(int orderId)
         {
-            var sellerId = _userManager.GetUserId(User);
-            if (string.IsNullOrWhiteSpace(sellerId))
+            var seller = await _userManager.GetUserAsync(User);
+            var sellerId = seller?.GetSellerTenantId();
+            if (sellerId == null)
             {
                 return Challenge();
             }
@@ -140,8 +143,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Orders
 
         private async Task<IActionResult> LoadAsync(int orderId)
         {
-            var sellerId = _userManager.GetUserId(User);
-            if (string.IsNullOrWhiteSpace(sellerId))
+            var seller = await _userManager.GetUserAsync(User);
+            var sellerId = seller?.GetSellerTenantId();
+            if (sellerId == null)
             {
                 return Challenge();
             }

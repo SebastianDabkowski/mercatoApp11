@@ -69,13 +69,14 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Challenge();
             }
 
+            var sellerId = user.GetSellerTenantId();
             var product = await _getProducts.GetById(id, includeDrafts: true);
             if (product == null)
             {
                 return NotFound();
             }
 
-            if (product.SellerId != user.Id)
+            if (product.SellerId != sellerId)
             {
                 return Forbid();
             }
@@ -120,13 +121,14 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Challenge();
             }
 
+            var sellerId = user.GetSellerTenantId();
             var product = await _getProducts.GetById(Input.Id, includeDrafts: true);
             if (product == null)
             {
                 return NotFound();
             }
 
-            if (product.SellerId != user.Id)
+            if (product.SellerId != sellerId)
             {
                 return Forbid();
             }
@@ -161,7 +163,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Page();
             }
 
-            var otherWithSku = await _productRepository.GetBySku(user.Id, Input.MerchantSku.Trim(), includeDrafts: true);
+            var otherWithSku = await _productRepository.GetBySku(sellerId, Input.MerchantSku.Trim(), includeDrafts: true);
             if (otherWithSku != null && otherWithSku.Id != product.Id)
             {
                 ModelState.AddModelError(nameof(Input.MerchantSku), "This SKU is already used by another product.");
@@ -188,7 +190,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Page();
             }
 
-            var savedImages = await SaveUploadsAsync(user.Id);
+            var savedImages = await SaveUploadsAsync(sellerId);
             var allImages = currentImages.Concat(savedImages).Distinct().ToList();
             var mainImage = SelectMainImage(Input.SelectedMainImage ?? product.MainImageUrl, allImages);
             var galleryImages = BuildGallery(allImages, mainImage);
@@ -212,7 +214,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             product.Attributes = attributes;
 
             await _updateProduct.UpdateAsync(product);
-            _logger.LogInformation("Product {ProductId} updated by seller {SellerId}", product.Id, user.Id);
+            _logger.LogInformation("Product {ProductId} updated by seller {SellerId}", product.Id, sellerId);
             await _photoModerationService.SyncFromProductAsync(product, HttpContext.RequestAborted);
 
             Input.MainImageUrl = mainImage;

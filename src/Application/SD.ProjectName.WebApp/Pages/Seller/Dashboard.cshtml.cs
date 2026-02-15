@@ -137,6 +137,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller
                 return Challenge();
             }
 
+            var sellerId = user.GetSellerTenantId();
             AccountStatus = user.AccountStatus;
             KycStatus = user.KycStatus;
             OnboardingStatus = user.OnboardingStatus;
@@ -148,7 +149,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller
             ContactWebsite = user.ContactWebsite;
             StoreLogoPath = user.StoreLogoPath;
             PopulatePayout(user);
-            var payoutView = await _orderService.GetSellerPayoutScheduleAsync(user.Id, PayoutSchedule ?? PayoutSchedules.Weekly, cancellationToken);
+            var payoutView = await _orderService.GetSellerPayoutScheduleAsync(sellerId, PayoutSchedule ?? PayoutSchedules.Weekly, cancellationToken);
             PayoutStatus = payoutView.Status;
             PayoutEligibleAmount = payoutView.EligibleAmount;
             PayoutPaidAmount = payoutView.PaidAmount;
@@ -160,7 +161,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller
             ActiveSalesGranularity = SellerSalesGranularities.Normalize(SalesGranularity);
             SalesGranularity = ActiveSalesGranularity;
             var salesResult = await _sellerReportingService.GetSalesAsync(
-                user.Id,
+                sellerId,
                 salesFrom,
                 salesTo,
                 ActiveSalesGranularity,

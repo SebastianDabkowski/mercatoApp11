@@ -41,6 +41,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Challenge();
             }
 
+            var sellerId = user.GetSellerTenantId();
             if (Upload == null || Upload.Length == 0)
             {
                 ModelState.AddModelError(nameof(Upload), "Upload a CSV or XLS file.");
@@ -51,7 +52,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
             await Upload.CopyToAsync(ms);
             var bytes = ms.ToArray();
 
-            var (preview, job) = await _importService.CreatePendingJobAsync(user.Id, bytes, Upload.FileName);
+            var (preview, job) = await _importService.CreatePendingJobAsync(sellerId, bytes, Upload.FileName);
             Preview = preview;
 
             if (job != null)
@@ -75,7 +76,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Challenge();
             }
 
-            var queued = await _importService.QueueAsync(jobId, user.Id);
+            var queued = await _importService.QueueAsync(jobId, user.GetSellerTenantId());
             if (!queued)
             {
                 TempData["ErrorMessage"] = "Unable to start import. Validate the file again.";

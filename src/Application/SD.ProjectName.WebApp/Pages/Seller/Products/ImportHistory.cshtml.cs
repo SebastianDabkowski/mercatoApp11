@@ -31,7 +31,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Challenge();
             }
 
-            Jobs = await _importService.GetHistoryAsync(user.Id, take: 100);
+            Jobs = await _importService.GetHistoryAsync(user.GetSellerTenantId(), take: 100);
             return Page();
         }
 
@@ -43,7 +43,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller.Products
                 return Challenge();
             }
 
-            var job = await _importService.GetJobAsync(id, user.Id);
+            var job = await _importService.GetJobAsync(id, user.GetSellerTenantId());
             if (job == null || string.IsNullOrWhiteSpace(job.ErrorReport))
             {
                 return NotFound();
