@@ -14,14 +14,17 @@ namespace SD.ProjectName.WebApp.Pages.Account
         private readonly IConsentService _consents;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly ILogger<PrivacySettingsModel> _logger;
+        private readonly UserDataExportService _dataExport;
 
         public PrivacySettingsModel(
             IConsentService consents,
             UserManager<ApplicationUser> userManager,
+            UserDataExportService dataExport,
             ILogger<PrivacySettingsModel> logger)
         {
             _consents = consents;
             _userManager = userManager;
+            _dataExport = dataExport;
             _logger = logger;
         }
 
@@ -79,6 +82,28 @@ namespace SD.ProjectName.WebApp.Pages.Account
             StatusMessage = "Consent preferences saved.";
             _logger.LogInformation("User {UserId} updated consent preferences.", user.Id);
             return RedirectToPage();
+        }
+
+        public async Task<IActionResult> OnPostExportAsync()
+        {
+            var user = await _userManager.GetUserAsync(User);
+            if (user == null)
+            {
+                return Challenge();
+            }
+
+            try
+            {
+                var result = await _dataExport.GenerateAsync(user.Id, HttpContext.RequestAborted);
+                return File(result.Content, result.ContentType, result.FileName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to generate data export for user {UserId}", user.Id);
+                await LoadAsync(user, preserveSelections: true);
+                ModelState.AddModelError(string.Empty, "We could not generate your data export right now. Please try again later.");
+                return Page();
+            }
         }
 
         private async Task LoadAsync(ApplicationUser user, bool preserveSelections)
