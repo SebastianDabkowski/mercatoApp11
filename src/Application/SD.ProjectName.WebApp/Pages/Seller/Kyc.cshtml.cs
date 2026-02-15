@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
 using System.ComponentModel.DataAnnotations;
 using SD.ProjectName.WebApp.Identity;
+using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.WebApp.Pages.Seller
 {
@@ -13,11 +14,13 @@ namespace SD.ProjectName.WebApp.Pages.Seller
     {
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IOptions<KycOptions> _kycOptions;
+        private readonly ISensitiveDataEncryptionService _sensitiveEncryption;
 
-        public KycModel(UserManager<ApplicationUser> userManager, IOptions<KycOptions> kycOptions)
+        public KycModel(UserManager<ApplicationUser> userManager, IOptions<KycOptions> kycOptions, ISensitiveDataEncryptionService sensitiveEncryption)
         {
             _userManager = userManager;
             _kycOptions = kycOptions;
+            _sensitiveEncryption = sensitiveEncryption;
         }
 
         [BindProperty]
@@ -194,8 +197,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller
             if (string.Equals(sellerType, SellerTypes.Company, StringComparison.OrdinalIgnoreCase))
             {
                 user.BusinessName = Input.CompanyName.Trim();
-                user.CompanyRegistrationNumber = Input.RegistrationNumber.Trim();
-                user.TaxId = Input.TaxId.Trim();
+                user.CompanyRegistrationNumber = _sensitiveEncryption.Protect(Input.RegistrationNumber);
+                user.TaxId = _sensitiveEncryption.Protect(Input.TaxId);
                 user.Address = Input.RegisteredAddress.Trim();
                 user.VerificationContactName = Input.ContactPerson.Trim();
                 if (string.IsNullOrWhiteSpace(user.FullName))
@@ -207,7 +210,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller
             else
             {
                 user.FullName = Input.FullName.Trim();
-                user.PersonalIdNumber = Input.PersonalIdNumber.Trim();
+                user.PersonalIdNumber = _sensitiveEncryption.Protect(Input.PersonalIdNumber);
                 user.Address = Input.Address.Trim();
                 user.VerificationContactName = null;
                 user.CompanyRegistrationNumber = null;
@@ -242,8 +245,8 @@ namespace SD.ProjectName.WebApp.Pages.Seller
             if (string.Equals(sellerType, SellerTypes.Company, StringComparison.OrdinalIgnoreCase))
             {
                 Input.CompanyName = user.BusinessName ?? string.Empty;
-                Input.RegistrationNumber = user.CompanyRegistrationNumber ?? string.Empty;
-                Input.TaxId = user.TaxId ?? string.Empty;
+                Input.RegistrationNumber = _sensitiveEncryption.Reveal(user.CompanyRegistrationNumber);
+                Input.TaxId = _sensitiveEncryption.Reveal(user.TaxId);
                 Input.RegisteredAddress = user.Address ?? string.Empty;
                 Input.ContactPerson = user.VerificationContactName ?? (string.IsNullOrWhiteSpace(user.FullName) ? string.Empty : user.FullName);
                 Input.FullName = string.Empty;
@@ -254,11 +257,11 @@ namespace SD.ProjectName.WebApp.Pages.Seller
             {
                 Input.CompanyName = string.Empty;
                 Input.RegistrationNumber = string.Empty;
-                Input.TaxId = user.TaxId ?? string.Empty;
+                Input.TaxId = _sensitiveEncryption.Reveal(user.TaxId);
                 Input.RegisteredAddress = string.Empty;
                 Input.ContactPerson = string.Empty;
                 Input.FullName = string.IsNullOrWhiteSpace(user.FullName) ? string.Empty : user.FullName;
-                Input.PersonalIdNumber = user.PersonalIdNumber ?? string.Empty;
+                Input.PersonalIdNumber = _sensitiveEncryption.Reveal(user.PersonalIdNumber);
                 Input.Address = user.Address ?? string.Empty;
             }
         }

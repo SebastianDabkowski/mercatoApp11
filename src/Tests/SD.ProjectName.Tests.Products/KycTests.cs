@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Security.Claims;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -14,6 +15,7 @@ using Microsoft.Extensions.Options;
 using Moq;
 using SD.ProjectName.WebApp.Identity;
 using SD.ProjectName.WebApp.Pages.Seller;
+using SD.ProjectName.WebApp.Services;
 
 namespace SD.ProjectName.Tests.Identity
 {
@@ -60,7 +62,8 @@ namespace SD.ProjectName.Tests.Identity
         {
             var user = new ApplicationUser();
             var userManager = CreateUserManager(user);
-            var model = CreateModel(userManager.Object);
+            var encryption = new SensitiveDataEncryptionService(DataProtectionProvider.Create("tests"));
+            var model = CreateModel(userManager.Object, encryption);
             model.Input = new KycModel.InputModel
             {
                 SellerType = SellerTypes.Company,
@@ -81,8 +84,8 @@ namespace SD.ProjectName.Tests.Identity
             Assert.NotNull(user.KycSubmittedOn);
             Assert.Equal(SellerTypes.Company, user.SellerType);
             Assert.Equal("Acme Ltd", user.BusinessName);
-            Assert.Equal("REG-123", user.CompanyRegistrationNumber);
-            Assert.Equal("TAX-987", user.TaxId);
+            Assert.Equal("REG-123", encryption.Reveal(user.CompanyRegistrationNumber));
+            Assert.Equal("TAX-987", encryption.Reveal(user.TaxId));
             Assert.Equal("123 Market Street", user.Address);
             Assert.Equal("Jane Reviewer", user.VerificationContactName);
             Assert.Equal("contact@acme.test", user.ContactEmail);
@@ -100,7 +103,7 @@ namespace SD.ProjectName.Tests.Identity
                 KycSubmittedOn = DateTimeOffset.UtcNow
             };
             var userManager = CreateUserManager(user);
-            var model = CreateModel(userManager.Object);
+            var model = CreateModel(userManager.Object, new SensitiveDataEncryptionService(DataProtectionProvider.Create("tests")));
             model.Input = new KycModel.InputModel
             {
                 SellerType = SellerTypes.Individual,
@@ -137,7 +140,7 @@ namespace SD.ProjectName.Tests.Identity
             return userManager;
         }
 
-        private static KycModel CreateModel(UserManager<ApplicationUser> userManager)
+        private static KycModel CreateModel(UserManager<ApplicationUser> userManager, ISensitiveDataEncryptionService encryption)
         {
             var httpContext = new DefaultHttpContext
             {
@@ -150,7 +153,7 @@ namespace SD.ProjectName.Tests.Identity
                 ViewData = new ViewDataDictionary(new EmptyModelMetadataProvider(), modelState)
             };
 
-            var model = new KycModel(userManager, Options.Create(new KycOptions()))
+            var model = new KycModel(userManager, Options.Create(new KycOptions()), encryption)
             {
                 PageContext = pageContext,
                 TempData = new TempDataDictionary(httpContext, Mock.Of<ITempDataProvider>())

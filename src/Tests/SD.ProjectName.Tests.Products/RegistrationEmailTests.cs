@@ -1,5 +1,6 @@
 using System.Linq;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
@@ -109,7 +110,8 @@ namespace SD.ProjectName.Tests.Identity
                 Options.Create(new KycOptions()),
                 Options.Create(new EmailOptions()),
                 legalDocs.Object,
-                consents.Object)
+                consents.Object,
+                new SensitiveDataEncryptionService(DataProtectionProvider.Create("tests")))
             {
                 PageContext = pageContext,
                 Url = new TestUrlHelper(actionContext),

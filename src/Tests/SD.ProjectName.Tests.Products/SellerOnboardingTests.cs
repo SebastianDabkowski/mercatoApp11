@@ -29,7 +29,8 @@ namespace SD.ProjectName.Tests.Identity
             };
             var userManager = CreateUserManager(user);
             var payoutEncryption = new PayoutEncryptionService(DataProtectionProvider.Create("tests"));
-            var model = CreateModel(userManager.Object, payoutEncryption);
+            var sensitiveEncryption = new SensitiveDataEncryptionService(DataProtectionProvider.Create("tests"));
+            var model = CreateModel(userManager.Object, payoutEncryption, sensitiveEncryption);
             model.StoreProfile = new OnboardingModel.StoreProfileInput
             {
                 StoreName = "New Store",
@@ -58,7 +59,8 @@ namespace SD.ProjectName.Tests.Identity
             };
             var userManager = CreateUserManager(user);
             var payoutEncryption = new PayoutEncryptionService(DataProtectionProvider.Create("tests"));
-            var model = CreateModel(userManager.Object, payoutEncryption);
+            var sensitiveEncryption = new SensitiveDataEncryptionService(DataProtectionProvider.Create("tests"));
+            var model = CreateModel(userManager.Object, payoutEncryption, sensitiveEncryption);
             model.Payout = new PayoutPreferencesInput
             {
                 PayoutMethod = "Paypal",
@@ -97,7 +99,7 @@ namespace SD.ProjectName.Tests.Identity
             return userManager;
         }
 
-        private static OnboardingModel CreateModel(UserManager<ApplicationUser> userManager, IPayoutEncryptionService payoutEncryption)
+        private static OnboardingModel CreateModel(UserManager<ApplicationUser> userManager, IPayoutEncryptionService payoutEncryption, ISensitiveDataEncryptionService sensitiveEncryption)
         {
             var httpContext = new DefaultHttpContext();
             var modelState = new ModelStateDictionary();
@@ -107,7 +109,7 @@ namespace SD.ProjectName.Tests.Identity
                 ViewData = new ViewDataDictionary(new EmptyModelMetadataProvider(), modelState)
             };
 
-            var model = new OnboardingModel(userManager, payoutEncryption)
+            var model = new OnboardingModel(userManager, payoutEncryption, sensitiveEncryption)
             {
                 PageContext = pageContext,
                 TempData = new TempDataDictionary(httpContext, Mock.Of<ITempDataProvider>())
