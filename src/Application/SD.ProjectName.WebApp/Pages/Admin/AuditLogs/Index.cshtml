@@ -1,0 +1,133 @@
+@page
+@using SD.ProjectName.WebApp.Services
+@model SD.ProjectName.WebApp.Pages.Admin.AuditLogs.IndexModel
+@{
+    ViewData["Title"] = "Audit logs";
+}
+
+<h1 class="display-6">Audit logs</h1>
+<p class="text-muted">Immutable record of administrative actions. Entries are retained for @Model.RetentionDays days.</p>
+
+<form method="get" class="card mb-3">
+    <div class="card-body row g-3 align-items-end">
+        <div class="col-md-2">
+            <label class="form-label fw-semibold" for="from">From</label>
+            <input id="from" class="form-control" type="date" name="FromDate" value="@(Model.FromDate?.ToString("yyyy-MM-dd"))" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label fw-semibold" for="to">To</label>
+            <input id="to" class="form-control" type="date" name="ToDate" value="@(Model.ToDate?.ToString("yyyy-MM-dd"))" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label fw-semibold" for="actor">Admin user</label>
+            <input id="actor" class="form-control" type="search" name="actor" value="@Model.Actor" placeholder="Name or ID" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label fw-semibold" for="entity">Entity type</label>
+            <select id="entity" class="form-select" name="entity">
+                <option value="">All entities</option>
+                @foreach (var entity in Model.SupportedEntityTypes.OrderBy(e => e))
+                {
+                    <option value="@entity" selected="@(string.Equals(Model.EntityType, entity, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@entity</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label fw-semibold" for="action">Action</label>
+            <input id="action" class="form-control" type="search" name="action" value="@Model.ActionType" placeholder="Action keyword" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label fw-semibold" for="resource">Resource ID</label>
+            <input id="resource" class="form-control" type="search" name="resource" value="@Model.ResourceId" placeholder="User, product, rule..." />
+        </div>
+        <div class="col-md-12 d-flex justify-content-end gap-2">
+            <button class="btn btn-primary" type="submit">Apply</button>
+            <a class="btn btn-link text-decoration-none" asp-page="Index">Reset</a>
+        </div>
+    </div>
+</form>
+
+@if (Model.Logs.TotalCount == 0)
+{
+    <div class="alert alert-info">
+        No audit entries match these filters.
+    </div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">Timestamp</th>
+                    <th scope="col">Admin</th>
+                    <th scope="col">Action</th>
+                    <th scope="col">Target</th>
+                    <th scope="col">Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in Model.Logs.Items)
+                {
+                    <tr>
+                        <td>@entry.Timestamp.ToLocalTime().ToString("g")</td>
+                        <td>
+                            <div class="fw-semibold">@entry.ActorName</div>
+                            @if (!string.IsNullOrWhiteSpace(entry.ActorId))
+                            {
+                                <div class="text-muted small">ID: @entry.ActorId</div>
+                            }
+                        </td>
+                        <td>
+                            <div class="fw-semibold">@entry.ActionType</div>
+                            <div class="text-muted small">@entry.EntityType</div>
+                        </td>
+                        <td>
+                            <div>@(entry.ResourceId ?? "N/A")</div>
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrWhiteSpace(entry.Details))
+                            {
+                                <div>@entry.Details</div>
+                            }
+                            else
+                            {
+                                <span class="text-muted">—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <nav aria-label="Audit log pagination">
+        <ul class="pagination">
+            <li class="page-item @(Model.Logs.HasPreviousPage ? "" : "disabled")">
+                <a class="page-link"
+                   asp-page="Index"
+                   asp-route-page="@(Model.PageNumber - 1)"
+                   asp-route-FromDate="@(Model.FromDate?.ToString("yyyy-MM-dd"))"
+                   asp-route-ToDate="@(Model.ToDate?.ToString("yyyy-MM-dd"))"
+                   asp-route-actor="@Model.Actor"
+                   asp-route-entity="@Model.EntityType"
+                   asp-route-action="@Model.ActionType"
+                   asp-route-resource="@Model.ResourceId">Previous</a>
+            </li>
+            <li class="page-item active">
+                <span class="page-link">Page @Model.Logs.PageNumber of @Model.Logs.TotalPages</span>
+            </li>
+            <li class="page-item @(Model.Logs.HasNextPage ? "" : "disabled")">
+                <a class="page-link"
+                   asp-page="Index"
+                   asp-route-page="@(Model.PageNumber + 1)"
+                   asp-route-FromDate="@(Model.FromDate?.ToString("yyyy-MM-dd"))"
+                   asp-route-ToDate="@(Model.ToDate?.ToString("yyyy-MM-dd"))"
+                   asp-route-actor="@Model.Actor"
+                   asp-route-entity="@Model.EntityType"
+                   asp-route-action="@Model.ActionType"
+                   asp-route-resource="@Model.ResourceId">Next</a>
+            </li>
+        </ul>
+    </nav>
+}

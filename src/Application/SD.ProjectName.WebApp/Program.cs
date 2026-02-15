@@ -120,6 +120,11 @@ builder.Services.AddOptions<AnalyticsOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<AnalyticsOptions>(sp => sp.GetRequiredService<IOptions<AnalyticsOptions>>().Value);
+builder.Services.AddOptions<AuditLogOptions>()
+    .Bind(builder.Configuration.GetSection(AuditLogOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<AuditLogOptions>(sp => sp.GetRequiredService<IOptions<AuditLogOptions>>().Value);
 builder.Services.AddSingleton(sp =>
 {
     var options = new PushNotificationOptions();
@@ -167,6 +172,7 @@ builder.Services.AddScoped<OrderService>();
 builder.Services.AddScoped<AdminReportingService>();
 builder.Services.AddScoped<AdminUserService>();
 builder.Services.AddScoped<AdminUserActionService>();
+builder.Services.AddScoped<AdminAuditLogService>();
 builder.Services.AddScoped<SellerReportingService>();
 builder.Services.AddScoped<IAnalyticsTracker, AnalyticsTracker>();
 builder.Services.AddSingleton<PaymentProviderService>();
