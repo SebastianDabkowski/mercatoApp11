@@ -11,6 +11,8 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<LoginAudit> LoginAudits => Set<LoginAudit>();
         public DbSet<UserAdminAudit> UserAdminAudits => Set<UserAdminAudit>();
         public DbSet<CriticalActionAudit> CriticalActionAudits => Set<CriticalActionAudit>();
+        public DbSet<SecurityIncident> SecurityIncidents => Set<SecurityIncident>();
+        public DbSet<SecurityIncidentStatusChange> SecurityIncidentStatusChanges => Set<SecurityIncidentStatusChange>();
         public DbSet<SellerTeamMember> SellerTeamMembers => Set<SellerTeamMember>();
         public DbSet<OrderRecord> Orders => Set<OrderRecord>();
         public DbSet<SellerShippingMethod> SellerShippingMethods => Set<SellerShippingMethod>();
@@ -176,6 +178,59 @@ namespace SD.ProjectName.WebApp.Data
                     .HasMaxLength(256);
 
                 entity.Property(u => u.BlockReason)
+                    .HasMaxLength(512);
+            });
+
+            builder.Entity<SecurityIncident>(entity =>
+            {
+                entity.Property(i => i.Source)
+                    .IsRequired()
+                    .HasMaxLength(64);
+
+                entity.Property(i => i.Rule)
+                    .IsRequired()
+                    .HasMaxLength(128);
+
+                entity.Property(i => i.Severity)
+                    .IsRequired()
+                    .HasMaxLength(32);
+
+                entity.Property(i => i.Status)
+                    .IsRequired()
+                    .HasMaxLength(32);
+
+                entity.Property(i => i.Summary)
+                    .HasMaxLength(512);
+
+                entity.Property(i => i.LastStatusBy)
+                    .HasMaxLength(256);
+
+                entity.Property(i => i.LastStatusByUserId)
+                    .HasMaxLength(450);
+
+                entity.Property(i => i.ResolutionNotes)
+                    .HasMaxLength(1024);
+
+                entity.HasMany(i => i.StatusChanges)
+                    .WithOne(sc => sc.Incident)
+                    .HasForeignKey(sc => sc.IncidentId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            builder.Entity<SecurityIncidentStatusChange>(entity =>
+            {
+                entity.Property(s => s.Status)
+                    .IsRequired()
+                    .HasMaxLength(32);
+
+                entity.Property(s => s.ActorName)
+                    .IsRequired()
+                    .HasMaxLength(256);
+
+                entity.Property(s => s.ActorUserId)
+                    .HasMaxLength(450);
+
+                entity.Property(s => s.Notes)
                     .HasMaxLength(512);
             });
 

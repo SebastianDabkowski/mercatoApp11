@@ -1,0 +1,287 @@
+@page
+@model SD.ProjectName.WebApp.Pages.Compliance.IncidentsModel
+@{
+    ViewData["Title"] = "Security incidents";
+    var from = Model.FromDate?.ToString("yyyy-MM-dd");
+    var to = Model.ToDate?.ToString("yyyy-MM-dd");
+}
+
+<h1 class="mb-3">Security incidents</h1>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-info">@Model.StatusMessage</div>
+}
+
+@if (Model.Errors.Count > 0)
+{
+    <div class="alert alert-danger">
+        <ul class="mb-0">
+            @foreach (var error in Model.Errors)
+            {
+                <li>@error</li>
+            }
+        </ul>
+    </div>
+}
+
+<form method="get" class="card card-body mb-3">
+    <div class="row g-3">
+        <div class="col-md-2">
+            <label class="form-label" for="fromDate">From</label>
+            <input class="form-control" type="date" id="fromDate" name="fromDate" value="@from" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label" for="toDate">To</label>
+            <input class="form-control" type="date" id="toDate" name="toDate" value="@to" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label" for="severity">Severity</label>
+            <select class="form-select" id="severity" name="severity">
+                <option value="">All</option>
+                @foreach (var level in Model.SeverityLevels)
+                {
+                    <option value="@level" selected="@(string.Equals(Model.Severity, level, StringComparison.OrdinalIgnoreCase))">@level</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label" for="status">Status</label>
+            <select class="form-select" id="status" name="status">
+                <option value="">All</option>
+                @foreach (var status in Model.Statuses)
+                {
+                    <option value="@status" selected="@(string.Equals(Model.Status, status, StringComparison.OrdinalIgnoreCase))">@status</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label" for="source">Source</label>
+            <input class="form-control" type="text" id="source" name="source" value="@Model.Source" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label" for="rule">Rule</label>
+            <input class="form-control" type="text" id="rule" name="rule" value="@Model.Rule" />
+        </div>
+    </div>
+    <div class="mt-3 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Apply filters</button>
+        <a class="btn btn-outline-secondary" href="@Url.Page(null)">Reset</a>
+    </div>
+</form>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <h2 class="h5 mb-0">Recent incidents</h2>
+    <a class="btn btn-outline-secondary btn-sm"
+       asp-page-handler="Export"
+       asp-route-fromDate="@from"
+       asp-route-toDate="@to"
+       asp-route-severity="@Model.Severity"
+       asp-route-status="@Model.Status"
+       asp-route-source="@Model.Source"
+       asp-route-rule="@Model.Rule"
+       asp-route-page="@Model.PageNumber">Export CSV</a>
+</div>
+
+@if (!Model.Incidents.Items.Any())
+{
+    <p class="text-muted">No incidents have been recorded yet.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-sm align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">Id</th>
+                    <th scope="col">Detected</th>
+                    <th scope="col">Source &amp; rule</th>
+                    <th scope="col">Severity</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Last update</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var incident in Model.Incidents.Items)
+                {
+                    var isSelected = Model.SelectedIncident?.Id == incident.Id;
+                    <tr class="@(isSelected ? "table-active" : string.Empty)">
+                        <td>@incident.Id</td>
+                        <td>@incident.DetectedOn.ToString("u")</td>
+                        <td>
+                            <div class="fw-semibold">@incident.Source</div>
+                            <div class="text-muted small">@incident.Rule</div>
+                        </td>
+                        <td>@incident.Severity</td>
+                        <td>@incident.Status</td>
+                        <td>
+                            @if (incident.LastStatusOn.HasValue)
+                            {
+                                @incident.LastStatusOn.Value.ToString("u")
+                            }
+                        </td>
+                        <td>
+                            <a class="btn btn-link btn-sm"
+                               asp-route-id="@incident.Id"
+                               asp-route-page="@Model.PageNumber"
+                               asp-route-fromDate="@from"
+                               asp-route-toDate="@to"
+                               asp-route-severity="@Model.Severity"
+                               asp-route-status="@Model.Status"
+                               asp-route-source="@Model.Source"
+                               asp-route-rule="@Model.Rule">Review</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="d-flex justify-content-between align-items-center">
+        <span class="text-muted">Page @Model.Incidents.PageNumber of @Model.Incidents.TotalPages</span>
+        <div class="btn-group">
+            <a class="btn btn-outline-secondary btn-sm @(Model.Incidents.HasPreviousPage ? string.Empty : "disabled")"
+               asp-route-page="@(Model.Incidents.PageNumber - 1)"
+               asp-route-fromDate="@from"
+               asp-route-toDate="@to"
+               asp-route-severity="@Model.Severity"
+               asp-route-status="@Model.Status"
+               asp-route-source="@Model.Source"
+               asp-route-rule="@Model.Rule">Previous</a>
+            <a class="btn btn-outline-secondary btn-sm @(Model.Incidents.HasNextPage ? string.Empty : "disabled")"
+               asp-route-page="@(Model.Incidents.PageNumber + 1)"
+               asp-route-fromDate="@from"
+               asp-route-toDate="@to"
+               asp-route-severity="@Model.Severity"
+               asp-route-status="@Model.Status"
+               asp-route-source="@Model.Source"
+               asp-route-rule="@Model.Rule">Next</a>
+        </div>
+    </div>
+}
+
+@if (Model.SelectedIncident != null)
+{
+    <div class="card mt-4">
+        <div class="card-header">
+            Incident #@Model.SelectedIncident.Id
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <dl class="row">
+                        <dt class="col-sm-5">Detected on</dt>
+                        <dd class="col-sm-7">@Model.SelectedIncident.DetectedOn.ToString("u")</dd>
+                        <dt class="col-sm-5">Source</dt>
+                        <dd class="col-sm-7">@Model.SelectedIncident.Source</dd>
+                        <dt class="col-sm-5">Rule</dt>
+                        <dd class="col-sm-7">@Model.SelectedIncident.Rule</dd>
+                        <dt class="col-sm-5">Severity</dt>
+                        <dd class="col-sm-7">@Model.SelectedIncident.Severity</dd>
+                        <dt class="col-sm-5">Status</dt>
+                        <dd class="col-sm-7">@Model.SelectedIncident.Status</dd>
+                    </dl>
+                </div>
+                <div class="col-md-6">
+                    <dl class="row">
+                        <dt class="col-sm-5">Last updated</dt>
+                        <dd class="col-sm-7">
+                            @if (Model.SelectedIncident.LastStatusOn.HasValue)
+                            {
+                                @Model.SelectedIncident.LastStatusOn.Value.ToString("u")
+                            }
+                        </dd>
+                        <dt class="col-sm-5">Updated by</dt>
+                        <dd class="col-sm-7">@Model.SelectedIncident.LastStatusBy</dd>
+                        <dt class="col-sm-5">Summary</dt>
+                        <dd class="col-sm-7">
+                            @if (string.IsNullOrWhiteSpace(Model.SelectedIncident.Summary))
+                            {
+                                <span class="text-muted">N/A</span>
+                            }
+                            else
+                            {
+                                @Model.SelectedIncident.Summary
+                            }
+                        </dd>
+                        <dt class="col-sm-5">Resolution notes</dt>
+                        <dd class="col-sm-7">
+                            @if (string.IsNullOrWhiteSpace(Model.SelectedIncident.ResolutionNotes))
+                            {
+                                <span class="text-muted">N/A</span>
+                            }
+                            else
+                            {
+                                @Model.SelectedIncident.ResolutionNotes
+                            }
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+
+            <hr />
+
+            <form method="post" asp-page-handler="UpdateStatus" class="mt-3">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label asp-for="StatusInput.Status" class="form-label"></label>
+                        <select asp-for="StatusInput.Status" class="form-select">
+                            @foreach (var status in Model.Statuses)
+                            {
+                                <option value="@status">@status</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-7">
+                        <label asp-for="StatusInput.Notes" class="form-label"></label>
+                        <textarea asp-for="StatusInput.Notes" class="form-control" rows="2"></textarea>
+                        <span class="form-text text-muted">Avoid personal data; keep notes concise.</span>
+                        <span asp-validation-for="StatusInput.Notes" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-2 d-grid">
+                        <input type="hidden" asp-for="StatusInput.IncidentId" value="@Model.SelectedIncident.Id" />
+                        <input type="hidden" name="page" value="@Model.PageNumber" />
+                        <input type="hidden" name="fromDate" value="@from" />
+                        <input type="hidden" name="toDate" value="@to" />
+                        <input type="hidden" name="severity" value="@Model.Severity" />
+                        <input type="hidden" name="status" value="@Model.Status" />
+                        <input type="hidden" name="source" value="@Model.Source" />
+                        <input type="hidden" name="rule" value="@Model.Rule" />
+                        <button type="submit" class="btn btn-primary">Save status</button>
+                    </div>
+                </div>
+            </form>
+
+            <div class="mt-4">
+                <h6>Status history</h6>
+                @if (Model.History.Count == 0)
+                {
+                    <p class="text-muted mb-0">No status changes recorded yet.</p>
+                }
+                else
+                {
+                    <ul class="list-group list-group-flush">
+                        @foreach (var entry in Model.History)
+                        {
+                            <li class="list-group-item">
+                                <div class="d-flex justify-content-between">
+                                    <div>
+                                        <strong>@entry.Status</strong>
+                                        <span class="text-muted small">by @entry.ActorName</span>
+                                    </div>
+                                    <div class="text-muted small">@entry.ChangedOn.ToString("u")</div>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(entry.Notes))
+                                {
+                                    <div class="small mt-1">@entry.Notes</div>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<partial name="_ValidationScriptsPartial" />

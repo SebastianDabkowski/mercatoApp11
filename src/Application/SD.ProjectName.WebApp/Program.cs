@@ -140,6 +140,11 @@ builder.Services.AddOptions<AuditLogOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddSingleton<AuditLogOptions>(sp => sp.GetRequiredService<IOptions<AuditLogOptions>>().Value);
+builder.Services.AddOptions<SecurityIncidentOptions>()
+    .Bind(builder.Configuration.GetSection(SecurityIncidentOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<SecurityIncidentOptions>(sp => sp.GetRequiredService<IOptions<SecurityIncidentOptions>>().Value);
 builder.Services.AddSingleton(sp =>
 {
     var options = new PushNotificationOptions();
@@ -198,6 +203,7 @@ builder.Services.AddScoped<CriticalActionAuditService>();
 builder.Services.AddScoped<AdminAuditLogService>();
 builder.Services.AddScoped<ProcessingActivityRegistryService>();
 builder.Services.AddScoped<SellerReportingService>();
+builder.Services.AddScoped<SecurityIncidentService>();
 builder.Services.AddScoped<UserDataExportService>();
 builder.Services.AddScoped<UserAccountDeletionService>();
 builder.Services.AddScoped<IAnalyticsTracker, AnalyticsTracker>();

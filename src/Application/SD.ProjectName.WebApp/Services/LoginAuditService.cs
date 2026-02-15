@@ -37,17 +37,20 @@ namespace SD.ProjectName.WebApp.Services
         private readonly TimeProvider _timeProvider;
         private readonly IEmailSender _emailSender;
         private readonly IOptions<SecurityOptions> _options;
+        private readonly SecurityIncidentService? _incidentService;
 
         public LoginAuditService(
             ApplicationDbContext dbContext,
             TimeProvider timeProvider,
             IEmailSender emailSender,
-            IOptions<SecurityOptions> options)
+            IOptions<SecurityOptions> options,
+            SecurityIncidentService? incidentService = null)
         {
             _dbContext = dbContext;
             _timeProvider = timeProvider;
             _emailSender = emailSender;
             _options = options;
+            _incidentService = incidentService;
         }
 
         public async Task<LoginAuditResult> RecordAsync(LoginAuditEntry entry, CancellationToken cancellationToken = default)
@@ -93,6 +96,30 @@ namespace SD.ProjectName.WebApp.Services
                     entry.Email,
                     "Unusual login detected",
                     "We noticed a login from a new location or device. If this wasn't you, please reset your password.");
+            }
+
+            if (_incidentService != null)
+            {
+                if (string.Equals(entry.EventType, LoginEventTypes.LockedOut, StringComparison.OrdinalIgnoreCase))
+                {
+                    await _incidentService.RecordDetectionAsync(
+                        new SecurityIncidentDetection(
+                            "Authentication",
+                            "authentication:lockout",
+                            null,
+                            "Account lockout triggered after repeated failed login attempts."),
+                        cancellationToken);
+                }
+                else if (isUnusual && entry.IsSuccess)
+                {
+                    await _incidentService.RecordDetectionAsync(
+                        new SecurityIncidentDetection(
+                            "Authentication",
+                            "authentication:unusual-login",
+                            null,
+                            "Successful login from a new location detected."),
+                        cancellationToken);
+                }
             }
 
             return new LoginAuditResult { IsUnusual = isUnusual };
