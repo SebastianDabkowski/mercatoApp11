@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
@@ -27,6 +28,8 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         private readonly SellerShippingMethodService _sellerShippingMethodService;
         private readonly CurrencyConfigurationService _currencyConfiguration;
         private readonly IntegrationManagementService _integrationService;
+        private readonly ILegalDocumentService _legalDocuments;
+        private ApplicationUser? _cachedBuyer;
         private readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -39,6 +42,12 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         public CheckoutPaymentStatus PaymentStatus { get; private set; } = CheckoutPaymentStatus.None;
 
         public string? PaymentReference { get; private set; }
+
+        public LegalDocumentVersion? ActiveTerms { get; private set; }
+
+        public LegalDocumentVersion? UpcomingTerms { get; private set; }
+
+        public bool RequireTermsAcceptance { get; private set; }
 
         [BindProperty]
         public PaymentInput Input { get; set; } = new();
@@ -56,7 +65,8 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             PaymentProviderService paymentProvider,
             SellerShippingMethodService sellerShippingMethodService,
             CurrencyConfigurationService currencyConfiguration,
-            IntegrationManagementService integrationService)
+            IntegrationManagementService integrationService,
+            ILegalDocumentService legalDocuments)
         {
             _cartViewService = cartViewService;
             _userCartService = userCartService;
@@ -71,6 +81,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             _sellerShippingMethodService = sellerShippingMethodService;
             _currencyConfiguration = currencyConfiguration;
             _integrationService = integrationService;
+            _legalDocuments = legalDocuments;
         }
 
         public async Task<IActionResult> OnGetAsync(string? providerToken = null, string? method = null)
@@ -103,6 +114,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             Methods = GetEnabledMethods();
             PaymentStatus = state.PaymentStatus;
             PaymentReference = state.PaymentReference;
+            await LoadLegalAsync();
 
             var integrationAvailable = await EnsurePaymentIntegrationEnabledAsync();
             if (!integrationAvailable)
@@ -167,6 +179,7 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             Methods = GetEnabledMethods();
             PaymentStatus = state.PaymentStatus;
             PaymentReference = state.PaymentReference;
+            await LoadLegalAsync(setDefaultAcceptance: false);
 
             var integrationAvailable = await EnsurePaymentIntegrationEnabledAsync();
             if (!integrationAvailable)
@@ -177,6 +190,12 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             if (Methods.Count == 0)
             {
                 ModelState.AddModelError(string.Empty, "No payment methods are available.");
+                return Page();
+            }
+
+            if (RequireTermsAcceptance && !Input.AcceptTerms)
+            {
+                ModelState.AddModelError(nameof(Input.AcceptTerms), "You must accept the terms to continue.");
                 return Page();
             }
 
@@ -192,6 +211,14 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             {
                 ModelState.AddModelError(nameof(Input.SelectedMethodId), "Select a payment method.");
                 return Page();
+            }
+
+            if (RequireTermsAcceptance && Input.AcceptTerms && ActiveTerms != null && _cachedBuyer != null)
+            {
+                _cachedBuyer.TermsAccepted = true;
+                _cachedBuyer.TermsAcceptedOn = DateTimeOffset.UtcNow;
+                _cachedBuyer.TermsVersionId = ActiveTerms.Id;
+                await _userManager.UpdateAsync(_cachedBuyer);
             }
 
             var currency = await ResolveCurrencyAsync();
@@ -293,6 +320,39 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
             }
             ModelState.AddModelError(string.Empty, error);
             return Page();
+        }
+
+        private async Task LoadLegalAsync(bool setDefaultAcceptance = true)
+        {
+            if (_cachedBuyer == null && User?.Identity?.IsAuthenticated == true)
+            {
+                _cachedBuyer = await _userManager.GetUserAsync(User);
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            ActiveTerms = await _legalDocuments.GetActiveVersionAsync(LegalDocumentTypes.TermsOfService, now, HttpContext.RequestAborted);
+            UpcomingTerms = await _legalDocuments.GetUpcomingVersionAsync(LegalDocumentTypes.TermsOfService, now, HttpContext.RequestAborted);
+            RequireTermsAcceptance = ShouldRequireTermsAcceptance(_cachedBuyer, ActiveTerms);
+
+            if (setDefaultAcceptance && !RequireTermsAcceptance)
+            {
+                Input.AcceptTerms = true;
+            }
+        }
+
+        private static bool ShouldRequireTermsAcceptance(ApplicationUser? buyer, LegalDocumentVersion? activeTerms)
+        {
+            if (activeTerms == null)
+            {
+                return false;
+            }
+
+            if (buyer == null)
+            {
+                return true;
+            }
+
+            return !buyer.TermsAccepted || buyer.TermsVersionId != activeTerms.Id;
         }
 
         private List<PaymentMethodOption> GetEnabledMethods()
@@ -488,5 +548,8 @@ namespace SD.ProjectName.WebApp.Pages.Checkout
         public string CartSignature { get; set; } = string.Empty;
 
         public string? BlikCode { get; set; }
+
+        [Display(Name = "I accept the Terms of Service and Privacy Policy")]
+        public bool AcceptTerms { get; set; }
     }
 }

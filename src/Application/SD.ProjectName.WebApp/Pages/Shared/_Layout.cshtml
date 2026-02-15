@@ -30,7 +30,10 @@
                             <a class="nav-link text-dark" asp-area="" asp-page="/Cart">Cart</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-page="/Privacy">Privacy</a>
+                            <a class="nav-link text-dark" asp-area="" asp-page="/Legal/Document" asp-route-type="TermsOfService">Terms</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-dark" asp-area="" asp-page="/Legal/Document" asp-route-type="PrivacyPolicy">Privacy</a>
                         </li>
                     </ul>
                     <form class="d-flex align-items-stretch me-3" method="get" asp-page="/Products/Search" role="search" data-search-form>
@@ -62,7 +65,7 @@
 
     <footer class="border-top footer text-muted">
         <div class="container">
-            &copy; 2025 - SD.ProjectName.WebApp - <a asp-area="" asp-page="/Privacy">Privacy</a>
+            &copy; 2025 - SD.ProjectName.WebApp - <a asp-area="" asp-page="/Legal/Document" asp-route-type="TermsOfService">Terms</a> | <a asp-area="" asp-page="/Legal/Document" asp-route-type="PrivacyPolicy">Privacy</a>
         </div>
     </footer>
 

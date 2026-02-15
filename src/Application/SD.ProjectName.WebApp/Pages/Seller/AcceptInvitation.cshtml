@@ -46,7 +46,13 @@
             </div>
             <div class="col-12 form-check ms-1">
                 <input asp-for="Input.AcceptTerms" class="form-check-input" />
-                <label asp-for="Input.AcceptTerms" class="form-check-label"></label>
+                <label for="Input_AcceptTerms" class="form-check-label">
+                    I accept the <a asp-page="/Legal/Document" asp-route-type="TermsOfService">Terms of Service</a> and <a asp-page="/Legal/Document" asp-route-type="PrivacyPolicy">Privacy Policy</a>.
+                    @if (Model.ActiveTerms != null)
+                    {
+                        <span class="text-muted small">(version @Model.ActiveTerms.VersionTag, effective @Model.ActiveTerms.EffectiveFrom.ToString("yyyy-MM-dd"))</span>
+                    }
+                </label>
                 <span asp-validation-for="Input.AcceptTerms" class="text-danger"></span>
             </div>
             <div class="col-12">

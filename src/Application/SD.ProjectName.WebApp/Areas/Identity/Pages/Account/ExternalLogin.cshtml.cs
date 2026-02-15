@@ -17,17 +17,20 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly ILogger<ExternalLoginModel> _logger;
         private readonly IUserCartService _userCartService;
+        private readonly ILegalDocumentService _legalDocuments;
 
         public ExternalLoginModel(
             SignInManager<ApplicationUser> signInManager,
             UserManager<ApplicationUser> userManager,
             ILogger<ExternalLoginModel> logger,
-            IUserCartService userCartService)
+            IUserCartService userCartService,
+            ILegalDocumentService legalDocuments)
         {
             _signInManager = signInManager;
             _userManager = userManager;
             _logger = logger;
             _userCartService = userCartService;
+            _legalDocuments = legalDocuments;
         }
 
         [TempData]
@@ -62,6 +65,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             }
 
             var existingLoginUser = await _userManager.FindByLoginAsync(info.LoginProvider, info.ProviderKey);
+            var activeTerms = await _legalDocuments.GetActiveVersionAsync(LegalDocumentTypes.TermsOfService, DateTimeOffset.UtcNow, HttpContext.RequestAborted);
             if (existingLoginUser != null)
             {
                 if (!IsBuyer(existingLoginUser))
@@ -69,7 +73,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                     return RejectForNonBuyer(ReturnUrl);
                 }
 
-                await EnsureVerifiedAsync(existingLoginUser);
+                await EnsureVerifiedAsync(existingLoginUser, activeTerms);
                 await _signInManager.SignInAsync(existingLoginUser, isPersistent: false, info.LoginProvider);
                 await _signInManager.UpdateExternalAuthenticationTokensAsync(info);
                 await _userCartService.MergeOnSignInAsync(HttpContext, existingLoginUser, HttpContext.RequestAborted);
@@ -102,7 +106,8 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                     AccountStatus = AccountStatuses.Verified,
                     EmailConfirmed = true,
                     TermsAccepted = true,
-                    TermsAcceptedOn = DateTimeOffset.UtcNow
+                    TermsAcceptedOn = DateTimeOffset.UtcNow,
+                    TermsVersionId = activeTerms?.Id
                 };
 
                 var createResult = await _userManager.CreateAsync(user);
@@ -117,7 +122,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             }
             else
             {
-                await EnsureVerifiedAsync(user);
+                await EnsureVerifiedAsync(user, activeTerms);
             }
 
             var addLoginResult = await _userManager.AddLoginAsync(user, info);
@@ -135,7 +140,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             return LocalRedirect(ResolveRedirectUrl(ReturnUrl, user.AccountType));
         }
 
-        private async Task EnsureVerifiedAsync(ApplicationUser user)
+        private async Task EnsureVerifiedAsync(ApplicationUser user, LegalDocumentVersion? activeTerms)
         {
             var changed = false;
 
@@ -151,10 +156,11 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 changed = true;
             }
 
-            if (!user.TermsAccepted)
+            if (!user.TermsAccepted || (activeTerms != null && user.TermsVersionId != activeTerms.Id))
             {
                 user.TermsAccepted = true;
                 user.TermsAcceptedOn = DateTimeOffset.UtcNow;
+                user.TermsVersionId = activeTerms?.Id ?? user.TermsVersionId;
                 changed = true;
             }
 

@@ -82,6 +82,8 @@ namespace SD.ProjectName.WebApp.Identity
 
         public DateTimeOffset? TermsAcceptedOn { get; set; }
 
+        public int? TermsVersionId { get; set; }
+
         public DateTimeOffset? EmailVerifiedOn { get; set; }
 
         public DateTimeOffset? KycSubmittedOn { get; set; }
