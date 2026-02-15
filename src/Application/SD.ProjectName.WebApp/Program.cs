@@ -175,6 +175,7 @@ builder.Services.AddScoped<AdminReportingService>();
 builder.Services.AddScoped<AdminUserService>();
 builder.Services.AddScoped<AdminUserActionService>();
 builder.Services.AddScoped<AdminAuditLogService>();
+builder.Services.AddScoped<ProcessingActivityRegistryService>();
 builder.Services.AddScoped<SellerReportingService>();
 builder.Services.AddScoped<IAnalyticsTracker, AnalyticsTracker>();
 builder.Services.AddSingleton<PaymentProviderService>();

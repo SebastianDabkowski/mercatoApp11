@@ -1,0 +1,260 @@
+@page "/Compliance/ProcessingRegistry/{id?}"
+@using SD.ProjectName.WebApp.Identity
+@model SD.ProjectName.WebApp.Pages.Compliance.ProcessingRegistryModel
+@{
+    ViewData["Title"] = "Data processing registry";
+}
+
+<h1 class="display-6">Data processing registry</h1>
+<p class="text-muted">
+    Maintain the GDPR Art. 30 record of processing activities with purposes, legal bases, data categories, processors, and retention.
+    Access is limited to @AccountTypes.Admin and @ComplianceRoles.Compliance users.
+    </p>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+
+@if (Model.Errors.Any())
+{
+    <div class="alert alert-danger">
+        <div class="fw-semibold mb-1">Unable to save</div>
+        <ul class="mb-0">
+        @foreach (var error in Model.Errors)
+        {
+            <li>@error</li>
+        }
+        </ul>
+    </div>
+}
+
+<div class="d-flex gap-2 mb-3">
+    @if (User.IsInRole(AccountTypes.Admin))
+    {
+        <a class="btn btn-outline-secondary" asp-page="/Admin/Dashboard">Back to admin</a>
+    }
+    <a class="btn btn-primary" asp-page-handler="Export">Export CSV</a>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card shadow-sm h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="fw-semibold">Processing activities</div>
+                    <div class="text-muted small">Purpose, legal basis, categories of data, data subjects, processors, retention</div>
+                </div>
+                <span class="badge text-bg-secondary">@Model.Activities.Count</span>
+            </div>
+            <div class="card-body">
+                @if (Model.Activities.Count == 0)
+                {
+                    <div class="alert alert-info mb-0">
+                        No processing activities have been recorded yet. Add the first record using the form on the right.
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table align-middle table-hover">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Title</th>
+                                    <th scope="col">Purpose</th>
+                                    <th scope="col">Legal basis</th>
+                                    <th scope="col">Data categories</th>
+                                    <th scope="col">Data subjects</th>
+                                    <th scope="col">Processors</th>
+                                    <th scope="col">Retention</th>
+                                    <th scope="col"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var activity in Model.Activities)
+                            {
+                                var isSelected = Model.SelectedActivity?.Id == activity.Id;
+                                <tr class="@(isSelected ? "table-primary" : string.Empty)">
+                                    <td>
+                                        <div class="fw-semibold">@activity.Name</div>
+                                        <div class="text-muted small">Last updated @((activity.UpdatedOn ?? activity.CreatedOn).ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</div>
+                                    </td>
+                                    <td>@activity.Purpose</td>
+                                    <td>@activity.LegalBasis</td>
+                                    <td>@activity.DataCategories</td>
+                                    <td>@activity.DataSubjects</td>
+                                    <td>@activity.Processors</td>
+                                    <td>@activity.RetentionPeriod</td>
+                                    <td class="text-end">
+                                        <a class="btn btn-sm btn-outline-primary" asp-route-id="@activity.Id">Edit</a>
+                                    </td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header fw-semibold">Add new processing activity</div>
+            <div class="card-body">
+                <form method="post" asp-page-handler="Create">
+                    <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Name" class="form-label"></label>
+                        <input asp-for="Input.Name" class="form-control" />
+                        <span asp-validation-for="Input.Name" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Purpose" class="form-label"></label>
+                        <textarea asp-for="Input.Purpose" class="form-control" rows="2"></textarea>
+                        <span asp-validation-for="Input.Purpose" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.LegalBasis" class="form-label"></label>
+                        <input asp-for="Input.LegalBasis" class="form-control" />
+                        <span asp-validation-for="Input.LegalBasis" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.DataCategories" class="form-label"></label>
+                        <textarea asp-for="Input.DataCategories" class="form-control" rows="2"></textarea>
+                        <span asp-validation-for="Input.DataCategories" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.DataSubjects" class="form-label"></label>
+                        <textarea asp-for="Input.DataSubjects" class="form-control" rows="2"></textarea>
+                        <span asp-validation-for="Input.DataSubjects" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Processors" class="form-label"></label>
+                        <textarea asp-for="Input.Processors" class="form-control" rows="2"></textarea>
+                        <span asp-validation-for="Input.Processors" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.RetentionPeriod" class="form-label"></label>
+                        <input asp-for="Input.RetentionPeriod" class="form-control" />
+                        <span asp-validation-for="Input.RetentionPeriod" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.DataTransfers" class="form-label"></label>
+                        <input asp-for="Input.DataTransfers" class="form-control" />
+                        <span asp-validation-for="Input.DataTransfers" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.SecurityMeasures" class="form-label"></label>
+                        <textarea asp-for="Input.SecurityMeasures" class="form-control" rows="2"></textarea>
+                        <span asp-validation-for="Input.SecurityMeasures" class="text-danger"></span>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Save activity</button>
+                </form>
+            </div>
+        </div>
+
+        @if (Model.SelectedActivity != null)
+        {
+            <div class="card shadow-sm mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div class="fw-semibold">Edit activity</div>
+                    <a class="btn btn-sm btn-link" asp-page="/Compliance/ProcessingRegistry">Clear</a>
+                </div>
+                <div class="card-body">
+                    <form method="post" asp-page-handler="Update">
+                        <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
+                        <input asp-for="EditInput.Id" type="hidden" />
+                        <div class="mb-3">
+                            <label asp-for="EditInput.Name" class="form-label"></label>
+                            <input asp-for="EditInput.Name" class="form-control" />
+                            <span asp-validation-for="EditInput.Name" class="text-danger"></span>
+                        </div>
+                        <div class="mb-3">
+                            <label asp-for="EditInput.Purpose" class="form-label"></label>
+                            <textarea asp-for="EditInput.Purpose" class="form-control" rows="2"></textarea>
+                            <span asp-validation-for="EditInput.Purpose" class="text-danger"></span>
+                        </div>
+                        <div class="mb-3">
+                            <label asp-for="EditInput.LegalBasis" class="form-label"></label>
+                            <input asp-for="EditInput.LegalBasis" class="form-control" />
+                            <span asp-validation-for="EditInput.LegalBasis" class="text-danger"></span>
+                        </div>
+                        <div class="mb-3">
+                            <label asp-for="EditInput.DataCategories" class="form-label"></label>
+                            <textarea asp-for="EditInput.DataCategories" class="form-control" rows="2"></textarea>
+                            <span asp-validation-for="EditInput.DataCategories" class="text-danger"></span>
+                        </div>
+                        <div class="mb-3">
+                            <label asp-for="EditInput.DataSubjects" class="form-label"></label>
+                            <textarea asp-for="EditInput.DataSubjects" class="form-control" rows="2"></textarea>
+                            <span asp-validation-for="EditInput.DataSubjects" class="text-danger"></span>
+                        </div>
+                        <div class="mb-3">
+                            <label asp-for="EditInput.Processors" class="form-label"></label>
+                            <textarea asp-for="EditInput.Processors" class="form-control" rows="2"></textarea>
+                            <span asp-validation-for="EditInput.Processors" class="text-danger"></span>
+                        </div>
+                        <div class="mb-3">
+                            <label asp-for="EditInput.RetentionPeriod" class="form-label"></label>
+                            <input asp-for="EditInput.RetentionPeriod" class="form-control" />
+                            <span asp-validation-for="EditInput.RetentionPeriod" class="text-danger"></span>
+                        </div>
+                        <div class="mb-3">
+                            <label asp-for="EditInput.DataTransfers" class="form-label"></label>
+                            <input asp-for="EditInput.DataTransfers" class="form-control" />
+                            <span asp-validation-for="EditInput.DataTransfers" class="text-danger"></span>
+                        </div>
+                        <div class="mb-3">
+                            <label asp-for="EditInput.SecurityMeasures" class="form-label"></label>
+                            <textarea asp-for="EditInput.SecurityMeasures" class="form-control" rows="2"></textarea>
+                            <span asp-validation-for="EditInput.SecurityMeasures" class="text-danger"></span>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Update activity</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card shadow-sm">
+                <div class="card-header fw-semibold">Change history</div>
+                <div class="card-body">
+                    @if (Model.History.Count == 0)
+                    {
+                        <div class="text-muted small">No changes have been recorded yet.</div>
+                    }
+                    else
+                    {
+                        <div class="list-group list-group-flush">
+                            @foreach (var entry in Model.History)
+                            {
+                                <div class="list-group-item">
+                                    <div class="d-flex justify-content-between">
+                                        <div>
+                                            <div class="fw-semibold">@entry.ChangeType</div>
+                                            <div class="text-muted small">Fields: @(string.IsNullOrWhiteSpace(entry.ChangedFields) ? "N/A" : entry.ChangedFields)</div>
+                                        </div>
+                                        <div class="text-end text-muted small">
+                                            @entry.ChangedOn.ToLocalTime().ToString("yyyy-MM-dd HH:mm")<br />
+                                            @entry.ChangedByName
+                                        </div>
+                                    </div>
+                                    <div class="mt-2 text-muted small">
+                                        <div><strong>Purpose:</strong> @entry.Snapshot.Purpose</div>
+                                        <div><strong>Legal basis:</strong> @entry.Snapshot.LegalBasis</div>
+                                        <div><strong>Data:</strong> @entry.Snapshot.DataCategories</div>
+                                        <div><strong>Subjects:</strong> @entry.Snapshot.DataSubjects</div>
+                                        <div><strong>Processors:</strong> @entry.Snapshot.Processors</div>
+                                        <div><strong>Retention:</strong> @entry.Snapshot.RetentionPeriod</div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
