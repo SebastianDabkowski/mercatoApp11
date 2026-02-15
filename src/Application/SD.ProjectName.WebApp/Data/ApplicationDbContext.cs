@@ -28,6 +28,9 @@ namespace SD.ProjectName.WebApp.Data
         public DbSet<AnalyticsEvent> AnalyticsEvents => Set<AnalyticsEvent>();
         public DbSet<IntegrationConfiguration> IntegrationConfigurations => Set<IntegrationConfiguration>();
         public DbSet<LegalDocumentVersion> LegalDocumentVersions => Set<LegalDocumentVersion>();
+        public DbSet<FeatureFlag> FeatureFlags => Set<FeatureFlag>();
+        public DbSet<FeatureFlagEnvironment> FeatureFlagEnvironments => Set<FeatureFlagEnvironment>();
+        public DbSet<FeatureFlagAudit> FeatureFlagAudits => Set<FeatureFlagAudit>();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -673,6 +676,59 @@ namespace SD.ProjectName.WebApp.Data
                     .HasDefaultValue(true);
                 entity.HasIndex(i => new { i.Key, i.Environment })
                     .IsUnique();
+            });
+
+            builder.Entity<FeatureFlag>(entity =>
+            {
+                entity.Property(f => f.Key)
+                    .IsRequired()
+                    .HasMaxLength(128);
+                entity.Property(f => f.Name)
+                    .IsRequired()
+                    .HasMaxLength(256);
+                entity.Property(f => f.Description)
+                    .HasMaxLength(512);
+                entity.Property(f => f.CreatedBy)
+                    .HasMaxLength(450);
+                entity.Property(f => f.CreatedByName)
+                    .HasMaxLength(256);
+                entity.Property(f => f.UpdatedBy)
+                    .HasMaxLength(450);
+                entity.Property(f => f.UpdatedByName)
+                    .HasMaxLength(256);
+                entity.HasIndex(f => f.Key)
+                    .IsUnique();
+            });
+
+            builder.Entity<FeatureFlagEnvironment>(entity =>
+            {
+                entity.Property(e => e.Environment)
+                    .IsRequired()
+                    .HasMaxLength(32);
+                entity.Property(e => e.TargetingJson)
+                    .HasColumnType("nvarchar(max)");
+                entity.HasIndex(e => new { e.FlagId, e.Environment })
+                    .IsUnique();
+                entity.HasOne(e => e.Flag)
+                    .WithMany(f => f.Environments)
+                    .HasForeignKey(e => e.FlagId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            builder.Entity<FeatureFlagAudit>(entity =>
+            {
+                entity.Property(a => a.Action)
+                    .HasMaxLength(32)
+                    .HasDefaultValue("Updated");
+                entity.Property(a => a.ActorId)
+                    .HasMaxLength(450);
+                entity.Property(a => a.ActorName)
+                    .HasMaxLength(256);
+                entity.HasIndex(a => a.FlagId);
+                entity.HasOne<FeatureFlag>()
+                    .WithMany()
+                    .HasForeignKey(a => a.FlagId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             builder.Entity<LegalDocumentVersion>(entity =>

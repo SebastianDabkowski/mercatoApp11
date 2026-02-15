@@ -47,7 +47,8 @@ namespace SD.ProjectName.WebApp.Services
             "ProductPhoto",
             "ProductReview",
             "CommissionRule",
-            "VatRule"
+            "VatRule",
+            "FeatureFlag"
         };
 
         private readonly ApplicationDbContext _applicationDbContext;
@@ -275,6 +276,38 @@ namespace SD.ProjectName.WebApp.Services
                     .ToListAsync(cancellationToken);
 
                 entries.AddRange(vatEntries);
+            }
+
+            if (IsIncluded(filters.EntityType, "FeatureFlag"))
+            {
+                var query = _applicationDbContext.FeatureFlagAudits.AsNoTracking();
+                if (effectiveFrom.HasValue)
+                {
+                    query = query.Where(a => a.ChangedOn >= effectiveFrom.Value);
+                }
+
+                if (effectiveTo.HasValue)
+                {
+                    query = query.Where(a => a.ChangedOn <= effectiveTo.Value);
+                }
+
+                if (TryParseInt(filters.ResourceId, out var flagId))
+                {
+                    query = query.Where(a => a.FlagId == flagId);
+                }
+
+                var flagEntries = await query
+                    .Select(a => new AdminAuditLogEntry(
+                        a.ChangedOn,
+                        "FeatureFlag",
+                        a.Action,
+                        a.FlagId.ToString(),
+                        string.IsNullOrWhiteSpace(a.ActorName) ? "System" : a.ActorName!,
+                        a.ActorId,
+                        "Feature flag change captured."))
+                    .ToListAsync(cancellationToken);
+
+                entries.AddRange(flagEntries);
             }
 
             var filtered = ApplyPostFilters(entries, filters);
