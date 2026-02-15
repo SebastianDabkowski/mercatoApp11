@@ -14,11 +14,13 @@ namespace SD.ProjectName.WebApp.Pages.Seller
         private const int TotalSteps = 3;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IPayoutEncryptionService _payoutEncryption;
+        private readonly ISensitiveDataEncryptionService _sensitiveEncryption;
 
-        public OnboardingModel(UserManager<ApplicationUser> userManager, IPayoutEncryptionService payoutEncryption)
+        public OnboardingModel(UserManager<ApplicationUser> userManager, IPayoutEncryptionService payoutEncryption, ISensitiveDataEncryptionService sensitiveEncryption)
         {
             _userManager = userManager;
             _payoutEncryption = payoutEncryption;
+            _sensitiveEncryption = sensitiveEncryption;
         }
 
         [BindProperty]
@@ -130,9 +132,9 @@ namespace SD.ProjectName.WebApp.Pages.Seller
                 return Page();
             }
 
-            user.TaxId = Verification.TaxId;
             user.Address = Verification.Address;
             user.Country = Verification.Country;
+            user.TaxId = _sensitiveEncryption.Protect(Verification.TaxId);
             MarkInProgress(user);
             if (user.OnboardingStep < 2)
             {
@@ -234,7 +236,7 @@ namespace SD.ProjectName.WebApp.Pages.Seller
             StoreProfile.StoreDescription = user.StoreDescription ?? string.Empty;
 
             Verification ??= new VerificationInput();
-            Verification.TaxId = user.TaxId ?? string.Empty;
+            Verification.TaxId = _sensitiveEncryption.Reveal(user.TaxId);
             Verification.Address = user.Address ?? string.Empty;
             Verification.Country = user.Country ?? string.Empty;
 

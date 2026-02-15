@@ -1,3 +1,5 @@
+using System.IO;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
@@ -21,6 +23,17 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
+
+var dataProtectionBuilder = builder.Services.AddDataProtection()
+    .SetApplicationName("MercatoApp")
+    .SetDefaultKeyLifetime(TimeSpan.FromDays(90));
+
+var keyRingPath = builder.Configuration["Security:KeyRingPath"];
+if (!string.IsNullOrWhiteSpace(keyRingPath))
+{
+    Directory.CreateDirectory(keyRingPath);
+    dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(keyRingPath));
+}
 
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddMemoryCache();
@@ -160,6 +173,7 @@ builder.Services.AddScoped<ILoginAuditService, LoginAuditService>();
 builder.Services.AddScoped<SessionCookieEvents>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, LoggingAuthorizationMiddlewareResultHandler>();
 builder.Services.AddSingleton<IPayoutEncryptionService, PayoutEncryptionService>();
+builder.Services.AddSingleton<ISensitiveDataEncryptionService, SensitiveDataEncryptionService>();
 builder.Services.AddScoped<RecentlyViewedService>();
 builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<CartTotalsCalculator>();
@@ -236,6 +250,19 @@ if (!string.IsNullOrWhiteSpace(facebookAppId) && !string.IsNullOrWhiteSpace(face
 builder.Services.AddAuthorization(options =>
 {
     options.InvokeHandlersAfterFailure = false;
+});
+
+builder.Services.AddHttpsRedirection(options =>
+{
+    options.HttpsPort = 443;
+    options.RedirectStatusCode = StatusCodes.Status308PermanentRedirect;
+});
+
+builder.Services.AddHsts(options =>
+{
+    options.Preload = true;
+    options.IncludeSubDomains = true;
+    options.MaxAge = TimeSpan.FromDays(365);
 });
 
 // init module Products

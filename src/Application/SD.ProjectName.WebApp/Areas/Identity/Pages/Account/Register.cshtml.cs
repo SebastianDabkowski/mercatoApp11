@@ -26,6 +26,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
         private readonly EmailOptions _emailOptions;
         private readonly ILegalDocumentService _legalDocuments;
         private readonly IConsentService _consents;
+        private readonly ISensitiveDataEncryptionService _sensitiveEncryption;
 
         public RegisterModel(
             UserManager<ApplicationUser> userManager,
@@ -36,7 +37,8 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             IOptions<KycOptions> kycOptions,
             IOptions<EmailOptions> emailOptions,
             ILegalDocumentService legalDocuments,
-            IConsentService consents)
+            IConsentService consents,
+            ISensitiveDataEncryptionService sensitiveEncryption)
         {
             _userManager = userManager;
             _userStore = userStore;
@@ -48,6 +50,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
             _emailOptions = emailOptions.Value;
             _legalDocuments = legalDocuments;
             _consents = consents;
+            _sensitiveEncryption = sensitiveEncryption;
         }
 
         [BindProperty]
@@ -193,7 +196,7 @@ namespace SD.ProjectName.WebApp.Areas.Identity.Pages.Account
                 user.Address = Input.Address;
                 user.Country = Input.Country;
                 user.BusinessName = Input.BusinessName;
-                user.TaxId = Input.TaxId;
+                user.TaxId = _sensitiveEncryption.Protect(Input.TaxId);
                 user.ContactEmail = Input.Email;
                 var normalizedAccountType = AccountTypes.Allowed.FirstOrDefault(a => a.Equals(Input.AccountType, StringComparison.OrdinalIgnoreCase))
                                            ?? AccountTypes.Buyer;

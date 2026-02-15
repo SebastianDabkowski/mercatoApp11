@@ -101,6 +101,7 @@ public class UserDataExportService
     private readonly IConsentService _consents;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<UserDataExportService> _logger;
+    private readonly ISensitiveDataEncryptionService _sensitiveEncryption;
     private readonly JsonSerializerOptions _serializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -111,12 +112,14 @@ public class UserDataExportService
         ApplicationDbContext dbContext,
         IConsentService consents,
         TimeProvider timeProvider,
-        ILogger<UserDataExportService> logger)
+        ILogger<UserDataExportService> logger,
+        ISensitiveDataEncryptionService sensitiveEncryption)
     {
         _dbContext = dbContext;
         _consents = consents;
         _timeProvider = timeProvider;
         _logger = logger;
+        _sensitiveEncryption = sensitiveEncryption;
     }
 
     public async Task<UserDataExportResult> GenerateAsync(string userId, CancellationToken cancellationToken = default)
@@ -231,8 +234,13 @@ public class UserDataExportService
         return exports;
     }
 
-    private ProfileExport MapProfile(ApplicationUser user) =>
-        new(
+    private ProfileExport MapProfile(ApplicationUser user)
+    {
+        var decryptedTaxId = _sensitiveEncryption.Reveal(user.TaxId);
+        var decryptedRegistration = _sensitiveEncryption.Reveal(user.CompanyRegistrationNumber);
+        var decryptedPersonalId = _sensitiveEncryption.Reveal(user.PersonalIdNumber);
+
+        return new ProfileExport(
             user.Id,
             user.Email ?? string.Empty,
             user.PhoneNumber,
@@ -242,9 +250,9 @@ public class UserDataExportService
             user.Country,
             user.Address,
             user.BusinessName,
-            user.TaxId,
-            user.CompanyRegistrationNumber,
-            user.PersonalIdNumber,
+            decryptedTaxId,
+            decryptedRegistration,
+            decryptedPersonalId,
             user.ContactEmail,
             user.ContactPhone,
             user.ContactWebsite,
@@ -261,6 +269,7 @@ public class UserDataExportService
             user.KycStatus,
             user.OnboardingStatus,
             user.OnboardingStep);
+    }
 
     private static ConsentExport MapConsent(UserConsentSnapshot snapshot) =>
         new(

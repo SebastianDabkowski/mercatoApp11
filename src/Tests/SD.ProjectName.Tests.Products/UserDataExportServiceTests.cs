@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text.Json;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using SD.ProjectName.WebApp.Data;
@@ -164,7 +165,8 @@ public class UserDataExportServiceTests
 
         var consentService = new ConsentService(context, timeProvider);
         var logger = NullLogger<UserDataExportService>.Instance;
-        var service = new UserDataExportService(context, consentService, timeProvider, logger);
+        var sensitiveEncryption = new SensitiveDataEncryptionService(DataProtectionProvider.Create("tests"));
+        var service = new UserDataExportService(context, consentService, timeProvider, logger, sensitiveEncryption);
 
         var result = await service.GenerateAsync(user.Id, CancellationToken.None);
 
